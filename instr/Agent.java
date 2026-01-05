@@ -20,6 +20,12 @@ public class Agent {
       inst.appendToBootstrapClassLoaderSearch(new JarFile(coreJar));
       // 1. Setup the binary trace file (1 million events for now)
       BinarySchema.init("trace.bin", 1_000_000);
+
+      Runtime.getRuntime().addShutdownHook(new Thread() -> {
+        System.out.println("\n[Agent] Program exiting. Finalizing trace file...");
+        BinarySchema.close();
+        System.out.println("[Agent] Trace saved to trace.bin");
+      })
       // 3. Register bytecode surgeon (The Transformer)
       inst.addTransformer(new SyncTransformer(), true);
 

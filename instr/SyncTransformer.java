@@ -36,6 +36,20 @@ public class SyncTransformer implements ClassFileTransformer {
   }
 
   @Override
+  public void visit(int version, int access, String name, String signature, String superName, String[] interfaces) {
+    this.className = name;
+    super.visit(version, access, name, signature, superName, interfaces);
+  }
+
+  @Override
+  public FieldVisitor visitField(int access, String name, String descriptor, String signature, Object value) {
+    if ((access & ACC_VOLATILE) != 0) {
+      volatileFields.add(name + descriptor);
+    }
+    return super.visitField(access, name, descriptor, signature, value);
+  }
+
+  @Override
   public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
     MethodVisitor mv = super.visitMethod(access, name, descriptor, signature, exceptions);
     return new SyncMethodVisitor(mv);
@@ -77,6 +91,27 @@ public class SyncTransformer implements ClassFileTransformer {
       }
     }
     super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
+  }
+
+  @Override
+  public void visitFieldInsn(int opcode, String owner, String name, String descriptor) {
+    if (volatileFields.contains(name + descriptor)) {
+      if (opcode == Opcodes.PUTFIELD) {
+        mv.visitInsn(Opcodes.ACONST_NULL);
+        mv.visitLdcInsn(6)
+      } else if (opcode == Opcodes.PUTSTATIC) {
+        mv.visitInsn(Opcodes.DUP);
+        mv.visitInsn(5)
+        mv.visitMethodInsn(Opcodes.INVOKESTATIC, "core/CaptureMonitor", "logSync", "(Ljava/lang/Object;I)V", false);
+      }
+    }
+    super.visitFieldInsn(opcode, owner, name, descriptor);
+  }
+
+  private void logStaticEvent(int eventType) {
+    mv.visitInsn(Opcodes.ACONST_NULL);
+    mv.visitLdcInsn(eventType);
+    mv.visitMethodInsn(Opcodes.INVOKESTATIC, "core/CaptureMonitor", "logSync", "(Ljava/lang/Object;I)V", false);
   }
  }
 }

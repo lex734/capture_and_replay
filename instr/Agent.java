@@ -1,7 +1,6 @@
 package instr;
 
-import core.BinarySchema;
-import core.CaptureMonitor;
+import common.BinarySchema;
 import java.lang.instrument.Instrumentation;
 import java.util.jar.JarFile;
 import java.io.File;
@@ -11,10 +10,10 @@ public class Agent {
     try {
       System.out.println("[Agent] Initializing Recorder...");
 
-      File coreJar = new File("libs/trace-core.jar");
+      File coreJar = new File("libs/trace-common.jar");
       if (!coreJar.exists()) {
         System.err.println("[Agent] FATAL ERROR: Could not find " + coreJar.getAbsolutePath());
-        System.err.println("[Agent] Please ensure yo7u are running java from the project root.");
+        System.err.println("[Agent] Please ensure you are running java from the project root.");
         return;
       }
       inst.appendToBootstrapClassLoaderSearch(new JarFile(coreJar));

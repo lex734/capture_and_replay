@@ -10,9 +10,11 @@ public class SyncTransformer implements ClassFileTransformer {
  public byte[] transform(ClassLoader loader, String className, Class<?> classBeingRedefined, ProtectionDomain protectionDomain, byte[] classfileBuffer) {
  
   // prevent recursion
-  if (className.startsWith("instr/") || className.startsWith("core/")) {
-    return null;
-  }
+  if (className == null || className.startsWith("instr/") || 
+            className.startsWith("common/") || className.startsWith("capture/") || 
+            className.startsWith("replay/")) {
+            return null;
+        }
 
   // set up ASM to read and write the class
   try {
@@ -43,40 +45,48 @@ public class SyncTransformer implements ClassFileTransformer {
  }
 
  static class SyncMethodVisitor extends MethodVisitor {
-  public SyncMethodVisitor(MethodVisitor mv) {
-    super(Opcodes.ASM9, mv);
-  }
 
-  @Override
-  public void visitInsn(int opcode) {
-    if (opcode == Opcodes.MONITORENTER) {
-      mv.visitInsn(Opcodes.DUP); // make a copy of object to lock on stack
-      mv.visitLdcInsn(1); // push integer on stack
-      mv.visitMethodInsn(Opcodes.INVOKESTATIC, "core/CaptureMonitor", "logSync", "(Ljava/lang/Object;I)V", false); // call core.CaptureMonitor.logSync(Object lock, int event)
-      // stack is now back to original state
-    }
-    else if (opcode == Opcodes.MONITOREXIT) {
-      mv.visitInsn(Opcodes.DUP);
-      mv.visitLdcInsn(2);
-      mv.visitMethodInsn(Opcodes.INVOKESTATIC, "core/CaptureMonitor", "logSync", "(Ljava/lang/Object;I)V", false);
-    }
-    super.visitInsn(opcode); // execute the original instruction
-  }
+    private final boolean isReplay = "REPLAY".equals(System.getProperty("tool.mode"));
+    private final String monitorClass = isReplay ? "replay/ReplayMonitor" : "capture/CaptureMonitor";
+    private final String monitorMethod = isReplay ? "checkSync" : "logSync";
 
-  @Override
-  public void visitMethodInsn(int opcode, String owner, String name, String descriptor, boolean isInterface) {
-    if (owner.equals("java/util/concurrent/locks/LockSupport")) {
-      if (name.equals("park") && descriptor.equals("(Ljava/lang/Object;)V")) {
-        mv.visitInsn(Opcodes.DUP);
-        mv.visitLdcInsn(3);
-        mv.visitMethodInsn(Opcodes.INVOKESTATIC, "core/CaptureMonitor", "logSync", "(Ljava/lang/Object;I)V", false);
-      } else if (name.equals("unpark") && descriptor.equals("(Ljava/lang/Thread;)V")) {
-        mv.visitInsn(Opcodes.DUP);
-        mv.visitLdcInsn(4);
-        mv.visitMethodInsn(Opcodes.INVOKESTATIC, "core/CaptureMonitor", "logSync", "(Ljava/lang/Object;I)V", false);
+    public SyncMethodVisitor(MethodVisitor mv) {
+      super(Opcodes.ASM9, mv);
+    }
+    
+    @Override
+    public void visitInsn(int opcode) {
+      if (opcode == Opcodes.MONITORENTER || opcode == Opcodes.MONITOREXIT) {
+        int eventType = (opcode == Opcodes.MONITORENTER) ? 1 : 2;
+                    
+        // 1. Stack has [lockObj]
+        mv.visitInsn(Opcodes.DUP);             // Stack: [lockObj, lockObj]
+        mv.visitLdcInsn(eventType);            // Stack: [lockObj, lockObj, eventType]
+                    
+        // 2. Call consumes the top two elements
+        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, monitorMethod, "(Ljava/lang/Object;I)V", false);
+                    
+        // 3. Stack is back to [lockObj], ready for the original opcode
       }
+    super.visitInsn(opcode);
     }
-    super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
+
+    @Override
+    public void visitMethodInsn(int opcode, String owner, String name, String descriptor, boolean isInterface) {
+      if (owner.equals("java/util/concurrent/locks/LockSupport")) {
+        if (name.equals("park") && descriptor.equals("(Ljava/lang/Object;)V")) {
+          // Stack has [lockObj]
+          mv.visitInsn(Opcodes.DUP); 
+          mv.visitLdcInsn(3); // THREAD_PARK
+          mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, monitorMethod, "(Ljava/lang/Object;I)V", false);
+        } else if (name.equals("unpark") && descriptor.equals("(Ljava/lang/Thread;)V")) {
+          // Stack has [threadObj]
+          mv.visitInsn(Opcodes.DUP);
+          mv.visitLdcInsn(4); // THREAD_UNPARK
+          mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, monitorMethod, "(Ljava/lang/Object;I)V", false);
+        }
+      }
+      super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
+    }
   }
- }
 }

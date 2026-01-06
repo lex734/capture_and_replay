@@ -13,7 +13,7 @@ public class BinarySchema {
   | event  | 16     | 4    | Sync events |
   | object | 20     | 4    | Identifier  |
   */
-  public static final int RECORD_SIZE = 24;
+  public static final int RECORD_SIZE = 28;
 
   public static class Event {
     public static final int MONITOR_ENTER = 1;
@@ -32,14 +32,15 @@ public class BinarySchema {
     }
   }
 
-  public static void write(long seq, long tid, int eventType, int hash) {
+  public static void write(long seq, long roleId, int eventType, int hash, int siteId) {
     if (buffer == null) return;
 
     int pos = (int) (seq * RECORD_SIZE);
 
     buffer.putLong(pos, seq);
-    buffer.putLong(pos + 8, tid);
+    buffer.putLong(pos + 8, roleId);
     buffer.putInt(pos + 16, eventType);
     buffer.putInt(pos + 20, hash);
+    buffer.putInt(pos + 24, siteId);
   }
 }

@@ -28,4 +28,11 @@ public class IdentityMapper {
         // Otherwise, this site is the "birthplace" of a new logical object identity.
         return siteToObjectId.computeIfAbsent(siteId, k -> objectCounter.getAndIncrement());
     }
+    public static void reset() {
+        tidToRoleId.clear();
+        roleCounter.set(1);
+        siteToObjectId.clear();
+        objectCounter.set(1);
+        System.out.println("[IdentityMapper] Maps reset for new run.");
+    }
 }

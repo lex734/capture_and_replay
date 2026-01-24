@@ -6,12 +6,14 @@ import java.nio.channels.FileChannel;
 
 public class BinarySchema {
   /* Size of each record in bytes
-  | Field  | Offset | Size | Description |
-  |--------|--------|------|-------------|
-  | seq    | 0      | 8    | Global clock|
-  | tid    | 8      | 8    |JVM thread ID|
-  | event  | 16     | 4    | Sync events |
-  | object | 20     | 4    | Identifier  |
+*  | Offset | Size | Field    | Description                                       |
+ * |--------|------|-----------|--------------------------------------------------|
+ * | 0      | 8    | seq       | Global Atomic Sequence (The "Clock")             |
+ * | 8      | 8    | roleId    | Logical Role ID (Mapped from raw Thread ID)      |
+ * | 16     | 4    | type      | Event Type (8 bits) + Flags (24 bits)            |
+ * | 20     | 4    | objSite   | Birth Site: Where this object was first seen     |
+ * | 24     | 4    | objCount  | Birth Count: N-th object seen at that site       |
+ * | 28     | 4    | data      | Polymorphic: FieldID, Array Index, or SiteID     |
   */
   public static final int RECORD_SIZE = 28;
 
@@ -20,6 +22,16 @@ public class BinarySchema {
     public static final int MONITOR_EXIT = 2;
     public static final int THREAD_PARK = 3;
     public static final int THREAD_UNPARK = 4;
+    public static final int FIELD_READ = 5;
+    public static final int FIELD_WRITE = 6;
+    public static final int ARRAY_READ = 7;
+    public static final int ARRAY_WRITE = 8;
+  }
+
+  public static class Flags {
+    public static final int NONE = 0;
+    public static final int IS_VOLATILE = 1 << 0;
+    public static final int IS_STATIC = 1 << 1;
   }
 
   private static MappedByteBuffer buffer;
@@ -32,15 +44,16 @@ public class BinarySchema {
     }
   }
 
-  public static void write(long seq, long roleId, int eventType, int hash, int siteId) {
+  public static void write(long seq, long roleId, int typeFlags, int objSite, int objCount, int data) {
     if (buffer == null) return;
 
     int pos = (int) (seq * RECORD_SIZE);
 
     buffer.putLong(pos, seq);
     buffer.putLong(pos + 8, roleId);
-    buffer.putInt(pos + 16, eventType);
-    buffer.putInt(pos + 20, hash);
-    buffer.putInt(pos + 24, siteId);
+    buffer.putInt(pos + 16, typeFlags);
+    buffer.putInt(pos + 20, objSite);
+    buffer.putInt(pos + 24, objCount);
+    buffer.putInt(pos + 28, data);
   }
 }

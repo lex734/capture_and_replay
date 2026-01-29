@@ -5,7 +5,7 @@ import common.TraceLogger;
 public class CaptureMonitor {
   private static final ThreadLocal<Boolean> isInside = ThreadLocal.withInitial(() -> false);
 
-  public static void logSync(Object lock, int eventType, int siteId) {
+  public static void logSync(int eventType, Object lock, int siteId) {
     if (isInside.get() || lock == null) return;
     isInside.set(true);
     try {

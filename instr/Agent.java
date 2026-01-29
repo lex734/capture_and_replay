@@ -10,13 +10,17 @@ public class Agent {
     try {
       System.out.println("[Agent] Initializing Recorder...");
 
-      File coreJar = new File("libs/trace-common.jar");
+      String agentPath = Agent.class.getProtectionDomain().getCodeSource().getLocation().toURI().getPath();
+      File agentJar = new File(agentPath);
+
+      File coreJar = new File(agentPath + "/libs/trace-common.jar");
       if (!coreJar.exists()) {
         System.err.println("[Agent] FATAL ERROR: Could not find " + coreJar.getAbsolutePath());
         System.err.println("[Agent] Please ensure you are running java from the project root.");
         return;
       }
       inst.appendToBootstrapClassLoaderSearch(new JarFile(coreJar));
+      inst.appendToBootstrapClassLoaderSearch((new JarFile(agentJar)));
       // 1. Setup the binary trace file (1 million events for now)
       BinarySchema.init("trace.bin", 1_000_000);
       // 3. Register bytecode surgeon (The Transformer)

@@ -2,6 +2,8 @@ package instr;
 
 import java.lang.instrument.ClassFileTransformer;
 import java.security.ProtectionDomain;
+import java.util.Map;
+import java.util.HashMap;
 import org.objectweb.asm.*;
 
 public class SyncTransformer implements ClassFileTransformer {
@@ -11,7 +13,7 @@ public class SyncTransformer implements ClassFileTransformer {
     // prevent recursion
     if (className == null || className.startsWith("instr/") || 
               className.startsWith("common/") || className.startsWith("capture/") || 
-              className.startsWith("replay/")) {
+              className.startsWith("replay/") || className.startsWith("java/") || className.startsWith("jdk/") || className.startsWith("sun/")) {
               return null;
           }
 
@@ -33,6 +35,7 @@ public class SyncTransformer implements ClassFileTransformer {
   // begin by wrapping the class by wrapping methods within the class
   static class SyncClassVisitor extends ClassVisitor {
     private final String className;
+    private final Map<String, Boolean> volatileFields = new HashMap<>();
 
     public SyncClassVisitor(ClassVisitor cv, String className) {
       super(Opcodes.ASM9, cv);
@@ -40,15 +43,24 @@ public class SyncTransformer implements ClassFileTransformer {
     }
 
     @Override
+    public FieldVisitor visitField(int access, String name, String descriptor, String signature, Object value) {
+      if ((access & Opcodes.ACC_VOLATILE) != 0) {
+        volatileFields.put(name, true);
+      }
+      return super.visitField(access, name, descriptor, signature, value);
+    }
+
+    @Override
     public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
       MethodVisitor mv = super.visitMethod(access, name, descriptor, signature, exceptions);
-      return new SyncMethodVisitor(mv, className, name);
+      return new SyncMethodVisitor(mv, className, name, volatileFields);
     }
   }
 
   static class SyncMethodVisitor extends MethodVisitor {
     private final String className;
     private final String methodName;
+    private final java.util.Map<String, Boolean> volatileFields;
     private int instructionId = 0;
 
     // private final boolean isReplay = "REPLAY".equals(System.getProperty("tool.mode"));
@@ -65,10 +77,11 @@ public class SyncTransformer implements ClassFileTransformer {
       return opcode >= Opcodes.IASTORE && opcode <= Opcodes.SASTORE;
     }
 
-    public SyncMethodVisitor(MethodVisitor mv, String className, String methodName) {
+    public SyncMethodVisitor(MethodVisitor mv, String className, String methodName, Map<String, Boolean> volatileFields) {
       super(Opcodes.ASM9, mv);
       this.className = className;
       this.methodName = methodName;
+      this.volatileFields = volatileFields;
     }
     
     @Override
@@ -147,7 +160,8 @@ public class SyncTransformer implements ClassFileTransformer {
       if (descriptor.startsWith("J") || descriptor.startsWith("D")) {
       } else {
         int eventType = (opcode == Opcodes.GETFIELD || opcode == Opcodes.GETSTATIC) ? 5 : 6;
-    
+        
+        boolean isVolatile = volatileFields.getOrDefault(name, false);
         // Check if we need the IS_STATIC flag
         boolean isStatic = (opcode == Opcodes.GETSTATIC || opcode == Opcodes.PUTSTATIC);
 
@@ -168,12 +182,11 @@ public class SyncTransformer implements ClassFileTransformer {
         // 4. Call logField
         mv.visitLdcInsn(eventType);        // 5 or 6
         mv.visitInsn(Opcodes.SWAP); 
-        mv.visitLdcInsn(fieldId);
         mv.visitLdcInsn(siteId);
-        mv.visitInsn(Opcodes.ICONST_0);    // Volatile (set to 1 if you add volatile check)
+        mv.visitInsn(isVolatile ? Opcodes.ICONST_1 : Opcodes.ICONST_0);    // Volatile (set to 1 if you add volatile check)
         mv.visitLdcInsn(isStatic ? 1 : 0); // Static flag
-
-        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logField", "(ILjava/lang/Object;IIZZ)V", false);
+        mv.visitLdcInsn(fieldId);
+        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logField", "(ILjava/lang/Object;IZZI)V", false);
       }
       super.visitFieldInsn(opcode, owner, name, descriptor);
     }

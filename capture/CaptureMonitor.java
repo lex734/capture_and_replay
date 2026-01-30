@@ -15,7 +15,7 @@ public class CaptureMonitor {
     }
   }
 
-  public static void logField(int eventType, Object owner, int fieldId, int currentSiteId, boolean isVolatile, boolean isStatic) {
+  public static void logField(int eventType, Object owner, int fieldId, boolean isVolatile, boolean isStatic, int currentSiteId) {
     if (isInside.get()) return;
     isInside.set(true);
     try {

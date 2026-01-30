@@ -10,10 +10,18 @@ public class Agent {
     try {
       System.out.println("[Agent] Initializing Recorder...");
 
-      String agentPath = Agent.class.getProtectionDomain().getCodeSource().getLocation().toURI().getPath();
-      File agentJar = new File(agentPath);
+      java.net.URI agentUri = Agent.class.getProtectionDomain().getCodeSource().getLocation().toURI();
+      File agentJar = new File(agentUri);
+      
+      // 2. Get the 'libs' folder (the parent of the agent jar)
+      File libsDir = agentJar.getParentFile(); 
 
-      File coreJar = new File(agentPath + "/libs/trace-common.jar");
+      // 3. Locate the common JAR in that same 'libs' folder
+      File coreJar = new File(libsDir, "trace-common.jar");
+
+      // DEBUG: Let's see exactly what we found
+      System.out.println("[Agent] Found Agent at: " + agentJar.getAbsolutePath());
+      System.out.println("[Agent] Found Common at: " + coreJar.getAbsolutePath());
       if (!coreJar.exists()) {
         System.err.println("[Agent] FATAL ERROR: Could not find " + coreJar.getAbsolutePath());
         System.err.println("[Agent] Please ensure you are running java from the project root.");

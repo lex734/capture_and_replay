@@ -15,11 +15,11 @@ public class CaptureMonitor {
     }
   }
 
-  public static void logField(int eventType, Object owner, int fieldId, boolean isVolatile, boolean isStatic, int currentSiteId) {
+  public static void logField(int eventType, Object owner, int currentSiteId, boolean isVolatile, boolean isStatic, String fieldName) {
     if (isInside.get()) return;
     isInside.set(true);
     try {
-      TraceLogger.logField(eventType, owner, currentSiteId, isVolatile, isStatic, fieldId);
+      TraceLogger.logField(eventType, owner, currentSiteId, isVolatile, isStatic, fieldName);
     } finally {
       isInside.set(false);
     }

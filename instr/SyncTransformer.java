@@ -167,7 +167,6 @@ public class SyncTransformer implements ClassFileTransformer {
 
         String siteKey = className + "." + methodName + "#" + instructionId++;
         int siteId = siteKey.hashCode();
-        int fieldId = (owner + "." + name).hashCode();
 
         // 3. Stack Surgery (Still needed to get the 'owner' for the logger)
         if (opcode == Opcodes.PUTFIELD) {
@@ -185,8 +184,8 @@ public class SyncTransformer implements ClassFileTransformer {
         mv.visitLdcInsn(siteId);
         mv.visitInsn(isVolatile ? Opcodes.ICONST_1 : Opcodes.ICONST_0);    // Volatile (set to 1 if you add volatile check)
         mv.visitLdcInsn(isStatic ? 1 : 0); // Static flag
-        mv.visitLdcInsn(fieldId);
-        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logField", "(ILjava/lang/Object;IZZI)V", false);
+        mv.visitLdcInsn(name);
+        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logField", "(ILjava/lang/Object;IZZLjava/lang/String;)V", false);
       }
       super.visitFieldInsn(opcode, owner, name, descriptor);
     }

@@ -56,11 +56,20 @@ public class IdentityMapper {
         }
     }
 
+    // field identity relative to the object
+    private static final ConcurrentHashMap<String, Integer> fieldToFirstSite = new ConcurrentHashMap<>();
+
+    public static int getFieldId(BirthId objectBirthId, String fieldName, int currentSiteId) {
+        String fieldKey = objectBirthId.siteId + ":" + objectBirthId.count + ":" + fieldName;
+        return fieldToFirstSite.computeIfAbsent(fieldKey, k -> currentSiteId);
+    }
+
     public static void reset() {
         tidToRoleId.clear();
         roleCounter.set(1);
         objToId.clear();
         siteCounters.clear();
+        fieldToFirstSite.clear();
         System.out.println("[IdentityMapper] Maps reset for new run.");
     }
 }

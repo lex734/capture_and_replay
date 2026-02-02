@@ -7,10 +7,10 @@ public class TraceLogger {
     private static final AtomicLong globalSeq = new AtomicLong(0);
 
     // for synchronization events such as MONITOR_ENTER, MONITOR_EXIT
-    public static void logSync(int eventType, Object lock, int currentSiteId) {
+    public static void logSync(int eventType, Object lock, String siteString) {
         long seq = globalSeq.getAndIncrement();
         long tid = Thread.currentThread().getId();
-
+        int currentSiteId = IdentityMapper.getSiteId(siteString);
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         BirthId birthId = IdentityMapper.getBirthId(lock, currentSiteId);
 
@@ -22,15 +22,16 @@ public class TraceLogger {
     }
 
     // for field access events
-    public static void logField(int eventType, Object owner, int currentSiteId, boolean isVolatile, boolean isStatic, String fieldName) {
+    public static void logField(int eventType, Object owner, String siteString, boolean isVolatile, boolean isStatic, String fieldName) {
         long seq = globalSeq.getAndIncrement();
         long tid = Thread.currentThread().getId();
-
+        int currentSiteId = IdentityMapper.getSiteId(siteString);
+    
         int flags = (isVolatile ? BinarySchema.Flags.IS_VOLATILE : 0) | (isStatic ? BinarySchema.Flags.IS_STATIC : 0);
         BirthId birthId = IdentityMapper.getBirthId(owner, currentSiteId);
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         int fieldId = IdentityMapper.getFieldId(birthId, fieldName, currentSiteId);
-        
+
         String eventName = (eventType == BinarySchema.Event.FIELD_READ) ? "FIELD_READ" : "FIELD_WRITE";
         System.out.println(String.format("[FIELD] seq=%d, thread=%d, roleId=%d, event=%s(%d), owner=%s, ownerSiteId=%d, ownerCount=%d, fieldId=%d, volatile=%b, static=%b, siteId=%d",
             seq, tid, roleId, eventName, eventType,
@@ -41,10 +42,11 @@ public class TraceLogger {
     }
 
     // for array access events
-    public static void logArray(int eventType, Object array, int index, int currentSiteId) {
+    public static void logArray(int eventType, Object array, int index, String siteString) {
         long seq = globalSeq.getAndIncrement();
         long tid = Thread.currentThread().getId();
-
+        int currentSiteId = IdentityMapper.getSiteId(siteString);
+        
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         BirthId birthId = IdentityMapper.getBirthId(array, currentSiteId);
         

@@ -67,7 +67,7 @@ public class SyncTransformer implements ClassFileTransformer {
     // private final String monitorClass = isReplay ? "replay/ReplayMonitor" : "capture/CaptureMonitor";
     // private final String monitorMethod = isReplay ? "checkSync" : "logSync";
     private final String monitorClass = "capture/CaptureMonitor";
-    private final String monitorDescriptor = "(ILjava/lang/Object;I)V";
+    private final String monitorDescriptor = "(ILjava/lang/Object;Ljava/lang/String;)V";
     
     private boolean isArrayLoad(int opcode) {
       return opcode >= Opcodes.IALOAD && opcode <= Opcodes.SALOAD;
@@ -89,19 +89,19 @@ public class SyncTransformer implements ClassFileTransformer {
         // Handle Intrinsic Locks
         if (opcode == Opcodes.MONITORENTER || opcode == Opcodes.MONITOREXIT) {
             int eventType = (opcode == Opcodes.MONITORENTER) ? 1 : 2;
-            int siteId = (className + "." + methodName + "#" + instructionId++).hashCode();
+            String siteString = className + "." + methodName + "#" + instructionId++;
 
             mv.visitInsn(Opcodes.DUP);         // Keep the lock object
             mv.visitLdcInsn(eventType);        // [lock, lock, type]
             mv.visitInsn(Opcodes.SWAP);        // [lock, type, lock]
-            mv.visitLdcInsn(siteId);           // [lock, type, lock, site]
+            mv.visitLdcInsn(siteString);           // [lock, type, lock, siteString]
             
-            // Matches CaptureMonitor.logSync(int type, Object lock, int siteId)
-            mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logSync", "(ILjava/lang/Object;I)V", false);
+            // Matches CaptureMonitor.logSync(int type, Object lock, String siteString)
+            mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logSync", "(ILjava/lang/Object;Ljava/lang/String;)V", false);
         } else if (opcode == Opcodes.LASTORE || opcode == Opcodes.DASTORE || opcode == Opcodes.LALOAD || opcode == Opcodes.DALOAD) {
         } else if (isArrayLoad(opcode) || isArrayStore(opcode)) {
           int eventType = isArrayLoad(opcode) ? 7 : 9;
-          int siteId = (className + "." + methodName + "#" + instructionId++).hashCode();
+          String siteString = className + "." + methodName + "#" + instructionId++;
 
           if (isArrayLoad(opcode)) {
             // Stack: [arrayRef, index]
@@ -109,9 +109,9 @@ public class SyncTransformer implements ClassFileTransformer {
             mv.visitLdcInsn(eventType);        // [arrayRef, index, arrayRef, index, type]
             mv.visitInsn(Opcodes.DUP_X2);      // [arrayRef, index, type, arrayRef, index, type]
             mv.visitInsn(Opcodes.POP);         // [arrayRef, index, type, arrayRef, index]
-            mv.visitLdcInsn(siteId);           // [arrayRef, index, type, arrayRef, index, siteId]
+            mv.visitLdcInsn(siteString);           // [arrayRef, index, type, arrayRef, index, siteString]
 
-            mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logArray", "(ILjava/lang/Object;II)V", false);
+            mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logArray", "(ILjava/lang/Object;ILjava/lang/String;)V", false);
           } else {
             mv.visitInsn(Opcodes.DUP_X2);      // Stack: [value, arrayRef, index, value]
             mv.visitInsn(Opcodes.POP);          // Stack: [value, arrayRef, index]
@@ -121,8 +121,8 @@ public class SyncTransformer implements ClassFileTransformer {
             mv.visitInsn(Opcodes.DUP_X2);       // Stack: [value, arrayRef, index, type, arrayRef, index, type]
             mv.visitInsn(Opcodes.POP);          // Stack: [value, arrayRef, index, type, arrayRef, index]
             
-            mv.visitLdcInsn(siteId);            // Stack: [value, arrayRef, index, type, arrayRef, index, siteId]
-            mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logArray", "(ILjava/lang/Object;II)V", false);
+            mv.visitLdcInsn(siteString);            // Stack: [value, arrayRef, index, type, arrayRef, index, siteId]
+            mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logArray", "(ILjava/lang/Object;ILjava/lang/String;)V", false);
             mv.visitInsn(Opcodes.DUP2_X1);      // Stack: [arrayRef, index, value, arrayRef, index]
             mv.visitInsn(Opcodes.POP2);         // Stack: [arrayRef, index, value]
           }
@@ -133,22 +133,21 @@ public class SyncTransformer implements ClassFileTransformer {
     @Override
     public void visitMethodInsn(int opcode, String owner, String name, String descriptor, boolean isInterface) {
       if (owner.equals("java/util/concurrent/locks/LockSupport")) {
-        String siteKey = className + "." + methodName + "#" + instructionId++;
-        int siteId = siteKey.hashCode();
+        String siteString = className + "." + methodName + "#" + instructionId++;
 
         if (name.equals("park") && descriptor.equals("(Ljava/lang/Object;)V")) {
           // Stack has [lockObj]
           mv.visitInsn(Opcodes.DUP); 
           mv.visitLdcInsn(3); // THREAD_PARK
           mv.visitInsn(Opcodes.SWAP);
-          mv.visitLdcInsn(siteId);
+          mv.visitLdcInsn(siteString);
           mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logSync", monitorDescriptor, false);
         } else if (name.equals("unpark") && descriptor.equals("(Ljava/lang/Thread;)V")) {
           // Stack has [threadObj]
           mv.visitInsn(Opcodes.DUP);
           mv.visitLdcInsn(4); // THREAD_UNPARK
           mv.visitInsn(Opcodes.SWAP);
-          mv.visitLdcInsn(siteId);
+          mv.visitLdcInsn(siteString);
           mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logSync", monitorDescriptor, false);
         }
       }
@@ -165,8 +164,7 @@ public class SyncTransformer implements ClassFileTransformer {
         // Check if we need the IS_STATIC flag
         boolean isStatic = (opcode == Opcodes.GETSTATIC || opcode == Opcodes.PUTSTATIC);
 
-        String siteKey = className + "." + methodName + "#" + instructionId++;
-        int siteId = siteKey.hashCode();
+        String siteString = className + "." + methodName + "#" + instructionId++;
 
         // 3. Stack Surgery (Still needed to get the 'owner' for the logger)
         if (opcode == Opcodes.PUTFIELD) {
@@ -181,11 +179,11 @@ public class SyncTransformer implements ClassFileTransformer {
         // 4. Call logField
         mv.visitLdcInsn(eventType);        // 5 or 6
         mv.visitInsn(Opcodes.SWAP); 
-        mv.visitLdcInsn(siteId);
+        mv.visitLdcInsn(siteString);
         mv.visitInsn(isVolatile ? Opcodes.ICONST_1 : Opcodes.ICONST_0);    // Volatile (set to 1 if you add volatile check)
         mv.visitLdcInsn(isStatic ? 1 : 0); // Static flag
         mv.visitLdcInsn(name);
-        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logField", "(ILjava/lang/Object;IZZLjava/lang/String;)V", false);
+        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logField", "(ILjava/lang/Object;Ljava/lang/String;ZZLjava/lang/String;)V", false);
       }
       super.visitFieldInsn(opcode, owner, name, descriptor);
     }

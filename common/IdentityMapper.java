@@ -11,6 +11,13 @@ public class IdentityMapper {
     private static final ConcurrentHashMap<Long, Integer> tidToRoleId = new ConcurrentHashMap<>();
     private static final AtomicInteger roleCounter = new AtomicInteger(1);
 
+    private static final ConcurrentHashMap<String, Integer> siteStringToId = new ConcurrentHashMap<>();
+    private static final AtomicInteger siteIdCounter = new AtomicInteger(1);
+
+    public static int getSiteId(String siteString) {
+        return siteStringToId.computeIfAbsent(siteString, k -> siteIdCounter.getAndIncrement());
+    }
+
     public static int getRoleIdBySite(long tid, int siteId) {
         // A thread is defined by the first Site ID it hits
         Integer existingRole = tidToRoleId.get(tid);
@@ -67,6 +74,8 @@ public class IdentityMapper {
     public static void reset() {
         tidToRoleId.clear();
         roleCounter.set(1);
+        siteStringToId.clear();
+        siteIdCounter.set(1);
         objToId.clear();
         siteCounters.clear();
         fieldToFirstSite.clear();

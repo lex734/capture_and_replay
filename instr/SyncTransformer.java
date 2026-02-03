@@ -132,26 +132,92 @@ public class SyncTransformer implements ClassFileTransformer {
 
     @Override
     public void visitMethodInsn(int opcode, String owner, String name, String descriptor, boolean isInterface) {
-      if (owner.equals("java/util/concurrent/locks/LockSupport")) {
         String siteString = className + "." + methodName + "#" + instructionId++;
 
-        if (name.equals("park") && descriptor.equals("(Ljava/lang/Object;)V")) {
-          // Stack has [lockObj]
-          mv.visitInsn(Opcodes.DUP); 
-          mv.visitLdcInsn(3); // THREAD_PARK
-          mv.visitInsn(Opcodes.SWAP);
-          mv.visitLdcInsn(siteString);
-          mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logSync", monitorDescriptor, false);
-        } else if (name.equals("unpark") && descriptor.equals("(Ljava/lang/Thread;)V")) {
-          // Stack has [threadObj]
-          mv.visitInsn(Opcodes.DUP);
-          mv.visitLdcInsn(4); // THREAD_UNPARK
-          mv.visitInsn(Opcodes.SWAP);
-          mv.visitLdcInsn(siteString);
-          mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logSync", monitorDescriptor, false);
+        if (owner.equals("java/util/concurrent/locks/LockSupport")) {
+            if (name.equals("park")) {
+                if (descriptor.equals("(Ljava/lang/Object;)V")) {
+                    mv.visitInsn(Opcodes.DUP); 
+                } else {
+                    mv.visitInsn(Opcodes.ACONST_NULL);
+                }
+                logSyncCall(3, siteString); // THREAD_PARK
+            } 
+            else if (name.equals("unpark")) {
+                mv.visitInsn(Opcodes.DUP);
+                logSyncCall(4, siteString); // THREAD_UNPARK
+            }
+        } 
+        else if (owner.equals("java/lang/Thread")) {
+            if (name.equals("start")) {
+                mv.visitInsn(Opcodes.DUP);
+                logSyncCall(9, siteString); // THREAD_START
+            }
+            else if (name.equals("join")) {
+                // Determine if it is a timed join or infinite join
+                int eventType = descriptor.equals("()V") ? 10 : 18; // 10=JOIN, 18=JOIN_TIMEOUT
+                
+                if (descriptor.equals("()V")) {
+                    mv.visitInsn(Opcodes.DUP);
+                } else {
+                    // Stack surgery for join(long): [threadRef, longValue]
+                    mv.visitInsn(Opcodes.DUP2_X1); 
+                    mv.visitInsn(Opcodes.POP2); 
+                    mv.visitInsn(Opcodes.DUP);      // Duplicate threadRef
+                    mv.visitInsn(Opcodes.DUP_X2);   // Move duplicated ref behind long
+                    mv.visitInsn(Opcodes.POP);      // Clean up top
+                }
+                logSyncCall(eventType, siteString);
+            }
+            else if (name.equals("sleep")) {
+                mv.visitInsn(Opcodes.ACONST_NULL); 
+                logSyncCall(12, siteString); // THREAD_SLEEP
+            }
+            else if (name.equals("yield")) {
+                mv.visitInsn(Opcodes.ACONST_NULL);
+                logSyncCall(14, siteString); // THREAD_YIELD
+            }
         }
-      }
-      super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
+        else if (owner.equals("java/lang/Object")) {
+            if (name.equals("wait")) {
+                if (descriptor.equals("()V")) {
+                    mv.visitInsn(Opcodes.DUP);
+                } else {
+                    // Stack surgery for wait(long): [objRef, longValue]
+                    mv.visitInsn(Opcodes.DUP2_X1); 
+                    mv.visitInsn(Opcodes.POP2); 
+                    mv.visitInsn(Opcodes.DUP);
+                    mv.visitInsn(Opcodes.DUP_X2);
+                    mv.visitInsn(Opcodes.POP);
+                }
+                logSyncCall(15, siteString); // THREAD_WAIT
+            } 
+            else if (name.equals("notify") || name.equals("notifyAll")) {
+                mv.visitInsn(Opcodes.DUP); 
+                logSyncCall(name.equals("notify") ? 16 : 17, siteString);
+            }
+        }
+
+        // Execute the original method call
+        super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
+        if (isBlockingCall(owner, name)) {
+            mv.visitLdcInsn(siteString + "_wakeup");
+            mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logWakeup", "(Ljava/lang/String;)V", false);
+        }
+    }
+
+    // Helper to keep the code clean and ensure the stack [eventType, object, site] is correct
+    private void logSyncCall(int type, String site) {
+        mv.visitLdcInsn(type);
+        mv.visitInsn(Opcodes.SWAP);
+        mv.visitLdcInsn(site);
+        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logSync", monitorDescriptor, false);
+    }
+
+    private boolean isBlockingCall(String owner, String name) {
+        return (owner.equals("java/lang/Thread") && (name.equals("join") || name.equals("sleep"))) ||
+               (owner.equals("java/lang/Object") && name.equals("wait")) ||
+               (owner.equals("java/util/concurrent/locks/LockSupport") && name.equals("park"));
     }
 
     @Override

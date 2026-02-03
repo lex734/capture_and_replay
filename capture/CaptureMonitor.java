@@ -15,6 +15,16 @@ public class CaptureMonitor {
     }
   }
 
+  public static void logWakeup(String siteString) {
+    if (isInside.get()) return;
+    isInside.set(true);
+    try {
+      TraceLogger.logWakeup(siteString);
+    } finally {
+      isInside.set(false);
+    }
+  }
+
   public static void logField(int eventType, Object owner, String siteString, boolean isVolatile, boolean isStatic, String fieldName, String ownerName) {
     if (isInside.get()) return;
     isInside.set(true);

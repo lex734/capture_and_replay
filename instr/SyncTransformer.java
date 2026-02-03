@@ -183,7 +183,8 @@ public class SyncTransformer implements ClassFileTransformer {
         mv.visitInsn(isVolatile ? Opcodes.ICONST_1 : Opcodes.ICONST_0);    // Volatile (set to 1 if you add volatile check)
         mv.visitLdcInsn(isStatic ? 1 : 0); // Static flag
         mv.visitLdcInsn(name);
-        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logField", "(ILjava/lang/Object;Ljava/lang/String;ZZLjava/lang/String;)V", false);
+        mv.visitLdcInsn(className);
+        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logField", "(ILjava/lang/Object;Ljava/lang/String;ZZLjava/lang/String;Ljava/lang/String;)V", false);
       }
       super.visitFieldInsn(opcode, owner, name, descriptor);
     }

@@ -6,16 +6,16 @@ import java.nio.channels.FileChannel;
 
 public class BinarySchema {
   /* Size of each record in bytes
-*  | Offset | Size | Field    | Description                                       |
- * |--------|------|-----------|--------------------------------------------------|
- * | 0      | 8    | seq       | Global Atomic Sequence (The "Clock")             |
- * | 8      | 8    | roleId    | Logical Role ID (Mapped from raw Thread ID)      |
- * | 16     | 4    | type      | Event Type (8 bits) + Flags (24 bits)            |
- * | 20     | 4    | objSite   | Birth Site: Where this object was first seen     |
- * | 24     | 4    | objCount  | Birth Count: N-th object seen at that site       |
- * | 28     | 4    | data      | Polymorphic: FieldID, Array Index, or SiteID     |
-  */
-  public static final int RECORD_SIZE = 28;
+   * | Offset | Size | Field     | Description                                      |
+   * |--------|------|-----------|--------------------------------------------------|
+   * | 0      | 8    | seq       | Global Atomic Sequence (The "Clock")             |
+   * | 8      | 8    | roleId    | Logical Role ID (Mapped from raw Thread ID)     |
+   * | 16     | 4    | typeFlags | Event Type (8 bits) + Flags (24 bits)            |
+   * | 20     | 4    | objSite   | Birth Site: Where this object was first seen    |
+   * | 24     | 4    | objCount  | Birth Count: N-th object seen at that site      |
+   * | 28     | 4    | data      | Polymorphic: FieldID, Array Index, or SiteID    |
+   */
+  public static final int RECORD_SIZE = 32; // 8 + 8 + 4 + 4 + 4 + 4
 
   public static class Event {
     public static final int MONITOR_ENTER = 1;

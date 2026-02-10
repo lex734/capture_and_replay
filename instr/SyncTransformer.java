@@ -170,7 +170,7 @@ public class SyncTransformer implements ClassFileTransformer {
                 logSyncCall(eventType, siteString);
             }
             else if (name.equals("sleep")) {
-                mv.visitInsn(Opcodes.ACONST_NULL); 
+                mv.visitInsn(Opcodes.ACONST_NULL);
                 logSyncCall(12, siteString); // THREAD_SLEEP
             }
             else if (name.equals("yield")) {

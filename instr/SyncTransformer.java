@@ -100,7 +100,7 @@ public class SyncTransformer implements ClassFileTransformer {
             mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logSync", "(ILjava/lang/Object;Ljava/lang/String;)V", false);
         } else if (opcode == Opcodes.LASTORE || opcode == Opcodes.DASTORE || opcode == Opcodes.LALOAD || opcode == Opcodes.DALOAD) {
         } else if (isArrayLoad(opcode) || isArrayStore(opcode)) {
-          int eventType = isArrayLoad(opcode) ? 7 : 9;
+          int eventType = isArrayLoad(opcode) ? 7 : 8;
           String siteString = className + "." + methodName + "#" + instructionId++;
 
           if (isArrayLoad(opcode)) {
@@ -143,6 +143,22 @@ public class SyncTransformer implements ClassFileTransformer {
                 }
                 logSyncCall(3, siteString); // THREAD_PARK
             } 
+            else if (name.equals("parkNanos") || name.equals("parkUntil")) {
+                if (descriptor.startsWith("(Ljava/lang/Object;")) {
+                    // Stack: [blocker, long] — extract blocker copy from under the long
+                    mv.visitInsn(Opcodes.DUP2_X1);  // [long, blocker, long]
+                    mv.visitInsn(Opcodes.POP2);      // [long, blocker]
+                    mv.visitInsn(Opcodes.DUP);       // [long, blocker, blocker_copy]
+                    logSyncCall(3, siteString);      // consumes blocker_copy → [long, blocker]
+                    // Restore original stack order: [blocker, long]
+                    mv.visitInsn(Opcodes.DUP_X2);   // [blocker, long, blocker]
+                    mv.visitInsn(Opcodes.POP);       // [blocker, long]
+                } else {
+                    // Stack: [long] — no blocker
+                    mv.visitInsn(Opcodes.ACONST_NULL);
+                    logSyncCall(3, siteString);      // THREAD_PARK
+                }
+            }
             else if (name.equals("unpark")) {
                 mv.visitInsn(Opcodes.DUP);
                 logSyncCall(4, siteString); // THREAD_UNPARK
@@ -177,6 +193,21 @@ public class SyncTransformer implements ClassFileTransformer {
                 mv.visitInsn(Opcodes.ACONST_NULL);
                 logSyncCall(14, siteString); // THREAD_YIELD
             }
+            else if (name.equals("interrupt")) {
+                mv.visitInsn(Opcodes.DUP);
+                logSyncCall(11, siteString); // THREAD_INTERRUPT
+            }
+            else if (name.equals("interrupted")) {
+                // Static method — push current thread as the lock to identify
+                // which thread's interrupt status was checked (detection side of HB)
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Thread", "currentThread", "()Ljava/lang/Thread;", false);
+                logSyncCall(19, siteString); // THREAD_INTERRUPT_CHECK
+            }
+            else if (name.equals("isInterrupted")) {
+                // Instance method — receiver is the thread being checked
+                mv.visitInsn(Opcodes.DUP);
+                logSyncCall(19, siteString); // THREAD_INTERRUPT_CHECK
+            }
         }
         else if (owner.equals("java/lang/Object")) {
             if (name.equals("wait")) {
@@ -198,11 +229,54 @@ public class SyncTransformer implements ClassFileTransformer {
             }
         }
 
+        // Detect atomic classes — instrument AFTER the call by capturing return value
+        if (owner.startsWith("java/util/concurrent/atomic/Atomic")) {
+            int atomicEventType = classifyAtomicOp(name);
+            if (atomicEventType != -1) {
+                // Let the original call execute first
+                super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
+
+                // Capture return value based on return type
+                char returnType = getReturnType(descriptor);
+                switch (returnType) {
+                    case 'V':  // void (set, lazySet)
+                        mv.visitLdcInsn(atomicEventType);
+                        mv.visitLdcInsn(siteString);
+                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logAtomicVoid",
+                            "(ILjava/lang/String;)V", false);
+                        break;
+                    case 'J':  // long
+                        mv.visitInsn(Opcodes.DUP2);
+                        mv.visitLdcInsn(atomicEventType);
+                        mv.visitLdcInsn(siteString);
+                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logAtomicLong",
+                            "(JILjava/lang/String;)V", false);
+                        break;
+                    case 'L': case '[':  // Object reference
+                        mv.visitInsn(Opcodes.DUP);
+                        mv.visitLdcInsn(atomicEventType);
+                        mv.visitLdcInsn(siteString);
+                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logAtomicObj",
+                            "(Ljava/lang/Object;ILjava/lang/String;)V", false);
+                        break;
+                    default:  // int, boolean, byte, short, char, float
+                        mv.visitInsn(Opcodes.DUP);
+                        mv.visitLdcInsn(atomicEventType);
+                        mv.visitLdcInsn(siteString);
+                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logAtomicInt",
+                            "(IILjava/lang/String;)V", false);
+                        break;
+                }
+                return; // Skip the super.visitMethodInsn below — already called above
+            }
+        }
+
         // Execute the original method call
         super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
         if (isBlockingCall(owner, name)) {
-            mv.visitLdcInsn(siteString + "_wakeup");
-            mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logWakeup", "(Ljava/lang/String;)V", false);
+            String wakeupSite = className + "." + methodName + "#" + instructionId++;
+            mv.visitInsn(Opcodes.ACONST_NULL);
+            logSyncCall(13, wakeupSite); // THREAD_WAKEUP
         }
     }
 
@@ -217,7 +291,30 @@ public class SyncTransformer implements ClassFileTransformer {
     private boolean isBlockingCall(String owner, String name) {
         return (owner.equals("java/lang/Thread") && (name.equals("join") || name.equals("sleep"))) ||
                (owner.equals("java/lang/Object") && name.equals("wait")) ||
-               (owner.equals("java/util/concurrent/locks/LockSupport") && name.equals("park"));
+               (owner.equals("java/util/concurrent/locks/LockSupport") &&
+                   (name.equals("park") || name.equals("parkNanos") || name.equals("parkUntil")));
+    }
+
+    // Classify atomic method name → event type, or -1 to skip non-atomic methods
+    private static int classifyAtomicOp(String name) {
+        // Skip non-atomic methods (constructors, Object methods, Number conversions, etc.)
+        if (name.equals("<init>") || name.equals("toString") || name.equals("hashCode") ||
+            name.equals("intValue") || name.equals("longValue") || name.equals("floatValue") ||
+            name.equals("doubleValue") || name.equals("length") || name.equals("newUpdater"))
+            return -1;
+        // Writes
+        if (name.startsWith("set") || name.equals("lazySet")) return 21; // ATOMIC_WRITE
+        // Reads (get without "And")
+        if (name.equals("get") || name.equals("getPlain") || name.equals("getOpaque") ||
+            name.equals("getAcquire") || name.equals("getReference") || name.equals("getStamp") ||
+            name.equals("isMarked")) return 20; // ATOMIC_READ
+        // Everything else is read-modify-write
+        return 22; // ATOMIC_RMW
+    }
+
+    // Parse return type from descriptor: "(III)Z" → 'Z', "()V" → 'V', "()Ljava/lang/Object;" → 'L'
+    private static char getReturnType(String descriptor) {
+        return descriptor.charAt(descriptor.indexOf(')') + 1);
     }
 
     @Override
@@ -253,6 +350,57 @@ public class SyncTransformer implements ClassFileTransformer {
         mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logField", "(ILjava/lang/Object;Ljava/lang/String;ZZLjava/lang/String;Ljava/lang/String;)V", false);
       }
       super.visitFieldInsn(opcode, owner, name, descriptor);
+    }
+  }
+  
+  /**
+   * Instruments class initializers (<clinit>) to log CLASS_INIT_BEGIN and CLASS_INIT_END
+   * as special synchronization events. Wrapped around the normal SyncMethodVisitor so that
+   * other instrumentation (fields, arrays, etc.) still applies.
+   */
+  static class ClinitMethodVisitor extends MethodVisitor {
+    private final String className;
+
+    public ClinitMethodVisitor(MethodVisitor mv, String className) {
+      super(Opcodes.ASM9, mv);
+      this.className = className;
+    }
+
+    @Override
+    public void visitCode() {
+      super.visitCode();
+
+      // Log CLASS_INIT_BEGIN at the start of <clinit>
+      String beginSite = className + ".<clinit>#0";
+      // Stack for logSync(int, Object, String): [type, lock, site]
+      mv.visitLdcInsn(23); // BinarySchema.Event.CLASS_INIT_BEGIN
+      mv.visitInsn(Opcodes.ACONST_NULL);
+      mv.visitLdcInsn(beginSite);
+      mv.visitMethodInsn(
+          Opcodes.INVOKESTATIC,
+          "capture/CaptureMonitor",
+          "logSync",
+          "(ILjava/lang/Object;Ljava/lang/String;)V",
+          false);
+    }
+
+    @Override
+    public void visitInsn(int opcode) {
+      // For normal returns and throws, log CLASS_INIT_END before exiting
+      if (opcode == Opcodes.RETURN || opcode == Opcodes.ATHROW) {
+        String endSite = className + ".<clinit>#1";
+        mv.visitLdcInsn(24); // BinarySchema.Event.CLASS_INIT_END
+        mv.visitInsn(Opcodes.ACONST_NULL);
+        mv.visitLdcInsn(endSite);
+        mv.visitMethodInsn(
+            Opcodes.INVOKESTATIC,
+            "capture/CaptureMonitor",
+            "logSync",
+            "(ILjava/lang/Object;Ljava/lang/String;)V",
+            false);
+      }
+
+      super.visitInsn(opcode);
     }
   }
 }

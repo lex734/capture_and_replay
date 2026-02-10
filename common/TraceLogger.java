@@ -74,19 +74,55 @@ public class TraceLogger {
         BinarySchema.write(seq, roleId, ((eventType & 0xFF) | (BinarySchema.Flags.NONE << 8)), birthId.siteId, birthId.count, index);
     }
 
-    public static void logWakeup(String siteString) {
+    // For atomic operations — int/boolean return values
+    public static void logAtomicInt(int returnValue, int eventType, String siteString) {
         long seq = globalSeq.getAndIncrement();
         long tid = Thread.currentThread().getId();
         int currentSiteId = IdentityMapper.getSiteId(siteString);
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+        String eventName = getEventName(eventType);
+        System.out.println(String.format("[ATOMIC] seq=%d, thread=%d, roleId=%d, event=%s(%d), returnInt=%d, siteId=%d",
+            seq, tid, roleId, eventName, eventType, returnValue, currentSiteId));
+        BinarySchema.write(seq, (long)roleId, (eventType & 0xFF), 0, returnValue, currentSiteId);
+    }
 
-        // Wakeups are "Global" events in a replay sense—they don't have a specific lock object
-        // but they mark a position in the global sequence.
-        System.out.println(String.format("[WAKEUP] seq=%d, thread=%d, roleId=%d, siteId=%d",
-            seq, tid, roleId, currentSiteId));
+    // For atomic operations — long return values
+    public static void logAtomicLong(long returnValue, int eventType, String siteString) {
+        long seq = globalSeq.getAndIncrement();
+        long tid = Thread.currentThread().getId();
+        int currentSiteId = IdentityMapper.getSiteId(siteString);
+        int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+        String eventName = getEventName(eventType);
+        System.out.println(String.format("[ATOMIC] seq=%d, thread=%d, roleId=%d, event=%s(%d), returnLong=%d, siteId=%d",
+            seq, tid, roleId, eventName, eventType, returnValue, currentSiteId));
+        BinarySchema.write(seq, (long)roleId, (eventType & 0xFF), (int)(returnValue >> 32), (int)returnValue, currentSiteId);
+    }
 
-        // Event ID 13 for WAKEUP. birthId.siteId 0/0 used as it's a thread-state event
-        BinarySchema.write(seq, (long)roleId, (13 | (BinarySchema.Flags.NONE << 8)), 0, 0, currentSiteId);
+    // For atomic operations — Object return values (uses BirthId for identity)
+    public static void logAtomicObj(Object returnValue, int eventType, String siteString) {
+        long seq = globalSeq.getAndIncrement();
+        long tid = Thread.currentThread().getId();
+        int currentSiteId = IdentityMapper.getSiteId(siteString);
+        int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+        BirthId birthId = IdentityMapper.getBirthId(returnValue, null, currentSiteId);
+        String eventName = getEventName(eventType);
+        System.out.println(String.format("[ATOMIC] seq=%d, thread=%d, roleId=%d, event=%s(%d), returnObj=%s, birthSiteId=%d, birthCount=%d, siteId=%d",
+            seq, tid, roleId, eventName, eventType,
+            returnValue != null ? returnValue.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(returnValue)) : "null",
+            birthId.siteId, birthId.count, currentSiteId));
+        BinarySchema.write(seq, (long)roleId, (eventType & 0xFF), birthId.siteId, birthId.count, currentSiteId);
+    }
+
+    // For atomic operations — void methods (set, lazySet)
+    public static void logAtomicVoid(int eventType, String siteString) {
+        long seq = globalSeq.getAndIncrement();
+        long tid = Thread.currentThread().getId();
+        int currentSiteId = IdentityMapper.getSiteId(siteString);
+        int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+        String eventName = getEventName(eventType);
+        System.out.println(String.format("[ATOMIC] seq=%d, thread=%d, roleId=%d, event=%s(%d), returnVoid, siteId=%d",
+            seq, tid, roleId, eventName, eventType, currentSiteId));
+        BinarySchema.write(seq, (long)roleId, (eventType & 0xFF), 0, 0, currentSiteId);
     }
 
     // Helper method to get event name for sync events
@@ -106,6 +142,12 @@ public class TraceLogger {
             case BinarySchema.Event.THREAD_NOTIFY: return "THREAD_NOTIFY";
             case BinarySchema.Event.THREAD_NOTIFY_ALL: return "THREAD_NOTIFY_ALL";
             case BinarySchema.Event.THREAD_JOIN_TIMEOUT: return "THREAD_JOIN_TIMEOUT";
+            case BinarySchema.Event.THREAD_INTERRUPT_CHECK: return "THREAD_INTERRUPT_CHECK";
+            case BinarySchema.Event.ATOMIC_READ: return "ATOMIC_READ";
+            case BinarySchema.Event.ATOMIC_WRITE: return "ATOMIC_WRITE";
+            case BinarySchema.Event.ATOMIC_RMW: return "ATOMIC_RMW";
+            case BinarySchema.Event.CLASS_INIT_BEGIN: return "CLASS_INIT_BEGIN";
+            case BinarySchema.Event.CLASS_INIT_END: return "CLASS_INIT_END";
             default: return "UNKNOWN(" + eventType + ")";
         }
     }

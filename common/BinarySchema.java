@@ -32,6 +32,12 @@ public class BinarySchema {
         public static final int THREAD_NOTIFY = 16;
         public static final int THREAD_NOTIFY_ALL = 17;
         public static final int THREAD_JOIN_TIMEOUT = 18;
+        public static final int THREAD_INTERRUPT_CHECK = 19;
+        public static final int ATOMIC_READ = 20;
+        public static final int ATOMIC_WRITE = 21;
+        public static final int ATOMIC_RMW = 22;
+        public static final int CLASS_INIT_BEGIN = 23;
+        public static final int CLASS_INIT_END = 24;
     }
 
     public static class Flags {

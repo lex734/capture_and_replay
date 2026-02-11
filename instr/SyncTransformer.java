@@ -2,11 +2,61 @@ package instr;
 
 import java.lang.instrument.ClassFileTransformer;
 import java.security.ProtectionDomain;
-import java.util.Map;
-import java.util.HashMap;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.io.InputStream;
 import org.objectweb.asm.*;
 
 public class SyncTransformer implements ClassFileTransformer {
+
+  // ---- Global volatile field resolution ----
+  // Maps "owner/className" → set of volatile field names.
+  // Populated as classes are transformed; on cache miss for cross-class
+  // field accesses, reads the owner class's bytecode via the classloader.
+  private static final ConcurrentHashMap<String, Set<String>> volatileFieldCache = new ConcurrentHashMap<>();
+
+  /**
+   * Resolves whether a field is volatile by checking the declaring (owner) class.
+   * Checks the global cache first; on miss, reads the owner's class bytes via ASM.
+   */
+  static boolean isFieldVolatile(ClassLoader loader, String owner, String fieldName) {
+    Set<String> fields = volatileFieldCache.get(owner);
+    if (fields != null) {
+      return fields.contains(fieldName);
+    }
+    // Cache miss — read the owner class's bytecode to discover its volatile fields
+    return resolveAndCache(loader, owner, fieldName);
+  }
+
+  private static boolean resolveAndCache(ClassLoader loader, String owner, String fieldName) {
+    try {
+      InputStream is = null;
+      if (loader != null) {
+        is = loader.getResourceAsStream(owner + ".class");
+      }
+      if (is == null) {
+        is = ClassLoader.getSystemResourceAsStream(owner + ".class");
+      }
+      if (is == null) return false;
+
+      ClassReader cr = new ClassReader(is);
+      Set<String> volFields = ConcurrentHashMap.newKeySet();
+      cr.accept(new ClassVisitor(Opcodes.ASM9) {
+        @Override
+        public FieldVisitor visitField(int access, String name, String descriptor, String signature, Object value) {
+          if ((access & Opcodes.ACC_VOLATILE) != 0) {
+            volFields.add(name);
+          }
+          return null;
+        }
+      }, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG);
+
+      volatileFieldCache.put(owner, volFields);
+      return volFields.contains(fieldName);
+    } catch (Exception e) {
+      return false;
+    }
+  }
 
   @Override
   public byte[] transform(ClassLoader loader, String className, Class<?> classBeingRedefined, ProtectionDomain protectionDomain, byte[] classfileBuffer) {
@@ -22,7 +72,7 @@ public class SyncTransformer implements ClassFileTransformer {
       ClassReader reader = new ClassReader(classfileBuffer);
       ClassWriter writer = new ClassWriter(reader, ClassWriter.COMPUTE_FRAMES);
 
-      SyncClassVisitor visitor = new SyncClassVisitor(writer, className);
+      SyncClassVisitor visitor = new SyncClassVisitor(writer, className, loader);
       reader.accept(visitor, 0);
 
       return writer.toByteArray();
@@ -35,17 +85,21 @@ public class SyncTransformer implements ClassFileTransformer {
   // begin by wrapping the class by wrapping methods within the class
   static class SyncClassVisitor extends ClassVisitor {
     private final String className;
-    private final Map<String, Boolean> volatileFields = new HashMap<>();
+    private final ClassLoader loader;
 
-    public SyncClassVisitor(ClassVisitor cv, String className) {
+    public SyncClassVisitor(ClassVisitor cv, String className, ClassLoader loader) {
       super(Opcodes.ASM9, cv);
       this.className = className;
+      this.loader = loader;
     }
 
     @Override
     public FieldVisitor visitField(int access, String name, String descriptor, String signature, Object value) {
+      // Register volatile fields in the global cache as we visit them
       if ((access & Opcodes.ACC_VOLATILE) != 0) {
-        volatileFields.put(name, true);
+        volatileFieldCache
+            .computeIfAbsent(className, k -> ConcurrentHashMap.newKeySet())
+            .add(name);
       }
       return super.visitField(access, name, descriptor, signature, value);
     }
@@ -53,14 +107,14 @@ public class SyncTransformer implements ClassFileTransformer {
     @Override
     public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
       MethodVisitor mv = super.visitMethod(access, name, descriptor, signature, exceptions);
-      return new SyncMethodVisitor(mv, className, name, volatileFields);
+      return new SyncMethodVisitor(mv, className, name, loader);
     }
   }
 
   static class SyncMethodVisitor extends MethodVisitor {
     private final String className;
     private final String methodName;
-    private final java.util.Map<String, Boolean> volatileFields;
+    private final ClassLoader loader;
     private int instructionId = 0;
 
     // private final boolean isReplay = "REPLAY".equals(System.getProperty("tool.mode"));
@@ -77,11 +131,11 @@ public class SyncTransformer implements ClassFileTransformer {
       return opcode >= Opcodes.IASTORE && opcode <= Opcodes.SASTORE;
     }
 
-    public SyncMethodVisitor(MethodVisitor mv, String className, String methodName, Map<String, Boolean> volatileFields) {
+    public SyncMethodVisitor(MethodVisitor mv, String className, String methodName, ClassLoader loader) {
       super(Opcodes.ASM9, mv);
       this.className = className;
       this.methodName = methodName;
-      this.volatileFields = volatileFields;
+      this.loader = loader;
     }
     
     @Override
@@ -323,7 +377,9 @@ public class SyncTransformer implements ClassFileTransformer {
       } else {
         int eventType = (opcode == Opcodes.GETFIELD || opcode == Opcodes.GETSTATIC) ? 5 : 6;
         
-        boolean isVolatile = volatileFields.getOrDefault(name, false);
+        // Resolve volatility from the OWNER class, not just the current class.
+        // This handles cross-class field accesses (e.g., Main accessing Counter.x).
+        boolean isVolatile = SyncTransformer.isFieldVolatile(loader, owner, name);
         // Check if we need the IS_STATIC flag
         boolean isStatic = (opcode == Opcodes.GETSTATIC || opcode == Opcodes.PUTSTATIC);
 
@@ -346,7 +402,7 @@ public class SyncTransformer implements ClassFileTransformer {
         mv.visitInsn(isVolatile ? Opcodes.ICONST_1 : Opcodes.ICONST_0);    // Volatile (set to 1 if you add volatile check)
         mv.visitLdcInsn(isStatic ? 1 : 0); // Static flag
         mv.visitLdcInsn(name);
-        mv.visitLdcInsn(className);
+        mv.visitLdcInsn(owner);
         mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logField", "(ILjava/lang/Object;Ljava/lang/String;ZZLjava/lang/String;Ljava/lang/String;)V", false);
       }
       super.visitFieldInsn(opcode, owner, name, descriptor);

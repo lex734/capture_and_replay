@@ -111,7 +111,8 @@ public class TraceLogger {
         // 5. Pack flags and event type
         int flags = (isVolatile ? BinarySchema.Flags.IS_VOLATILE : 0) | 
                     (isStatic ? BinarySchema.Flags.IS_STATIC : 0);
-        
+        // System.out.println(String.format("isVolatile: %b", isVolatile));
+
         int packedType = BinarySchema.packType(eventType, flags);
     
         // Logging for visibility (Useful for debugging the deterministic interleaving)

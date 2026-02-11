@@ -1,6 +1,7 @@
 package instr;
 
 import common.BinarySchema;
+import common.IdentityMapper;
 import java.lang.instrument.Instrumentation;
 import java.util.jar.JarFile;
 import java.io.File;
@@ -9,7 +10,7 @@ public class Agent {
   public static void premain(String agentArgs, Instrumentation inst) {
     try {
       System.out.println("[Agent] Initializing Recorder...");
-
+      IdentityMapper.reset();
       java.net.URI agentUri = Agent.class.getProtectionDomain().getCodeSource().getLocation().toURI();
       File agentJar = new File(agentUri);
       

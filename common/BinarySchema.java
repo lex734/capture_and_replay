@@ -4,14 +4,26 @@ import java.nio.MappedByteBuffer;
 import java.io.RandomAccessFile;
 import java.nio.channels.FileChannel;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.LongAdder;
 
 public class BinarySchema {
     public static final int RECORD_SIZE = 32;
 
-    // Use an AtomicLong to make recordCount thread-safe and useful
-    private static final AtomicLong recordCount = new AtomicLong(0);
+    // LongAdder uses per-thread striped counters internally — near-zero contention
+    // compared to AtomicLong.incrementAndGet() under high concurrency.
+    private static final LongAdder recordCount = new LongAdder();
     private static MappedByteBuffer buffer;
     private static long maxAllowedEvents;
+
+    // ---- Batched write position allocation ----
+    // Instead of every event doing a CAS on a shared atomic, each thread reserves
+    // BATCH_SIZE slots at once. It then fills those slots locally with zero contention.
+    // CAS only happens once per BATCH_SIZE events (64x reduction in atomic ops).
+    private static final AtomicLong writePos = new AtomicLong(0);
+    private static final int BATCH_SIZE = 64;
+
+    // Per-thread batch state: [0] = batchStart, [1] = remainingSlots
+    private static final ThreadLocal<long[]> batchState = ThreadLocal.withInitial(() -> new long[]{-1, 0});
 
     public static class Event {
         public static final int MONITOR_ENTER = 1;
@@ -59,17 +71,34 @@ public class BinarySchema {
         return (eventId & 0xFF) | (flags << 8);
     }
 
+    /**
+     * Allocates the next write slot from the per-thread batch.
+     * When a batch is exhausted, reserves a new batch via a single atomic CAS.
+     * This amortizes the atomic contention by BATCH_SIZE (64x reduction).
+     */
+    private static long allocateSlot() {
+        long[] state = batchState.get();
+        if (state[1] <= 0) {
+            // Reserve a new batch — single CAS, amortized over BATCH_SIZE events
+            state[0] = writePos.getAndAdd(BATCH_SIZE);
+            state[1] = BATCH_SIZE;
+        }
+        long slot = state[0] + (BATCH_SIZE - state[1]);
+        state[1]--;
+        return slot;
+    }
+
     public static void write(long seq, long roleId, int packedType, int objSite, int objCount, int data) {
-        if (buffer == null || seq >= maxAllowedEvents) return;
+        long slot = allocateSlot();
+        if (buffer == null || slot >= maxAllowedEvents) return;
 
-        // Track that a record was written
-        recordCount.incrementAndGet();
+        // LongAdder.increment() — near-zero contention (striped counters)
+        recordCount.increment();
 
-        // Calculate position based on the global sequence
-        int pos = (int) (seq * RECORD_SIZE);
+        // Write at the allocated slot position (not at seq position)
+        int pos = (int) (slot * RECORD_SIZE);
 
-        // Atomic write to the memory-mapped buffer
-        buffer.putLong(pos, seq);
+        buffer.putLong(pos, seq);        // packed epoch<<32 | localSeq
         buffer.putLong(pos + 8, roleId);
         buffer.putInt(pos + 16, packedType);
         buffer.putInt(pos + 20, objSite);
@@ -77,8 +106,13 @@ public class BinarySchema {
         buffer.putInt(pos + 28, data);
     }
 
-    // New helper to see how many events were captured
+    // How many events were actually written
     public static long getRecordedCount() {
-        return recordCount.get();
+        return recordCount.sum();
+    }
+
+    // Highest allocated slot index (includes potentially unused batch tail slots)
+    public static long getHighWaterMark() {
+        return writePos.get();
     }
 }

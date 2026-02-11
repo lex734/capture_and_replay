@@ -9,15 +9,14 @@ public class TraceLogger {
     // The global epoch only advances on the RELEASE-SIDE of JMM happens-before edges.
     // Acquire-side events and non-synchronization events perform a volatile READ
     // of the epoch — no CAS, no contention.
-    //
-    // This means: MONITOR_ENTER, THREAD_JOIN, THREAD_WAIT, THREAD_PARK,
-    // THREAD_SLEEP, THREAD_YIELD, ATOMIC_READ, volatile FIELD_READ, CLASS_INIT_BEGIN,
-    // and all non-volatile field/array accesses never touch the atomic.
+    // Reduces contention on an overarching global atomic that tracks the sequence
+    // of operations. After all, only synchronization events should advance the
+    // global sequence number.
     private static final AtomicLong globalEpoch = new AtomicLong(0);
 
     // Per-thread state: [0] = localSeq, [1] = cachedEpoch
     //   localSeq: incremented on every event (thread-local, zero contention)
-    //   cachedEpoch: the epoch snapshot at the time of the event
+    //   cachedEpoch: the global epoch snapshot at the time of the event
     private static final ThreadLocal<long[]> threadState = ThreadLocal.withInitial(() -> new long[]{0, 0});
 
     /**
@@ -41,7 +40,7 @@ public class TraceLogger {
      * Determines whether this event type is the release-side of a JMM happens-before edge.
      * Only release-side events advance the global epoch.
      *
-     * JMM §17.4.5 happens-before rules:
+     * JMM 17.4.5 happens-before rules:
      *   unlock(m) HB lock(m)                → MONITOR_EXIT is release
      *   Thread.start() HB first action       → THREAD_START is release
      *   notify/notifyAll HB wait return      → THREAD_NOTIFY[_ALL] is release
@@ -88,9 +87,9 @@ public class TraceLogger {
     }
 
     public static void logField(int eventType, Object owner, String siteString, boolean isVolatile, boolean isStatic, String fieldName, String ownerName) {
-        // JMM §17.4.5: only volatile WRITES are release-side HB.
-        // Volatile reads are acquire-side — just read the epoch.
-        // Non-volatile accesses have no HB significance.
+        // JMM 17.4.5: only volatile WRITES are release-side HB.
+        // Volatile READS are acquire-side — just read the epoch.
+        // Non-volatile accesses (including static field reads and writes) have no HB significance.
         boolean advanceEpoch = isVolatile && (eventType == BinarySchema.Event.FIELD_WRITE);
         long seq = nextSeq(advanceEpoch);
         long tid = Thread.currentThread().getId();

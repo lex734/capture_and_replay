@@ -45,11 +45,9 @@ public class TraceLogger {
         int packedType = BinarySchema.packType(eventType, flags);
     
         // Logging for visibility (Useful for debugging the deterministic interleaving)
-        if (isStatic) {
-            String eventName = (eventType == BinarySchema.Event.FIELD_READ) ? "READ" : "WRITE";
-            System.out.println(String.format("[STATIC-COORD] seq=%d, role=%d, event=%s, field=%s.%s, fieldId=%d", 
-                seq, roleId, eventName, ownerName, fieldName, fieldId));
-        }
+        String eventName = (eventType == BinarySchema.Event.FIELD_READ) ? "READ" : "WRITE";
+        System.out.println(String.format("[STATIC-COORD] seq=%d, role=%d, event=%s, field=%s.%s, fieldId=%d", 
+            seq, roleId, eventName, ownerName, fieldName, fieldId));
     
         // 6. Write to Binary Log
         // Data field contains the fieldId (the unique coordinate for this variable)

@@ -152,7 +152,36 @@ public class SyncTransformer implements ClassFileTransformer {
             
             // Matches CaptureMonitor.logSync(int type, Object lock, String siteString)
             mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logSync", "(ILjava/lang/Object;Ljava/lang/String;)V", false);
+        // Handle long/double array operations (category-2 values take 2 stack slots)
         } else if (opcode == Opcodes.LASTORE || opcode == Opcodes.DASTORE || opcode == Opcodes.LALOAD || opcode == Opcodes.DALOAD) {
+          int eventType = (opcode == Opcodes.LALOAD || opcode == Opcodes.DALOAD) ? 7 : 8; // ARRAY_READ or ARRAY_WRITE
+          String siteString = className + "." + methodName + "#" + instructionId++;
+
+          if (opcode == Opcodes.LALOAD || opcode == Opcodes.DALOAD) {
+            // Stack: [arrayRef, index] — identical to regular array load (value not yet loaded)
+            mv.visitInsn(Opcodes.DUP2);        // [arrayRef, index, arrayRef, index]
+            mv.visitLdcInsn(eventType);        // [arrayRef, index, arrayRef, index, type]
+            mv.visitInsn(Opcodes.DUP_X2);      // [arrayRef, index, type, arrayRef, index, type]
+            mv.visitInsn(Opcodes.POP);         // [arrayRef, index, type, arrayRef, index]
+            mv.visitLdcInsn(siteString);       // [arrayRef, index, type, arrayRef, index, siteString]
+
+            mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logArray", "(ILjava/lang/Object;ILjava/lang/String;)V", false);
+          } else {
+            // LASTORE / DASTORE — value is category-2 (2 stack slots)
+            // Stack: [arrayRef, index, wide_value(cat2)]
+            mv.visitInsn(Opcodes.DUP2_X2);     // [wide_value, arrayRef, index, wide_value]  (DUP2_X2 Form 2: cat2 over cat1+cat1)
+            mv.visitInsn(Opcodes.POP2);         // [wide_value, arrayRef, index]
+            mv.visitInsn(Opcodes.DUP2);         // [wide_value, arrayRef, index, arrayRef, index]
+            mv.visitLdcInsn(eventType);        // [wide_value, arrayRef, index, arrayRef, index, type]
+            mv.visitInsn(Opcodes.DUP_X2);      // [wide_value, arrayRef, index, type, arrayRef, index, type]
+            mv.visitInsn(Opcodes.POP);         // [wide_value, arrayRef, index, type, arrayRef, index]
+            mv.visitLdcInsn(siteString);       // [wide_value, arrayRef, index, type, arrayRef, index, site]
+
+            mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logArray", "(ILjava/lang/Object;ILjava/lang/String;)V", false);
+            // Stack: [wide_value, arrayRef, index] — restore to [arrayRef, index, wide_value]
+            mv.visitInsn(Opcodes.DUP2_X2);     // [arrayRef, index, wide_value, arrayRef, index]  (DUP2_X2 Form 3: cat1+cat1 over cat2)
+            mv.visitInsn(Opcodes.POP2);         // [arrayRef, index, wide_value]
+          }
         } else if (isArrayLoad(opcode) || isArrayStore(opcode)) {
           int eventType = isArrayLoad(opcode) ? 7 : 8;
           String siteString = className + "." + methodName + "#" + instructionId++;
@@ -351,7 +380,7 @@ public class SyncTransformer implements ClassFileTransformer {
 
     // Classify atomic method name → event type, or -1 to skip non-atomic methods
     private static int classifyAtomicOp(String name) {
-        // Skip non-atomic methods (constructors, Object methods, Number conversions, etc.)
+        // Skip non-atomic methods that are by default used in the atomic class
         if (name.equals("<init>") || name.equals("toString") || name.equals("hashCode") ||
             name.equals("intValue") || name.equals("longValue") || name.equals("floatValue") ||
             name.equals("doubleValue") || name.equals("length") || name.equals("newUpdater"))
@@ -373,38 +402,52 @@ public class SyncTransformer implements ClassFileTransformer {
 
     @Override
     public void visitFieldInsn(int opcode, String owner, String name, String descriptor) {
-      if (descriptor.startsWith("J") || descriptor.startsWith("D")) {
+      boolean isWide = descriptor.startsWith("J") || descriptor.startsWith("D");
+      int eventType = (opcode == Opcodes.GETFIELD || opcode == Opcodes.GETSTATIC) ? 5 : 6;
+      
+      // Resolve volatility from the OWNER class, not just the current class.
+      // This handles cross-class field accesses (e.g., Main accessing Counter.x).
+      boolean isVolatile = SyncTransformer.isFieldVolatile(loader, owner, name);
+      // Check if we need the IS_STATIC flag
+      boolean isStatic = (opcode == Opcodes.GETSTATIC || opcode == Opcodes.PUTSTATIC);
+
+      String siteString = className + "." + methodName + "#" + instructionId++;
+
+      // Stack surgery to extract the owner object reference for logging
+      if (opcode == Opcodes.PUTFIELD) {
+          if (isWide) {
+              // Stack: [objectRef, wide_value(cat2)]
+              mv.visitInsn(Opcodes.DUP2_X1);   // [wide_value, objectRef, wide_value]  (DUP2_X1 Form 2: cat2 over cat1)
+              mv.visitInsn(Opcodes.POP2);       // [wide_value, objectRef]
+              mv.visitInsn(Opcodes.DUP);        // [wide_value, objectRef, objectRef_copy]
+          } else {
+              // Stack: [objectRef, value(cat1)]
+              mv.visitInsn(Opcodes.DUP2);       // [objectRef, value, objectRef, value]
+              mv.visitInsn(Opcodes.POP);        // [objectRef, value, objectRef]
+          }
+      } else if (opcode == Opcodes.GETFIELD) {
+          mv.visitInsn(Opcodes.DUP);            // [objectRef, objectRef_copy]
       } else {
-        int eventType = (opcode == Opcodes.GETFIELD || opcode == Opcodes.GETSTATIC) ? 5 : 6;
-        
-        // Resolve volatility from the OWNER class, not just the current class.
-        // This handles cross-class field accesses (e.g., Main accessing Counter.x).
-        boolean isVolatile = SyncTransformer.isFieldVolatile(loader, owner, name);
-        // Check if we need the IS_STATIC flag
-        boolean isStatic = (opcode == Opcodes.GETSTATIC || opcode == Opcodes.PUTSTATIC);
-
-        String siteString = className + "." + methodName + "#" + instructionId++;
-
-        // 3. Stack Surgery (Still needed to get the 'owner' for the logger)
-        if (opcode == Opcodes.PUTFIELD) {
-            mv.visitInsn(Opcodes.DUP2); 
-            mv.visitInsn(Opcodes.POP);
-        } else if (opcode == Opcodes.GETFIELD) {
-            mv.visitInsn(Opcodes.DUP);
-        } else {
-            mv.visitInsn(Opcodes.ACONST_NULL); // GETSTATIC/PUTSTATIC has no owner
-        }
-
-        // 4. Call logField
-        mv.visitLdcInsn(eventType);        // 5 or 6
-        mv.visitInsn(Opcodes.SWAP); 
-        mv.visitLdcInsn(siteString);
-        mv.visitInsn(isVolatile ? Opcodes.ICONST_1 : Opcodes.ICONST_0);    // Volatile (set to 1 if you add volatile check)
-        mv.visitLdcInsn(isStatic ? 1 : 0); // Static flag
-        mv.visitLdcInsn(name);
-        mv.visitLdcInsn(owner);
-        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logField", "(ILjava/lang/Object;Ljava/lang/String;ZZLjava/lang/String;Ljava/lang/String;)V", false);
+          mv.visitInsn(Opcodes.ACONST_NULL);    // GETSTATIC/PUTSTATIC — no owner instance
       }
+
+      // Log the field access — objectRef (or null for static) is on top of stack
+      mv.visitLdcInsn(eventType);        // 5 or 6
+      mv.visitInsn(Opcodes.SWAP); 
+      mv.visitLdcInsn(siteString);
+      mv.visitInsn(isVolatile ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
+      mv.visitLdcInsn(isStatic ? 1 : 0);
+      mv.visitLdcInsn(name);
+      mv.visitLdcInsn(owner);
+      mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logField", "(ILjava/lang/Object;Ljava/lang/String;ZZLjava/lang/String;Ljava/lang/String;)V", false);
+
+      // Restore stack order for wide PUTFIELD
+      if (opcode == Opcodes.PUTFIELD && isWide) {
+          // Stack is [wide_value, objectRef] — need [objectRef, wide_value]
+          mv.visitInsn(Opcodes.DUP_X2);        // [objectRef, wide_value, objectRef]  (DUP_X2 Form 2: cat1 over cat2)
+          mv.visitInsn(Opcodes.POP);            // [objectRef, wide_value]
+      }
+
       super.visitFieldInsn(opcode, owner, name, descriptor);
     }
   }

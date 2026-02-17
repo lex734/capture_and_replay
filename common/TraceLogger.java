@@ -143,55 +143,137 @@ public class TraceLogger {
         BinarySchema.write(seq, roleId, ((eventType & 0xFF) | (BinarySchema.Flags.NONE << 8)), birthId.siteId, birthId.count, index);
     }
 
-    // For atomic operations — int/boolean return values
-    public static void logAtomicInt(int returnValue, int eventType, String siteString) {
-        long seq = nextSeq(isHBRelease(eventType)); // ATOMIC_READ → read, ATOMIC_WRITE/RMW → advance
-        long tid = Thread.currentThread().getId();
-        int currentSiteId = IdentityMapper.getSiteId(siteString);
-        int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-        String eventName = getEventName(eventType);
-        System.out.println(String.format("[ATOMIC] epoch=%d, localSeq=%d, thread=%d, roleId=%d, event=%s(%d), returnInt=%d, siteId=%d",
-            seq >>> 32, seq & 0xFFFFFFFFL, tid, roleId, eventName, eventType, returnValue, currentSiteId));
-        BinarySchema.write(seq, (long)roleId, (eventType & 0xFF), 0, returnValue, currentSiteId);
+    // ---- Unified atomic loggers ----
+    // All atomic operations capture WHERE (receiver + index) and WHAT (value).
+    //
+    // Binary record layout — ARRAY atomics (IS_ARRAY_ATOMIC flag set):
+    //   packedType upper 16 bits = receiver BirthId.siteId  (which allocation site)
+    //   objSite  = receiver BirthId.count                   (which instance)
+    //   objCount = array index                              (WHERE within the array)
+    //   data     = value                                    (WHAT was written/read)
+    //
+    // Binary record layout — SCALAR atomics (no flag):
+    //   objSite  = receiver BirthId.siteId
+    //   objCount = receiver BirthId.count
+    //   data     = value (int, lo-32-of-long, or value BirthId.siteId for Object)
+
+    private static int packAtomicArrayType(int eventType, int receiverSiteId) {
+        return (eventType & 0xFF)
+             | (BinarySchema.Flags.IS_ARRAY_ATOMIC << 8)
+             | ((receiverSiteId & 0xFFFF) << 16);
     }
 
-    // For atomic operations — long return values
-    public static void logAtomicLong(long returnValue, int eventType, String siteString) {
+    /**
+     * Atomic logger for int-sized values (int, boolean, byte, short, char).
+     * @param intValue  the written value (void set) or return value (get/RMW)
+     * @param receiver  the atomic object instance (AtomicInteger, AtomicIntegerArray, etc.)
+     * @param index     array element index, or -1 for scalar atomics
+     */
+    public static void logAtomicInt(int intValue, Object receiver, int index, int eventType, String siteString) {
         long seq = nextSeq(isHBRelease(eventType));
         long tid = Thread.currentThread().getId();
         int currentSiteId = IdentityMapper.getSiteId(siteString);
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+        BirthId birthId = IdentityMapper.getBirthId(receiver, null, currentSiteId);
+        boolean isArray = (index >= 0);
+
         String eventName = getEventName(eventType);
-        System.out.println(String.format("[ATOMIC] epoch=%d, localSeq=%d, thread=%d, roleId=%d, event=%s(%d), returnLong=%d, siteId=%d",
-            seq >>> 32, seq & 0xFFFFFFFFL, tid, roleId, eventName, eventType, returnValue, currentSiteId));
-        BinarySchema.write(seq, (long)roleId, (eventType & 0xFF), (int)(returnValue >> 32), (int)returnValue, currentSiteId);
+        String receiverStr = receiver != null
+            ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver))
+            : "null";
+        if (isArray) {
+            System.out.println(String.format(
+                "[ATOMIC] epoch=%d, localSeq=%d, thread=%d, roleId=%d, event=%s(%d), receiver=%s, index=%d, value=%d, siteId=%d",
+                seq >>> 32, seq & 0xFFFFFFFFL, tid, roleId, eventName, eventType, receiverStr, index, intValue, currentSiteId));
+        } else {
+            System.out.println(String.format(
+                "[ATOMIC] epoch=%d, localSeq=%d, thread=%d, roleId=%d, event=%s(%d), receiver=%s, value=%d, siteId=%d",
+                seq >>> 32, seq & 0xFFFFFFFFL, tid, roleId, eventName, eventType, receiverStr, intValue, currentSiteId));
+        }
+
+        if (isArray) {
+            int packedType = packAtomicArrayType(eventType, birthId.siteId);
+            BinarySchema.write(seq, (long)roleId, packedType, birthId.count, index, intValue);
+        } else {
+            int packedType = BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
+            BinarySchema.write(seq, (long)roleId, packedType, birthId.siteId, birthId.count, intValue);
+        }
     }
 
-    // For atomic operations — Object return values (uses BirthId for identity)
-    public static void logAtomicObj(Object returnValue, int eventType, String siteString) {
+    /**
+     * Atomic logger for long values.
+     * Array atomics: stores index + low 32 bits of long value.
+     * Scalar atomics: stores full receiver BirthId + low 32 bits of long value.
+     */
+    public static void logAtomicLong(long longValue, Object receiver, int index, int eventType, String siteString) {
         long seq = nextSeq(isHBRelease(eventType));
         long tid = Thread.currentThread().getId();
         int currentSiteId = IdentityMapper.getSiteId(siteString);
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-        BirthId birthId = IdentityMapper.getBirthId(returnValue, null, currentSiteId);
+        BirthId birthId = IdentityMapper.getBirthId(receiver, null, currentSiteId);
+        boolean isArray = (index >= 0);
+
         String eventName = getEventName(eventType);
-        System.out.println(String.format("[ATOMIC] epoch=%d, localSeq=%d, thread=%d, roleId=%d, event=%s(%d), returnObj=%s, birthSiteId=%d, birthCount=%d, siteId=%d",
-            seq >>> 32, seq & 0xFFFFFFFFL, tid, roleId, eventName, eventType,
-            returnValue != null ? returnValue.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(returnValue)) : "null",
-            birthId.siteId, birthId.count, currentSiteId));
-        BinarySchema.write(seq, (long)roleId, (eventType & 0xFF), birthId.siteId, birthId.count, currentSiteId);
+        String receiverStr = receiver != null
+            ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver))
+            : "null";
+        if (isArray) {
+            System.out.println(String.format(
+                "[ATOMIC] epoch=%d, localSeq=%d, thread=%d, roleId=%d, event=%s(%d), receiver=%s, index=%d, value=%d, siteId=%d",
+                seq >>> 32, seq & 0xFFFFFFFFL, tid, roleId, eventName, eventType, receiverStr, index, longValue, currentSiteId));
+        } else {
+            System.out.println(String.format(
+                "[ATOMIC] epoch=%d, localSeq=%d, thread=%d, roleId=%d, event=%s(%d), receiver=%s, value=%d, siteId=%d",
+                seq >>> 32, seq & 0xFFFFFFFFL, tid, roleId, eventName, eventType, receiverStr, longValue, currentSiteId));
+        }
+
+        if (isArray) {
+            int packedType = packAtomicArrayType(eventType, birthId.siteId);
+            BinarySchema.write(seq, (long)roleId, packedType, birthId.count, index, (int)longValue);
+        } else {
+            int packedType = BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
+            BinarySchema.write(seq, (long)roleId, packedType, birthId.siteId, birthId.count, (int)longValue);
+        }
     }
 
-    // For atomic operations — void methods (set, lazySet)
-    public static void logAtomicVoid(int eventType, String siteString) {
+    /**
+     * Atomic logger for Object values (AtomicReference, AtomicReferenceArray).
+     * Array atomics: stores index + value's BirthId.siteId.
+     * Scalar atomics: stores receiver BirthId + value's BirthId.siteId.
+     */
+    public static void logAtomicObj(Object objValue, Object receiver, int index, int eventType, String siteString) {
         long seq = nextSeq(isHBRelease(eventType));
         long tid = Thread.currentThread().getId();
         int currentSiteId = IdentityMapper.getSiteId(siteString);
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+        BirthId receiverBirth = IdentityMapper.getBirthId(receiver, null, currentSiteId);
+        BirthId valueBirth = IdentityMapper.getBirthId(objValue, null, currentSiteId);
+        boolean isArray = (index >= 0);
+
         String eventName = getEventName(eventType);
-        System.out.println(String.format("[ATOMIC] epoch=%d, localSeq=%d, thread=%d, roleId=%d, event=%s(%d), returnVoid, siteId=%d",
-            seq >>> 32, seq & 0xFFFFFFFFL, tid, roleId, eventName, eventType, currentSiteId));
-        BinarySchema.write(seq, (long)roleId, (eventType & 0xFF), 0, 0, currentSiteId);
+        String receiverStr = receiver != null
+            ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver))
+            : "null";
+        String valueStr = objValue != null
+            ? objValue.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(objValue))
+            : "null";
+        if (isArray) {
+            System.out.println(String.format(
+                "[ATOMIC] epoch=%d, localSeq=%d, thread=%d, roleId=%d, event=%s(%d), receiver=%s, index=%d, value=%s, siteId=%d",
+                seq >>> 32, seq & 0xFFFFFFFFL, tid, roleId, eventName, eventType, receiverStr, index, valueStr, currentSiteId));
+        } else {
+            System.out.println(String.format(
+                "[ATOMIC] epoch=%d, localSeq=%d, thread=%d, roleId=%d, event=%s(%d), receiver=%s, value=%s, siteId=%d",
+                seq >>> 32, seq & 0xFFFFFFFFL, tid, roleId, eventName, eventType, receiverStr, valueStr, currentSiteId));
+        }
+
+        if (isArray) {
+            int packedType = packAtomicArrayType(eventType, receiverBirth.siteId);
+            BinarySchema.write(seq, (long)roleId, packedType, receiverBirth.count, index, valueBirth.siteId);
+        } else {
+            int packedType = BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
+            BinarySchema.write(seq, (long)roleId, packedType, receiverBirth.siteId, receiverBirth.count, valueBirth.siteId);
+        }
     }
 
     // Helper method to get event name for sync events

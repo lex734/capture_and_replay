@@ -56,6 +56,7 @@ public class BinarySchema {
         public static final int NONE = 0;
         public static final int IS_VOLATILE = 1 << 0;
         public static final int IS_STATIC = 1 << 1;
+        public static final int IS_ARRAY_ATOMIC = 1 << 2;
     }
 
     public static void init(String fileName, long maxEvents) throws Exception {

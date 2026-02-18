@@ -27,7 +27,6 @@ public class ReplayAgent {
             }
 
             long fileSize = traceFile.length();
-            // Calculate how many 28-byte records are in the file
             long totalEvents = fileSize / BinarySchema.RECORD_SIZE;
 
             RandomAccessFile raf = new RandomAccessFile(traceFile, "r");

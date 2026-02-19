@@ -1,0 +1,620 @@
+[Agent] Initializing Recorder...
+[IdentityMapper] All maps cleared for new trace.
+[Agent] Found Agent at: /home/lex/enxing_fyp/capture_and_replay/libs/trace-capture-agent.jar
+[Agent] Found Common at: /home/lex/enxing_fyp/capture_and_replay/libs/trace-common.jar
+[Agent] Instrumentation active. Recording started.
+[OBJECT-COORD] epoch=0, localSeq=1, role=1, event=WRITE, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[OBJECT-COORD] epoch=0, localSeq=2, role=1, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+[App] Starting threads with sleep...
+[SYNC] epoch=1, localSeq=3, thread=1, roleId=1, event=THREAD_START(9), lock=Thread@5e8c92f4, lockSiteId=3, lockCount=1, siteId=3
+[SYNC] epoch=2, localSeq=4, thread=1, roleId=1, event=THREAD_START(9), lock=Thread@2957fcb0, lockSiteId=4, lockCount=1, siteId=4
+[OBJECT-COORD] epoch=2, localSeq=1, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[SYNC] epoch=2, localSeq=5, thread=1, roleId=1, event=THREAD_JOIN(10), lock=Thread@5e8c92f4, lockSiteId=3, lockCount=1, siteId=6
+[ATOMIC] epoch=3, localSeq=2, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=1, siteId=7
+[OBJECT-COORD] epoch=3, localSeq=1, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[OBJECT-COORD] epoch=3, localSeq=3, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+[ATOMIC] epoch=4, localSeq=2, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=10
+[OBJECT-COORD] epoch=4, localSeq=3, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 1
+T2 decreased x to: 0
+[SYNC] epoch=4, localSeq=4, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=4, localSeq=4, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=6, localSeq=5, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[SYNC] epoch=5, localSeq=5, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=6, localSeq=6, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[OBJECT-COORD] epoch=6, localSeq=6, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=7, localSeq=7, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=-1, siteId=10
+[ATOMIC] epoch=8, localSeq=7, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=7
+[OBJECT-COORD] epoch=8, localSeq=8, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+[OBJECT-COORD] epoch=8, localSeq=8, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 0
+T2 decreased x to: -1
+[SYNC] epoch=8, localSeq=9, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=8, localSeq=9, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=9, localSeq=10, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[SYNC] epoch=10, localSeq=10, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=10, localSeq=11, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[OBJECT-COORD] epoch=10, localSeq=11, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=11, localSeq=12, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=1, siteId=7
+[ATOMIC] epoch=12, localSeq=12, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=10
+[OBJECT-COORD] epoch=12, localSeq=13, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 1
+[OBJECT-COORD] epoch=12, localSeq=13, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: 0
+[SYNC] epoch=12, localSeq=14, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=12, localSeq=14, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=13, localSeq=15, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[SYNC] epoch=14, localSeq=15, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=14, localSeq=16, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[OBJECT-COORD] epoch=14, localSeq=16, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=15, localSeq=17, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=-1, siteId=10
+[ATOMIC] epoch=16, localSeq=17, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=7
+[OBJECT-COORD] epoch=16, localSeq=18, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: -1
+[OBJECT-COORD] epoch=16, localSeq=18, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+[SYNC] epoch=16, localSeq=19, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+T1 increased x to: 0
+[SYNC] epoch=16, localSeq=19, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=17, localSeq=20, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=17, localSeq=21, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=18, localSeq=22, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=-1, siteId=10
+[SYNC] epoch=19, localSeq=20, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=19, localSeq=23, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+[OBJECT-COORD] epoch=19, localSeq=21, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+T2 decreased x to: -1
+[ATOMIC] epoch=20, localSeq=22, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=7
+[OBJECT-COORD] epoch=20, localSeq=23, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+[SYNC] epoch=20, localSeq=24, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+T1 increased x to: 0
+[SYNC] epoch=20, localSeq=24, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=21, localSeq=25, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=21, localSeq=26, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[SYNC] epoch=22, localSeq=25, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[ATOMIC] epoch=23, localSeq=27, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=-1, siteId=10
+[OBJECT-COORD] epoch=23, localSeq=26, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[OBJECT-COORD] epoch=23, localSeq=28, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+[ATOMIC] epoch=24, localSeq=27, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=7
+T2 decreased x to: -1
+[OBJECT-COORD] epoch=24, localSeq=28, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+[SYNC] epoch=24, localSeq=29, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+T1 increased x to: 0
+[SYNC] epoch=24, localSeq=29, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=25, localSeq=30, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=25, localSeq=31, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[SYNC] epoch=26, localSeq=30, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[ATOMIC] epoch=27, localSeq=32, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=-1, siteId=10
+[OBJECT-COORD] epoch=27, localSeq=33, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+[OBJECT-COORD] epoch=27, localSeq=31, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=28, localSeq=32, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=7
+T2 decreased x to: -1
+[OBJECT-COORD] epoch=28, localSeq=33, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+[SYNC] epoch=28, localSeq=34, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+T1 increased x to: 0
+[SYNC] epoch=28, localSeq=34, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=29, localSeq=35, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[SYNC] epoch=30, localSeq=35, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=29, localSeq=36, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[OBJECT-COORD] epoch=30, localSeq=36, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=31, localSeq=37, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=-1, siteId=10
+[ATOMIC] epoch=32, localSeq=37, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=7
+[OBJECT-COORD] epoch=32, localSeq=38, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: -1
+[OBJECT-COORD] epoch=32, localSeq=38, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 0
+[SYNC] epoch=32, localSeq=39, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=32, localSeq=39, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=33, localSeq=40, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[SYNC] epoch=34, localSeq=40, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=34, localSeq=41, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[OBJECT-COORD] epoch=34, localSeq=41, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=35, localSeq=42, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=1, siteId=7
+[ATOMIC] epoch=36, localSeq=42, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=10
+[OBJECT-COORD] epoch=36, localSeq=43, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 1
+[OBJECT-COORD] epoch=36, localSeq=43, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: 0
+[SYNC] epoch=36, localSeq=44, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=36, localSeq=44, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=38, localSeq=45, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[SYNC] epoch=37, localSeq=45, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=38, localSeq=46, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[OBJECT-COORD] epoch=38, localSeq=46, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=39, localSeq=47, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=1, siteId=7
+[ATOMIC] epoch=40, localSeq=47, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=10
+[OBJECT-COORD] epoch=40, localSeq=48, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 1
+[OBJECT-COORD] epoch=40, localSeq=48, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: 0
+[SYNC] epoch=40, localSeq=49, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=40, localSeq=49, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=41, localSeq=50, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[SYNC] epoch=42, localSeq=50, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=42, localSeq=51, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[OBJECT-COORD] epoch=42, localSeq=51, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=43, localSeq=52, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=1, siteId=7
+[OBJECT-COORD] epoch=44, localSeq=53, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 1
+[SYNC] epoch=44, localSeq=54, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[ATOMIC] epoch=44, localSeq=52, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=10
+[OBJECT-COORD] epoch=44, localSeq=53, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: 0
+[SYNC] epoch=44, localSeq=54, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=45, localSeq=55, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=45, localSeq=56, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=46, localSeq=57, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=1, siteId=7
+[OBJECT-COORD] epoch=46, localSeq=58, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 1
+[SYNC] epoch=47, localSeq=55, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[SYNC] epoch=47, localSeq=59, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[OBJECT-COORD] epoch=47, localSeq=56, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=48, localSeq=57, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=10
+[OBJECT-COORD] epoch=48, localSeq=58, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: 0
+[SYNC] epoch=48, localSeq=59, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=49, localSeq=60, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=49, localSeq=61, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=50, localSeq=62, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=1, siteId=7
+[OBJECT-COORD] epoch=50, localSeq=63, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 1
+[SYNC] epoch=51, localSeq=60, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[SYNC] epoch=51, localSeq=64, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[OBJECT-COORD] epoch=51, localSeq=61, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=52, localSeq=62, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=10
+[OBJECT-COORD] epoch=52, localSeq=63, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: 0
+[SYNC] epoch=52, localSeq=64, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=53, localSeq=65, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=53, localSeq=66, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=54, localSeq=67, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=1, siteId=7
+[SYNC] epoch=55, localSeq=65, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=55, localSeq=68, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 1
+[OBJECT-COORD] epoch=55, localSeq=66, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[SYNC] epoch=55, localSeq=69, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[ATOMIC] epoch=56, localSeq=67, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=10
+[OBJECT-COORD] epoch=56, localSeq=68, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: 0
+[SYNC] epoch=56, localSeq=69, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=57, localSeq=70, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=57, localSeq=71, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[SYNC] epoch=58, localSeq=70, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[ATOMIC] epoch=59, localSeq=72, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=1, siteId=7
+[OBJECT-COORD] epoch=59, localSeq=71, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[OBJECT-COORD] epoch=59, localSeq=73, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+[ATOMIC] epoch=60, localSeq=72, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=10
+T1 increased x to: 1
+[OBJECT-COORD] epoch=60, localSeq=73, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+[SYNC] epoch=60, localSeq=74, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+T2 decreased x to: 0
+[SYNC] epoch=60, localSeq=74, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=61, localSeq=75, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[SYNC] epoch=62, localSeq=75, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=62, localSeq=76, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[OBJECT-COORD] epoch=62, localSeq=76, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=63, localSeq=77, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=1, siteId=7
+[OBJECT-COORD] epoch=64, localSeq=78, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 1
+[ATOMIC] epoch=64, localSeq=77, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=10
+[SYNC] epoch=64, localSeq=79, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[OBJECT-COORD] epoch=64, localSeq=78, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: 0
+[SYNC] epoch=64, localSeq=79, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=65, localSeq=80, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=65, localSeq=81, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=66, localSeq=82, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=1, siteId=7
+[SYNC] epoch=67, localSeq=80, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=67, localSeq=83, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 1
+[SYNC] epoch=67, localSeq=84, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[OBJECT-COORD] epoch=67, localSeq=81, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=68, localSeq=82, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=10
+[OBJECT-COORD] epoch=68, localSeq=83, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: 0
+[SYNC] epoch=68, localSeq=84, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=69, localSeq=85, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=69, localSeq=86, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=70, localSeq=87, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=1, siteId=7
+[OBJECT-COORD] epoch=70, localSeq=88, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 1
+[SYNC] epoch=70, localSeq=89, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=71, localSeq=85, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=71, localSeq=86, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=72, localSeq=87, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=10
+[OBJECT-COORD] epoch=72, localSeq=88, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: 0
+[SYNC] epoch=72, localSeq=89, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=73, localSeq=90, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=73, localSeq=91, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=74, localSeq=92, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=1, siteId=7
+[OBJECT-COORD] epoch=74, localSeq=93, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 1
+[SYNC] epoch=75, localSeq=90, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[SYNC] epoch=75, localSeq=94, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[OBJECT-COORD] epoch=75, localSeq=91, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=76, localSeq=92, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=10
+[OBJECT-COORD] epoch=76, localSeq=93, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: 0
+[SYNC] epoch=76, localSeq=94, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=77, localSeq=95, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=77, localSeq=96, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[SYNC] epoch=79, localSeq=95, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[ATOMIC] epoch=78, localSeq=97, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=1, siteId=7
+[OBJECT-COORD] epoch=79, localSeq=96, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=80, localSeq=97, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=10
+[OBJECT-COORD] epoch=80, localSeq=98, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: 0
+[SYNC] epoch=80, localSeq=99, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[OBJECT-COORD] epoch=80, localSeq=98, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 1
+[SYNC] epoch=80, localSeq=99, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=81, localSeq=100, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=81, localSeq=101, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=82, localSeq=102, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=-1, siteId=10
+[OBJECT-COORD] epoch=82, localSeq=103, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: -1
+[SYNC] epoch=82, localSeq=104, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=83, localSeq=100, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=83, localSeq=101, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=84, localSeq=102, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=7
+[OBJECT-COORD] epoch=84, localSeq=103, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 0
+[SYNC] epoch=84, localSeq=104, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=85, localSeq=105, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=85, localSeq=106, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=86, localSeq=107, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=-1, siteId=10
+[OBJECT-COORD] epoch=86, localSeq=108, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: -1
+[SYNC] epoch=86, localSeq=109, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=87, localSeq=105, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=87, localSeq=106, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=88, localSeq=107, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=7
+[OBJECT-COORD] epoch=88, localSeq=108, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 0
+[SYNC] epoch=88, localSeq=109, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=89, localSeq=110, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=89, localSeq=111, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=90, localSeq=112, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=-1, siteId=10
+[OBJECT-COORD] epoch=90, localSeq=113, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: -1
+[SYNC] epoch=90, localSeq=114, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=91, localSeq=110, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=91, localSeq=111, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=92, localSeq=112, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=7
+[OBJECT-COORD] epoch=92, localSeq=113, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 0
+[SYNC] epoch=92, localSeq=114, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=93, localSeq=115, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=93, localSeq=116, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=94, localSeq=117, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=-1, siteId=10
+[OBJECT-COORD] epoch=94, localSeq=118, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: -1
+[SYNC] epoch=94, localSeq=119, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=95, localSeq=115, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=95, localSeq=116, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=96, localSeq=117, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=7
+[OBJECT-COORD] epoch=96, localSeq=118, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 0
+[SYNC] epoch=96, localSeq=119, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=97, localSeq=120, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=97, localSeq=121, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=98, localSeq=122, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=-1, siteId=10
+[OBJECT-COORD] epoch=98, localSeq=123, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: -1
+[SYNC] epoch=98, localSeq=124, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=99, localSeq=120, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=99, localSeq=121, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=100, localSeq=122, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=7
+[OBJECT-COORD] epoch=100, localSeq=123, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 0
+[SYNC] epoch=100, localSeq=124, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=101, localSeq=125, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=101, localSeq=126, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=102, localSeq=127, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=-1, siteId=10
+[OBJECT-COORD] epoch=102, localSeq=128, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: -1
+[SYNC] epoch=102, localSeq=129, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=103, localSeq=125, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=103, localSeq=126, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=104, localSeq=127, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=7
+[OBJECT-COORD] epoch=104, localSeq=128, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 0
+[SYNC] epoch=104, localSeq=129, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=105, localSeq=130, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=105, localSeq=131, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=106, localSeq=132, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=-1, siteId=10
+[OBJECT-COORD] epoch=106, localSeq=133, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: -1
+[SYNC] epoch=106, localSeq=134, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=107, localSeq=130, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=107, localSeq=131, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=108, localSeq=132, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=7
+[OBJECT-COORD] epoch=108, localSeq=133, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 0
+[SYNC] epoch=108, localSeq=134, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=109, localSeq=135, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=109, localSeq=136, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=110, localSeq=137, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=-1, siteId=10
+[OBJECT-COORD] epoch=110, localSeq=138, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: -1
+[SYNC] epoch=110, localSeq=139, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=111, localSeq=135, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=111, localSeq=136, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=112, localSeq=137, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=7
+[OBJECT-COORD] epoch=112, localSeq=138, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 0
+[SYNC] epoch=112, localSeq=139, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=113, localSeq=140, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=113, localSeq=141, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=114, localSeq=142, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=-1, siteId=10
+[OBJECT-COORD] epoch=114, localSeq=143, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: -1
+[SYNC] epoch=114, localSeq=144, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=115, localSeq=140, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=115, localSeq=141, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=116, localSeq=142, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=7
+[OBJECT-COORD] epoch=116, localSeq=143, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 0
+[SYNC] epoch=116, localSeq=144, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=117, localSeq=145, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=117, localSeq=146, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=118, localSeq=147, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=-1, siteId=10
+[OBJECT-COORD] epoch=118, localSeq=148, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: -1
+[SYNC] epoch=118, localSeq=149, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=119, localSeq=145, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=119, localSeq=146, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=120, localSeq=147, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=7
+[OBJECT-COORD] epoch=120, localSeq=148, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 0
+[SYNC] epoch=120, localSeq=149, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=121, localSeq=150, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=121, localSeq=151, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=122, localSeq=152, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=-1, siteId=10
+[OBJECT-COORD] epoch=122, localSeq=153, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: -1
+[SYNC] epoch=122, localSeq=154, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=123, localSeq=150, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=123, localSeq=151, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=124, localSeq=152, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=7
+[OBJECT-COORD] epoch=124, localSeq=153, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 0
+[SYNC] epoch=124, localSeq=154, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=125, localSeq=155, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=125, localSeq=156, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=126, localSeq=157, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=-1, siteId=10
+[OBJECT-COORD] epoch=126, localSeq=158, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: -1
+[SYNC] epoch=126, localSeq=159, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=127, localSeq=155, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=127, localSeq=156, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=128, localSeq=157, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=7
+[OBJECT-COORD] epoch=128, localSeq=158, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 0
+[SYNC] epoch=128, localSeq=159, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=129, localSeq=160, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=129, localSeq=161, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=130, localSeq=162, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=-1, siteId=10
+[OBJECT-COORD] epoch=130, localSeq=163, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: -1
+[SYNC] epoch=130, localSeq=164, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=131, localSeq=160, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=131, localSeq=161, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=132, localSeq=162, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=7
+[OBJECT-COORD] epoch=132, localSeq=163, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 0
+[SYNC] epoch=132, localSeq=164, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=133, localSeq=165, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=133, localSeq=166, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=134, localSeq=167, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=-1, siteId=10
+[OBJECT-COORD] epoch=134, localSeq=168, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: -1
+[SYNC] epoch=134, localSeq=169, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=135, localSeq=165, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=135, localSeq=166, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=136, localSeq=167, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=7
+[OBJECT-COORD] epoch=136, localSeq=168, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 0
+[SYNC] epoch=136, localSeq=169, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=137, localSeq=170, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=137, localSeq=171, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=138, localSeq=172, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=-1, siteId=10
+[OBJECT-COORD] epoch=138, localSeq=173, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: -1
+[SYNC] epoch=138, localSeq=174, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=139, localSeq=170, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=139, localSeq=171, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=140, localSeq=172, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=7
+[OBJECT-COORD] epoch=140, localSeq=173, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 0
+[SYNC] epoch=140, localSeq=174, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=141, localSeq=175, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=141, localSeq=176, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=142, localSeq=177, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=-1, siteId=10
+[OBJECT-COORD] epoch=142, localSeq=178, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: -1
+[SYNC] epoch=142, localSeq=179, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=143, localSeq=175, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=143, localSeq=176, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=144, localSeq=177, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=7
+[OBJECT-COORD] epoch=144, localSeq=178, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 0
+[SYNC] epoch=144, localSeq=179, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=145, localSeq=180, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=145, localSeq=181, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=146, localSeq=182, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=-1, siteId=10
+[OBJECT-COORD] epoch=146, localSeq=183, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: -1
+[SYNC] epoch=146, localSeq=184, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=147, localSeq=180, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=147, localSeq=181, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=148, localSeq=182, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=7
+[OBJECT-COORD] epoch=148, localSeq=183, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 0
+[SYNC] epoch=148, localSeq=184, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=149, localSeq=185, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=149, localSeq=186, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=150, localSeq=187, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=-1, siteId=10
+[OBJECT-COORD] epoch=150, localSeq=188, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: -1
+[SYNC] epoch=150, localSeq=189, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=151, localSeq=185, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=151, localSeq=186, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=152, localSeq=187, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=7
+[OBJECT-COORD] epoch=152, localSeq=188, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 0
+[SYNC] epoch=152, localSeq=189, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=153, localSeq=190, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=153, localSeq=191, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=154, localSeq=192, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=-1, siteId=10
+[OBJECT-COORD] epoch=154, localSeq=193, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: -1
+[SYNC] epoch=154, localSeq=194, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=155, localSeq=190, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=155, localSeq=191, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=156, localSeq=192, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=7
+[OBJECT-COORD] epoch=156, localSeq=193, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 0
+[SYNC] epoch=156, localSeq=194, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=157, localSeq=195, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=157, localSeq=196, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=158, localSeq=197, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=-1, siteId=10
+[OBJECT-COORD] epoch=158, localSeq=198, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: -1
+[SYNC] epoch=158, localSeq=199, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=159, localSeq=195, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=159, localSeq=196, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=160, localSeq=197, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=7
+[OBJECT-COORD] epoch=160, localSeq=198, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 0
+[SYNC] epoch=160, localSeq=199, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=161, localSeq=200, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=161, localSeq=201, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=162, localSeq=202, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=-1, siteId=10
+[OBJECT-COORD] epoch=162, localSeq=203, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: -1
+[SYNC] epoch=162, localSeq=204, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=163, localSeq=200, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=163, localSeq=201, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=164, localSeq=202, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=7
+[OBJECT-COORD] epoch=164, localSeq=203, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 0
+[SYNC] epoch=164, localSeq=204, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=165, localSeq=205, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=165, localSeq=206, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=166, localSeq=207, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=-1, siteId=10
+[OBJECT-COORD] epoch=166, localSeq=208, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: -1
+[SYNC] epoch=167, localSeq=205, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[SYNC] epoch=167, localSeq=209, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[OBJECT-COORD] epoch=167, localSeq=206, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=168, localSeq=207, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=7
+[OBJECT-COORD] epoch=168, localSeq=208, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 0
+[SYNC] epoch=168, localSeq=209, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=169, localSeq=210, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=169, localSeq=211, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=170, localSeq=212, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=-1, siteId=10
+[OBJECT-COORD] epoch=170, localSeq=213, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: -1
+[SYNC] epoch=170, localSeq=214, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=171, localSeq=210, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=171, localSeq=211, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=172, localSeq=212, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=7
+[OBJECT-COORD] epoch=172, localSeq=213, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 0
+[SYNC] epoch=172, localSeq=214, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=173, localSeq=215, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=173, localSeq=216, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[SYNC] epoch=174, localSeq=215, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[ATOMIC] epoch=175, localSeq=217, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=-1, siteId=10
+[OBJECT-COORD] epoch=175, localSeq=216, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[OBJECT-COORD] epoch=175, localSeq=218, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+[ATOMIC] epoch=176, localSeq=217, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=7
+T2 decreased x to: -1
+[OBJECT-COORD] epoch=176, localSeq=218, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 0
+[SYNC] epoch=176, localSeq=219, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=176, localSeq=219, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=177, localSeq=220, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=177, localSeq=221, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[SYNC] epoch=178, localSeq=220, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=179, localSeq=221, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=180, localSeq=222, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=7
+[OBJECT-COORD] epoch=180, localSeq=223, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 0
+[SYNC] epoch=180, localSeq=224, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[ATOMIC] epoch=179, localSeq=222, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=-1, siteId=10
+[OBJECT-COORD] epoch=180, localSeq=223, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: -1
+[SYNC] epoch=180, localSeq=224, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=181, localSeq=225, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=181, localSeq=226, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=182, localSeq=227, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=1, siteId=7
+[OBJECT-COORD] epoch=182, localSeq=228, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 1
+[SYNC] epoch=182, localSeq=229, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=183, localSeq=225, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=183, localSeq=226, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=184, localSeq=227, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=10
+[OBJECT-COORD] epoch=184, localSeq=228, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: 0
+[SYNC] epoch=184, localSeq=229, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=185, localSeq=230, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=185, localSeq=231, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=186, localSeq=232, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=1, siteId=7
+[OBJECT-COORD] epoch=186, localSeq=233, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+[SYNC] epoch=187, localSeq=230, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+T1 increased x to: 1
+[OBJECT-COORD] epoch=187, localSeq=231, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[SYNC] epoch=187, localSeq=234, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[ATOMIC] epoch=188, localSeq=232, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=10
+[OBJECT-COORD] epoch=188, localSeq=233, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: 0
+[SYNC] epoch=188, localSeq=234, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=189, localSeq=235, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=189, localSeq=236, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=190, localSeq=237, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=-1, siteId=10
+[OBJECT-COORD] epoch=190, localSeq=238, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: -1
+[SYNC] epoch=190, localSeq=239, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=191, localSeq=235, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=191, localSeq=236, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=192, localSeq=237, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=7
+[OBJECT-COORD] epoch=192, localSeq=238, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 0
+[SYNC] epoch=192, localSeq=239, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=193, localSeq=240, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=193, localSeq=241, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=194, localSeq=242, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=-1, siteId=10
+[OBJECT-COORD] epoch=194, localSeq=243, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: -1
+[SYNC] epoch=194, localSeq=244, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=195, localSeq=240, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=195, localSeq=241, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=196, localSeq=242, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=7
+[OBJECT-COORD] epoch=196, localSeq=243, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 0
+[SYNC] epoch=196, localSeq=244, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=197, localSeq=245, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[OBJECT-COORD] epoch=197, localSeq=246, role=3, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=198, localSeq=247, thread=29, roleId=3, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=-1, siteId=10
+[OBJECT-COORD] epoch=198, localSeq=248, role=3, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T2 decreased x to: -1
+[SYNC] epoch=198, localSeq=249, thread=29, roleId=3, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=13
+[SYNC] epoch=199, localSeq=245, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[OBJECT-COORD] epoch=199, localSeq=246, role=2, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=200, localSeq=247, thread=28, roleId=2, event=ATOMIC_RMW(22), receiver=AtomicInteger@24cb44a, value=0, siteId=7
+[OBJECT-COORD] epoch=200, localSeq=248, role=2, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+T1 increased x to: 0
+[SYNC] epoch=200, localSeq=249, thread=28, roleId=2, event=THREAD_SLEEP(12), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[SYNC] epoch=201, localSeq=250, thread=29, roleId=3, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=15
+[SYNC] epoch=202, localSeq=250, thread=28, roleId=2, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=14
+[SYNC] epoch=203, localSeq=6, thread=1, roleId=1, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=16
+[SYNC] epoch=203, localSeq=7, thread=1, roleId=1, event=THREAD_JOIN(10), lock=Thread@2957fcb0, lockSiteId=4, lockCount=1, siteId=17
+[SYNC] epoch=204, localSeq=8, thread=1, roleId=1, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=18
+[OBJECT-COORD] epoch=204, localSeq=9, role=1, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+[App] Done.
+[OBJECT-COORD] epoch=204, localSeq=10, role=1, event=READ, field=java/lang/System.out, fieldId=2, isStatic=true, isVolatile=false
+[OBJECT-COORD] epoch=204, localSeq=11, role=1, event=READ, field=Main.x, fieldId=1, isStatic=true, isVolatile=false
+[ATOMIC] epoch=204, localSeq=12, thread=1, roleId=1, event=ATOMIC_READ(20), receiver=AtomicInteger@24cb44a, value=0, siteId=22
+Final value of x: 0

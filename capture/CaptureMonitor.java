@@ -34,41 +34,31 @@ public class CaptureMonitor {
     }
   }
   
-  public static void logAtomicInt(int returnValue, int eventType, String siteString) {
+  public static void logAtomicInt(int intValue, Object receiver, int index, int eventType, String siteString) {
     if (isInside.get()) return;
     isInside.set(true);
     try {
-      TraceLogger.logAtomicInt(returnValue, eventType, siteString);
+      TraceLogger.logAtomicInt(intValue, receiver, index, eventType, siteString);
     } finally {
       isInside.set(false);
     }
   }
 
-  public static void logAtomicLong(long returnValue, int eventType, String siteString) {
+  public static void logAtomicLong(long longValue, Object receiver, int index, int eventType, String siteString) {
     if (isInside.get()) return;
     isInside.set(true);
     try {
-      TraceLogger.logAtomicLong(returnValue, eventType, siteString);
+      TraceLogger.logAtomicLong(longValue, receiver, index, eventType, siteString);
     } finally {
       isInside.set(false);
     }
   }
 
-  public static void logAtomicObj(Object returnValue, int eventType, String siteString) {
+  public static void logAtomicObj(Object objValue, Object receiver, int index, int eventType, String siteString) {
     if (isInside.get()) return;
     isInside.set(true);
     try {
-      TraceLogger.logAtomicObj(returnValue, eventType, siteString);
-    } finally {
-      isInside.set(false);
-    }
-  }
-
-  public static void logAtomicVoid(int eventType, String siteString) {
-    if (isInside.get()) return;
-    isInside.set(true);
-    try {
-      TraceLogger.logAtomicVoid(eventType, siteString);
+      TraceLogger.logAtomicObj(objValue, receiver, index, eventType, siteString);
     } finally {
       isInside.set(false);
     }

@@ -6,6 +6,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.io.InputStream;
 import org.objectweb.asm.*;
+import org.objectweb.asm.commons.LocalVariablesSorter;
 
 public class SyncTransformer implements ClassFileTransformer {
 
@@ -73,7 +74,7 @@ public class SyncTransformer implements ClassFileTransformer {
       ClassWriter writer = new ClassWriter(reader, ClassWriter.COMPUTE_FRAMES);
 
       SyncClassVisitor visitor = new SyncClassVisitor(writer, className, loader);
-      reader.accept(visitor, 0);
+      reader.accept(visitor, ClassReader.EXPAND_FRAMES);
 
       return writer.toByteArray();
     } catch (Throwable t) {
@@ -107,11 +108,11 @@ public class SyncTransformer implements ClassFileTransformer {
     @Override
     public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
       MethodVisitor mv = super.visitMethod(access, name, descriptor, signature, exceptions);
-      return new SyncMethodVisitor(mv, className, name, loader);
+      return new SyncMethodVisitor(access, descriptor, mv, className, name, loader);
     }
   }
 
-  static class SyncMethodVisitor extends MethodVisitor {
+  static class SyncMethodVisitor extends LocalVariablesSorter {
     private final String className;
     private final String methodName;
     private final ClassLoader loader;
@@ -130,8 +131,14 @@ public class SyncTransformer implements ClassFileTransformer {
       return opcode >= Opcodes.IASTORE && opcode <= Opcodes.SASTORE;
     }
 
-    public SyncMethodVisitor(MethodVisitor mv, String className, String methodName, ClassLoader loader) {
-      super(Opcodes.ASM9, mv);
+    private static boolean isAtomicArrayClass(String owner) {
+      return owner.equals("java/util/concurrent/atomic/AtomicIntegerArray")
+          || owner.equals("java/util/concurrent/atomic/AtomicLongArray")
+          || owner.equals("java/util/concurrent/atomic/AtomicReferenceArray");
+    }
+
+    public SyncMethodVisitor(int access, String descriptor, MethodVisitor mv, String className, String methodName, ClassLoader loader) {
+      super(Opcodes.ASM9, access, descriptor, mv);
       this.className = className;
       this.methodName = methodName;
       this.loader = loader;
@@ -314,13 +321,54 @@ public class SyncTransformer implements ClassFileTransformer {
             }
         }
 
-        // Detect atomic classes — instrument AFTER the call by capturing return value
+        // Detect atomic classes — save receiver + args BEFORE the call,
+        // execute the call, then log with full context (WHERE + WHAT).
         if (owner.startsWith("java/util/concurrent/atomic/Atomic")) {
             int atomicEventType = classifyAtomicOp(name);
             if (atomicEventType != -1) {
-                // Let the original call execute first
+                boolean isArrayAtomic = isAtomicArrayClass(owner);
+                Type[] argTypes = Type.getArgumentTypes(descriptor);
+                char returnTypeChar = getReturnType(descriptor);
+
+                // 1. Pop all arguments into local variables (top-of-stack = last arg first)
+                int[] argSlots = new int[argTypes.length];
+                for (int i = argTypes.length - 1; i >= 0; i--) {
+                    argSlots[i] = newLocal(argTypes[i]);
+                    mv.visitVarInsn(argTypes[i].getOpcode(Opcodes.ISTORE), argSlots[i]);
+                }
+                // Pop receiver into a local
+                int receiverSlot = newLocal(Type.getObjectType("java/lang/Object"));
+                mv.visitVarInsn(Opcodes.ASTORE, receiverSlot);
+
+                // 2. Restore the stack exactly as it was and execute the original call
+                mv.visitVarInsn(Opcodes.ALOAD, receiverSlot);
+                for (int i = 0; i < argTypes.length; i++) {
+                    mv.visitVarInsn(argTypes[i].getOpcode(Opcodes.ILOAD), argSlots[i]);
+                }
                 super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
 
+                // 3. Log the event — choose method based on return type / value type
+                if (returnTypeChar == 'V') {
+                    // Void return (set, lazySet) — capture the WRITTEN VALUE from saved args
+                    // For array types: value = last arg, index = first arg
+                    // For scalar types: value = last (and only) arg
+                    int valueArgIdx = argTypes.length - 1;
+                    Type valueType = argTypes[valueArgIdx];
+
+                    // Stack for log call: [value, receiver, index, eventType, siteString]
+                    mv.visitVarInsn(valueType.getOpcode(Opcodes.ILOAD), argSlots[valueArgIdx]);
+                    mv.visitVarInsn(Opcodes.ALOAD, receiverSlot);
+                    if (isArrayAtomic) {
+                        mv.visitVarInsn(Opcodes.ILOAD, argSlots[0]);
+                    } else {
+                        mv.visitLdcInsn(-1);
+                    }
+                    mv.visitLdcInsn(atomicEventType);
+                    mv.visitLdcInsn(siteString);
+                    emitAtomicLogCall(valueType);
+                } else {
+                    // Non-void return — capture the RETURN VALUE from the stack
+                    if (returnTypeChar == 'J' || returnTypeChar == 'D') {
                 // Capture return value based on return type
                 char returnType = getReturnType(descriptor);
                 switch (returnType) {
@@ -333,25 +381,18 @@ public class SyncTransformer implements ClassFileTransformer {
                         break;
                     case 'J':  // long
                         mv.visitInsn(Opcodes.DUP2);
-                        mv.visitLdcInsn(atomicEventType);
-                        mv.visitLdcInsn(siteString);
-                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logAtomicLong",
-                            "(JILjava/lang/String;)V", false);
-                        break;
-                    case 'L': case '[':  // Object reference
+                    } else {
                         mv.visitInsn(Opcodes.DUP);
-                        mv.visitLdcInsn(atomicEventType);
-                        mv.visitLdcInsn(siteString);
-                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logAtomicObj",
-                            "(Ljava/lang/Object;ILjava/lang/String;)V", false);
-                        break;
-                    default:  // int, boolean, byte, short, char, float
-                        mv.visitInsn(Opcodes.DUP);
-                        mv.visitLdcInsn(atomicEventType);
-                        mv.visitLdcInsn(siteString);
-                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logAtomicInt",
-                            "(IILjava/lang/String;)V", false);
-                        break;
+                    }
+                    mv.visitVarInsn(Opcodes.ALOAD, receiverSlot);
+                    if (isArrayAtomic && argTypes.length > 0) {
+                        mv.visitVarInsn(Opcodes.ILOAD, argSlots[0]);
+                    } else {
+                        mv.visitLdcInsn(-1);
+                    }
+                    mv.visitLdcInsn(atomicEventType);
+                    mv.visitLdcInsn(siteString);
+                    emitAtomicLogCall(returnTypeChar);
                 }
                 return; // Skip the super.visitMethodInsn below — already called above
             }
@@ -373,6 +414,64 @@ public class SyncTransformer implements ClassFileTransformer {
         mv.visitInsn(Opcodes.SWAP);
         mv.visitLdcInsn(site);
         mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, monitorMethod, monitorDescriptor, false);
+    }
+
+    // Emit the INVOKESTATIC for the right logAtomic method based on value ASM Type
+    private void emitAtomicLogCall(Type valueType) {
+        int sort = valueType.getSort();
+        if (sort == Type.LONG) {
+            mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logAtomicLong",
+                "(JLjava/lang/Object;IILjava/lang/String;)V", false);
+        } else if (sort == Type.OBJECT || sort == Type.ARRAY) {
+            mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logAtomicObj",
+                "(Ljava/lang/Object;Ljava/lang/Object;IILjava/lang/String;)V", false);
+        } else {
+            mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logAtomicInt",
+                "(ILjava/lang/Object;IILjava/lang/String;)V", false);
+        }
+    }
+
+    // Emit the INVOKESTATIC for the right logAtomic method based on return type char
+    private void emitAtomicLogCall(char returnTypeChar) {
+        if (returnTypeChar == 'J' || returnTypeChar == 'D') {
+            mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logAtomicLong",
+                "(JLjava/lang/Object;IILjava/lang/String;)V", false);
+        } else if (returnTypeChar == 'L' || returnTypeChar == '[') {
+            mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logAtomicObj",
+                "(Ljava/lang/Object;Ljava/lang/Object;IILjava/lang/String;)V", false);
+        } else {
+            mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logAtomicInt",
+                "(ILjava/lang/Object;IILjava/lang/String;)V", false);
+        }
+    }
+
+    // Emit the INVOKESTATIC for the right logAtomic method based on value ASM Type
+    private void emitAtomicLogCall(Type valueType) {
+        int sort = valueType.getSort();
+        if (sort == Type.LONG) {
+            mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logAtomicLong",
+                "(JLjava/lang/Object;IILjava/lang/String;)V", false);
+        } else if (sort == Type.OBJECT || sort == Type.ARRAY) {
+            mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logAtomicObj",
+                "(Ljava/lang/Object;Ljava/lang/Object;IILjava/lang/String;)V", false);
+        } else {
+            mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logAtomicInt",
+                "(ILjava/lang/Object;IILjava/lang/String;)V", false);
+        }
+    }
+
+    // Emit the INVOKESTATIC for the right logAtomic method based on return type char
+    private void emitAtomicLogCall(char returnTypeChar) {
+        if (returnTypeChar == 'J' || returnTypeChar == 'D') {
+            mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logAtomicLong",
+                "(JLjava/lang/Object;IILjava/lang/String;)V", false);
+        } else if (returnTypeChar == 'L' || returnTypeChar == '[') {
+            mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logAtomicObj",
+                "(Ljava/lang/Object;Ljava/lang/Object;IILjava/lang/String;)V", false);
+        } else {
+            mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logAtomicInt",
+                "(ILjava/lang/Object;IILjava/lang/String;)V", false);
+        }
     }
 
     private boolean isBlockingCall(String owner, String name) {

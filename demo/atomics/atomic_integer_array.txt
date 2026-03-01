@@ -1,0 +1,219 @@
+[Agent] Initializing Recorder...
+[IdentityMapper] All maps cleared for new trace.
+[Agent] Found Agent at: /home/lex/enxing_fyp/capture_and_replay/libs/trace-capture-agent.jar
+[Agent] Found Common at: /home/lex/enxing_fyp/capture_and_replay/libs/trace-common.jar
+[Agent] Instrumentation active. Recording started.
+[OBJECT-COORD] epoch=0, localSeq=1, role=1, event=WRITE, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=0, localSeq=2, role=1, event=READ, field=java/lang/System.out, fieldId=2
+[App] Starting threads...
+[SYNC] epoch=1, localSeq=3, thread=1, roleId=1, event=THREAD_START(9), lock=Thread@50134894, lockSiteId=3, lockCount=1, siteId=3
+[OBJECT-COORD] epoch=2, localSeq=1, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[SYNC] epoch=2, localSeq=4, thread=1, roleId=1, event=THREAD_START(9), lock=Thread@51521cc1, lockSiteId=4, lockCount=1, siteId=4
+[ATOMIC] epoch=3, localSeq=2, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=0, value=0, siteId=6
+[SYNC] epoch=3, localSeq=5, thread=1, roleId=1, event=THREAD_JOIN(10), lock=Thread@50134894, lockSiteId=3, lockCount=1, siteId=7
+[OBJECT-COORD] epoch=3, localSeq=3, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=3, localSeq=1, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=4, localSeq=4, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=1, value=1, siteId=6
+[OBJECT-COORD] epoch=5, localSeq=5, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=5, localSeq=2, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=0, value=0, siteId=9
+[ATOMIC] epoch=6, localSeq=6, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=2, value=2, siteId=6
+[OBJECT-COORD] epoch=6, localSeq=7, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=6, localSeq=3, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=7, localSeq=8, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=3, value=3, siteId=6
+[ATOMIC] epoch=8, localSeq=4, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=1, value=0, siteId=9
+[OBJECT-COORD] epoch=8, localSeq=9, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=8, localSeq=5, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=9, localSeq=10, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=4, value=4, siteId=6
+[ATOMIC] epoch=10, localSeq=6, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=2, value=0, siteId=9
+[OBJECT-COORD] epoch=10, localSeq=11, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=10, localSeq=7, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=11, localSeq=12, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=5, value=5, siteId=6
+[OBJECT-COORD] epoch=12, localSeq=13, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=12, localSeq=8, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=3, value=0, siteId=9
+[ATOMIC] epoch=13, localSeq=14, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=6, value=6, siteId=6
+[OBJECT-COORD] epoch=13, localSeq=9, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=13, localSeq=15, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=14, localSeq=10, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=4, value=0, siteId=9
+[ATOMIC] epoch=15, localSeq=16, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=7, value=7, siteId=6
+[OBJECT-COORD] epoch=15, localSeq=11, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=15, localSeq=17, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=16, localSeq=12, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=5, value=0, siteId=9
+[ATOMIC] epoch=17, localSeq=18, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=8, value=8, siteId=6
+[OBJECT-COORD] epoch=17, localSeq=13, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=17, localSeq=19, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=18, localSeq=14, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=6, value=0, siteId=9
+[ATOMIC] epoch=19, localSeq=20, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=9, value=9, siteId=6
+[OBJECT-COORD] epoch=19, localSeq=15, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=19, localSeq=21, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=20, localSeq=16, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=7, value=0, siteId=9
+[ATOMIC] epoch=21, localSeq=22, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=10, value=10, siteId=6
+[OBJECT-COORD] epoch=21, localSeq=17, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=22, localSeq=23, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=22, localSeq=18, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=8, value=0, siteId=9
+[ATOMIC] epoch=23, localSeq=24, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=11, value=11, siteId=6
+[OBJECT-COORD] epoch=23, localSeq=19, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=23, localSeq=25, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=24, localSeq=20, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=9, value=0, siteId=9
+[ATOMIC] epoch=25, localSeq=26, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=12, value=12, siteId=6
+[OBJECT-COORD] epoch=25, localSeq=21, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=25, localSeq=27, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=26, localSeq=22, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=10, value=0, siteId=9
+[OBJECT-COORD] epoch=27, localSeq=23, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=27, localSeq=28, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=13, value=13, siteId=6
+[ATOMIC] epoch=28, localSeq=24, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=11, value=0, siteId=9
+[OBJECT-COORD] epoch=28, localSeq=29, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=29, localSeq=30, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=14, value=14, siteId=6
+[OBJECT-COORD] epoch=28, localSeq=25, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=29, localSeq=31, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=31, localSeq=32, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=15, value=15, siteId=6
+[ATOMIC] epoch=30, localSeq=26, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=12, value=0, siteId=9
+[OBJECT-COORD] epoch=31, localSeq=33, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=32, localSeq=34, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=16, value=16, siteId=6
+[OBJECT-COORD] epoch=31, localSeq=27, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=32, localSeq=35, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=33, localSeq=28, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=13, value=0, siteId=9
+[ATOMIC] epoch=34, localSeq=36, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=17, value=17, siteId=6
+[OBJECT-COORD] epoch=34, localSeq=29, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=34, localSeq=37, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=35, localSeq=30, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=14, value=0, siteId=9
+[ATOMIC] epoch=36, localSeq=38, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=18, value=18, siteId=6
+[OBJECT-COORD] epoch=36, localSeq=31, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=36, localSeq=39, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=37, localSeq=32, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=15, value=0, siteId=9
+[ATOMIC] epoch=38, localSeq=40, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=19, value=19, siteId=6
+[OBJECT-COORD] epoch=38, localSeq=33, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=38, localSeq=41, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=39, localSeq=34, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=16, value=0, siteId=9
+[ATOMIC] epoch=40, localSeq=42, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=20, value=20, siteId=6
+[OBJECT-COORD] epoch=40, localSeq=35, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=40, localSeq=43, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=41, localSeq=36, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=17, value=0, siteId=9
+[ATOMIC] epoch=42, localSeq=44, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=21, value=21, siteId=6
+[OBJECT-COORD] epoch=42, localSeq=45, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=43, localSeq=46, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=22, value=22, siteId=6
+[OBJECT-COORD] epoch=43, localSeq=47, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=42, localSeq=37, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=44, localSeq=48, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=23, value=23, siteId=6
+[ATOMIC] epoch=45, localSeq=38, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=18, value=0, siteId=9
+[OBJECT-COORD] epoch=45, localSeq=49, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=46, localSeq=50, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=24, value=24, siteId=6
+[OBJECT-COORD] epoch=46, localSeq=51, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=45, localSeq=39, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=48, localSeq=40, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=19, value=0, siteId=9
+[ATOMIC] epoch=47, localSeq=52, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=25, value=25, siteId=6
+[OBJECT-COORD] epoch=48, localSeq=53, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=49, localSeq=54, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=26, value=26, siteId=6
+[OBJECT-COORD] epoch=48, localSeq=41, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=49, localSeq=55, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=51, localSeq=56, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=27, value=27, siteId=6
+[ATOMIC] epoch=50, localSeq=42, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=20, value=0, siteId=9
+[OBJECT-COORD] epoch=51, localSeq=57, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=52, localSeq=58, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=28, value=28, siteId=6
+[OBJECT-COORD] epoch=51, localSeq=43, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=52, localSeq=59, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=53, localSeq=44, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=21, value=0, siteId=9
+[ATOMIC] epoch=54, localSeq=60, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=29, value=29, siteId=6
+[OBJECT-COORD] epoch=54, localSeq=45, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=54, localSeq=61, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=55, localSeq=46, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=22, value=0, siteId=9
+[ATOMIC] epoch=56, localSeq=62, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=30, value=30, siteId=6
+[OBJECT-COORD] epoch=56, localSeq=47, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=57, localSeq=48, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=23, value=0, siteId=9
+[OBJECT-COORD] epoch=56, localSeq=63, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=57, localSeq=49, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=58, localSeq=64, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=31, value=31, siteId=6
+[OBJECT-COORD] epoch=58, localSeq=65, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=59, localSeq=50, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=24, value=0, siteId=9
+[OBJECT-COORD] epoch=60, localSeq=51, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=60, localSeq=66, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=32, value=32, siteId=6
+[ATOMIC] epoch=61, localSeq=52, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=25, value=0, siteId=9
+[OBJECT-COORD] epoch=61, localSeq=67, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=61, localSeq=53, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=62, localSeq=68, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=33, value=33, siteId=6
+[ATOMIC] epoch=63, localSeq=54, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=26, value=0, siteId=9
+[OBJECT-COORD] epoch=63, localSeq=69, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=63, localSeq=55, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=64, localSeq=70, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=34, value=34, siteId=6
+[ATOMIC] epoch=65, localSeq=56, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=27, value=0, siteId=9
+[OBJECT-COORD] epoch=65, localSeq=57, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=65, localSeq=71, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=66, localSeq=58, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=28, value=0, siteId=9
+[ATOMIC] epoch=67, localSeq=72, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=35, value=35, siteId=6
+[OBJECT-COORD] epoch=67, localSeq=59, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=67, localSeq=73, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=68, localSeq=60, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=29, value=0, siteId=9
+[ATOMIC] epoch=69, localSeq=74, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=36, value=36, siteId=6
+[OBJECT-COORD] epoch=69, localSeq=61, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=70, localSeq=62, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=30, value=0, siteId=9
+[OBJECT-COORD] epoch=70, localSeq=63, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=69, localSeq=75, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=71, localSeq=64, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=31, value=0, siteId=9
+[ATOMIC] epoch=72, localSeq=76, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=37, value=37, siteId=6
+[OBJECT-COORD] epoch=72, localSeq=65, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=72, localSeq=77, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=74, localSeq=78, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=38, value=38, siteId=6
+[ATOMIC] epoch=73, localSeq=66, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=32, value=0, siteId=9
+[OBJECT-COORD] epoch=74, localSeq=79, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=74, localSeq=67, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=75, localSeq=80, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=39, value=39, siteId=6
+[OBJECT-COORD] epoch=76, localSeq=81, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=76, localSeq=68, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=33, value=0, siteId=9
+[ATOMIC] epoch=77, localSeq=82, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=40, value=40, siteId=6
+[OBJECT-COORD] epoch=77, localSeq=83, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=77, localSeq=69, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=78, localSeq=84, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=41, value=41, siteId=6
+[ATOMIC] epoch=79, localSeq=70, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=34, value=0, siteId=9
+[OBJECT-COORD] epoch=79, localSeq=85, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=79, localSeq=71, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=81, localSeq=72, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=35, value=0, siteId=9
+[ATOMIC] epoch=80, localSeq=86, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=42, value=42, siteId=6
+[OBJECT-COORD] epoch=81, localSeq=73, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=81, localSeq=87, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=82, localSeq=74, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=36, value=0, siteId=9
+[OBJECT-COORD] epoch=83, localSeq=75, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=83, localSeq=88, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=43, value=43, siteId=6
+[ATOMIC] epoch=84, localSeq=76, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=37, value=0, siteId=9
+[OBJECT-COORD] epoch=84, localSeq=77, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=85, localSeq=78, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=38, value=0, siteId=9
+[OBJECT-COORD] epoch=84, localSeq=89, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=85, localSeq=79, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=86, localSeq=90, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=44, value=44, siteId=6
+[ATOMIC] epoch=87, localSeq=80, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=39, value=0, siteId=9
+[OBJECT-COORD] epoch=87, localSeq=91, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=87, localSeq=81, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=88, localSeq=92, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=45, value=45, siteId=6
+[ATOMIC] epoch=89, localSeq=82, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=40, value=0, siteId=9
+[OBJECT-COORD] epoch=89, localSeq=93, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=89, localSeq=83, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=90, localSeq=94, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=46, value=46, siteId=6
+[ATOMIC] epoch=91, localSeq=84, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=41, value=0, siteId=9
+[OBJECT-COORD] epoch=91, localSeq=95, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=91, localSeq=85, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=92, localSeq=96, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=47, value=47, siteId=6
+[ATOMIC] epoch=93, localSeq=86, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=42, value=0, siteId=9
+[OBJECT-COORD] epoch=93, localSeq=97, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=93, localSeq=87, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=94, localSeq=98, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=48, value=48, siteId=6
+[ATOMIC] epoch=95, localSeq=88, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=43, value=0, siteId=9
+[OBJECT-COORD] epoch=95, localSeq=99, role=2, event=READ, field=Main.atomicArray, fieldId=1
+[OBJECT-COORD] epoch=95, localSeq=89, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=96, localSeq=100, thread=28, roleId=2, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=49, value=49, siteId=6
+[ATOMIC] epoch=97, localSeq=90, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=44, value=0, siteId=9
+[OBJECT-COORD] epoch=97, localSeq=91, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[SYNC] epoch=98, localSeq=6, thread=1, roleId=1, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=10
+[ATOMIC] epoch=99, localSeq=92, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=45, value=0, siteId=9
+[OBJECT-COORD] epoch=99, localSeq=93, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=100, localSeq=94, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=46, value=0, siteId=9
+[SYNC] epoch=99, localSeq=7, thread=1, roleId=1, event=THREAD_JOIN(10), lock=Thread@51521cc1, lockSiteId=4, lockCount=1, siteId=11
+[OBJECT-COORD] epoch=100, localSeq=95, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=101, localSeq=96, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=47, value=0, siteId=9
+[OBJECT-COORD] epoch=101, localSeq=97, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=102, localSeq=98, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=48, value=0, siteId=9
+[OBJECT-COORD] epoch=102, localSeq=99, role=3, event=READ, field=Main.atomicArray, fieldId=1
+[ATOMIC] epoch=103, localSeq=100, thread=29, roleId=3, event=ATOMIC_WRITE(21), receiver=AtomicIntegerArray@66e68e28, index=49, value=0, siteId=9
+[SYNC] epoch=104, localSeq=8, thread=1, roleId=1, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[OBJECT-COORD] epoch=104, localSeq=9, role=1, event=READ, field=java/lang/System.out, fieldId=2
+[App] Done.
+[OBJECT-COORD] epoch=104, localSeq=10, role=1, event=READ, field=java/lang/System.out, fieldId=2
+[OBJECT-COORD] epoch=104, localSeq=11, role=1, event=READ, field=Main.atomicArray, fieldId=1
+Final array values:[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]

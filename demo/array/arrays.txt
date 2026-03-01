@@ -1,0 +1,219 @@
+[Agent] Initializing Recorder...
+[IdentityMapper] All maps cleared for new trace.
+[Agent] Found Agent at: /home/lex/enxing_fyp/capture_and_replay/libs/trace-capture-agent.jar
+[Agent] Found Common at: /home/lex/enxing_fyp/capture_and_replay/libs/trace-common.jar
+[Agent] Instrumentation active. Recording started.
+[OBJECT-COORD] epoch=0, localSeq=1, role=1, event=WRITE, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=0, localSeq=2, role=1, event=READ, field=java/lang/System.out, fieldId=2
+[App] Starting threads...
+[SYNC] epoch=1, localSeq=3, thread=1, roleId=1, event=THREAD_START(9), lock=Thread@5e8c92f4, lockSiteId=3, lockCount=1, siteId=3
+[SYNC] epoch=2, localSeq=4, thread=1, roleId=1, event=THREAD_START(9), lock=Thread@2957fcb0, lockSiteId=4, lockCount=1, siteId=4
+[OBJECT-COORD] epoch=2, localSeq=1, role=2, event=READ, field=Main.normalArray, fieldId=1
+[SYNC] epoch=2, localSeq=5, thread=1, roleId=1, event=THREAD_JOIN(10), lock=Thread@5e8c92f4, lockSiteId=3, lockCount=1, siteId=6
+[OBJECT-COORD] epoch=2, localSeq=1, role=3, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=2, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=0, siteId=7
+[OBJECT-COORD] epoch=2, localSeq=3, role=2, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=2, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=0, siteId=9
+[OBJECT-COORD] epoch=2, localSeq=3, role=3, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=4, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=1, siteId=7
+[OBJECT-COORD] epoch=2, localSeq=5, role=2, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=4, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=1, siteId=9
+[ARRAY] epoch=2, localSeq=6, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=2, siteId=7
+[OBJECT-COORD] epoch=2, localSeq=5, role=3, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=7, role=2, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=6, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=2, siteId=9
+[ARRAY] epoch=2, localSeq=8, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=3, siteId=7
+[OBJECT-COORD] epoch=2, localSeq=7, role=3, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=9, role=2, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=8, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=3, siteId=9
+[ARRAY] epoch=2, localSeq=10, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=4, siteId=7
+[OBJECT-COORD] epoch=2, localSeq=9, role=3, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=11, role=2, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=12, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=5, siteId=7
+[ARRAY] epoch=2, localSeq=10, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=4, siteId=9
+[OBJECT-COORD] epoch=2, localSeq=13, role=2, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=11, role=3, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=14, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=6, siteId=7
+[ARRAY] epoch=2, localSeq=12, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=5, siteId=9
+[OBJECT-COORD] epoch=2, localSeq=15, role=2, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=13, role=3, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=16, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=7, siteId=7
+[ARRAY] epoch=2, localSeq=14, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=6, siteId=9
+[OBJECT-COORD] epoch=2, localSeq=17, role=2, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=15, role=3, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=18, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=8, siteId=7
+[ARRAY] epoch=2, localSeq=16, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=7, siteId=9
+[OBJECT-COORD] epoch=2, localSeq=19, role=2, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=20, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=9, siteId=7
+[OBJECT-COORD] epoch=2, localSeq=17, role=3, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=21, role=2, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=22, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=10, siteId=7
+[OBJECT-COORD] epoch=2, localSeq=23, role=2, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=18, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=8, siteId=9
+[ARRAY] epoch=2, localSeq=24, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=11, siteId=7
+[OBJECT-COORD] epoch=2, localSeq=19, role=3, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=25, role=2, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=20, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=9, siteId=9
+[ARRAY] epoch=2, localSeq=26, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=12, siteId=7
+[OBJECT-COORD] epoch=2, localSeq=21, role=3, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=27, role=2, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=22, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=10, siteId=9
+[ARRAY] epoch=2, localSeq=28, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=13, siteId=7
+[OBJECT-COORD] epoch=2, localSeq=23, role=3, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=29, role=2, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=24, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=11, siteId=9
+[ARRAY] epoch=2, localSeq=30, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=14, siteId=7
+[OBJECT-COORD] epoch=2, localSeq=31, role=2, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=25, role=3, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=32, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=15, siteId=7
+[ARRAY] epoch=2, localSeq=26, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=12, siteId=9
+[OBJECT-COORD] epoch=2, localSeq=33, role=2, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=27, role=3, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=28, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=13, siteId=9
+[ARRAY] epoch=2, localSeq=34, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=16, siteId=7
+[OBJECT-COORD] epoch=2, localSeq=29, role=3, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=35, role=2, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=30, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=14, siteId=9
+[ARRAY] epoch=2, localSeq=36, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=17, siteId=7
+[OBJECT-COORD] epoch=2, localSeq=31, role=3, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=32, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=15, siteId=9
+[OBJECT-COORD] epoch=2, localSeq=37, role=2, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=33, role=3, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=38, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=18, siteId=7
+[ARRAY] epoch=2, localSeq=34, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=16, siteId=9
+[OBJECT-COORD] epoch=2, localSeq=39, role=2, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=35, role=3, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=40, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=19, siteId=7
+[ARRAY] epoch=2, localSeq=36, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=17, siteId=9
+[OBJECT-COORD] epoch=2, localSeq=41, role=2, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=37, role=3, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=38, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=18, siteId=9
+[ARRAY] epoch=2, localSeq=42, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=20, siteId=7
+[OBJECT-COORD] epoch=2, localSeq=43, role=2, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=44, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=21, siteId=7
+[OBJECT-COORD] epoch=2, localSeq=39, role=3, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=45, role=2, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=40, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=19, siteId=9
+[ARRAY] epoch=2, localSeq=46, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=22, siteId=7
+[OBJECT-COORD] epoch=2, localSeq=41, role=3, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=42, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=20, siteId=9
+[OBJECT-COORD] epoch=2, localSeq=43, role=3, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=47, role=2, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=44, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=21, siteId=9
+[ARRAY] epoch=2, localSeq=48, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=23, siteId=7
+[OBJECT-COORD] epoch=2, localSeq=45, role=3, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=46, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=22, siteId=9
+[OBJECT-COORD] epoch=2, localSeq=49, role=2, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=47, role=3, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=50, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=24, siteId=7
+[ARRAY] epoch=2, localSeq=48, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=23, siteId=9
+[OBJECT-COORD] epoch=2, localSeq=49, role=3, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=51, role=2, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=50, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=24, siteId=9
+[OBJECT-COORD] epoch=2, localSeq=51, role=3, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=52, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=25, siteId=7
+[ARRAY] epoch=2, localSeq=52, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=25, siteId=9
+[OBJECT-COORD] epoch=2, localSeq=53, role=2, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=53, role=3, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=54, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=26, siteId=7
+[ARRAY] epoch=2, localSeq=54, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=26, siteId=9
+[OBJECT-COORD] epoch=2, localSeq=55, role=2, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=55, role=3, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=56, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=27, siteId=7
+[ARRAY] epoch=2, localSeq=56, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=27, siteId=9
+[OBJECT-COORD] epoch=2, localSeq=57, role=2, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=57, role=3, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=58, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=28, siteId=7
+[ARRAY] epoch=2, localSeq=58, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=28, siteId=9
+[OBJECT-COORD] epoch=2, localSeq=59, role=2, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=59, role=3, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=60, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=29, siteId=7
+[ARRAY] epoch=2, localSeq=60, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=29, siteId=9
+[OBJECT-COORD] epoch=2, localSeq=61, role=2, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=61, role=3, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=62, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=30, siteId=7
+[ARRAY] epoch=2, localSeq=62, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=30, siteId=9
+[OBJECT-COORD] epoch=2, localSeq=63, role=2, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=63, role=3, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=64, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=31, siteId=7
+[OBJECT-COORD] epoch=2, localSeq=65, role=2, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=64, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=31, siteId=9
+[ARRAY] epoch=2, localSeq=66, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=32, siteId=7
+[OBJECT-COORD] epoch=2, localSeq=65, role=3, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=67, role=2, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=66, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=32, siteId=9
+[OBJECT-COORD] epoch=2, localSeq=67, role=3, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=68, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=33, siteId=9
+[OBJECT-COORD] epoch=2, localSeq=69, role=3, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=70, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=34, siteId=9
+[ARRAY] epoch=2, localSeq=68, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=33, siteId=7
+[OBJECT-COORD] epoch=2, localSeq=71, role=3, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=69, role=2, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=72, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=35, siteId=9
+[ARRAY] epoch=2, localSeq=70, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=34, siteId=7
+[OBJECT-COORD] epoch=2, localSeq=73, role=3, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=71, role=2, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=72, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=35, siteId=7
+[ARRAY] epoch=2, localSeq=74, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=36, siteId=9
+[OBJECT-COORD] epoch=2, localSeq=73, role=2, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=75, role=3, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=74, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=36, siteId=7
+[ARRAY] epoch=2, localSeq=76, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=37, siteId=9
+[OBJECT-COORD] epoch=2, localSeq=75, role=2, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=77, role=3, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=76, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=37, siteId=7
+[ARRAY] epoch=2, localSeq=78, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=38, siteId=9
+[OBJECT-COORD] epoch=2, localSeq=77, role=2, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=79, role=3, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=78, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=38, siteId=7
+[ARRAY] epoch=2, localSeq=80, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=39, siteId=9
+[OBJECT-COORD] epoch=2, localSeq=79, role=2, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=81, role=3, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=80, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=39, siteId=7
+[ARRAY] epoch=2, localSeq=82, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=40, siteId=9
+[OBJECT-COORD] epoch=2, localSeq=81, role=2, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=82, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=40, siteId=7
+[OBJECT-COORD] epoch=2, localSeq=83, role=3, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=83, role=2, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=84, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=41, siteId=9
+[ARRAY] epoch=2, localSeq=84, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=41, siteId=7
+[OBJECT-COORD] epoch=2, localSeq=85, role=3, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=85, role=2, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=86, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=42, siteId=9
+[ARRAY] epoch=2, localSeq=86, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=42, siteId=7
+[OBJECT-COORD] epoch=2, localSeq=87, role=3, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=87, role=2, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=88, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=43, siteId=9
+[ARRAY] epoch=2, localSeq=88, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=43, siteId=7
+[OBJECT-COORD] epoch=2, localSeq=89, role=3, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=89, role=2, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=90, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=44, siteId=9
+[ARRAY] epoch=2, localSeq=90, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=44, siteId=7
+[OBJECT-COORD] epoch=2, localSeq=91, role=3, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=91, role=2, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=92, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=45, siteId=9
+[OBJECT-COORD] epoch=2, localSeq=93, role=3, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=94, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=46, siteId=9
+[OBJECT-COORD] epoch=2, localSeq=95, role=3, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=92, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=45, siteId=7
+[ARRAY] epoch=2, localSeq=96, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=47, siteId=9
+[OBJECT-COORD] epoch=2, localSeq=93, role=2, event=READ, field=Main.normalArray, fieldId=1
+[OBJECT-COORD] epoch=2, localSeq=97, role=3, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=94, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=46, siteId=7
+[ARRAY] epoch=2, localSeq=98, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=48, siteId=9
+[OBJECT-COORD] epoch=2, localSeq=99, role=3, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=100, thread=29, roleId=3, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=49, siteId=9
+[OBJECT-COORD] epoch=2, localSeq=95, role=2, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=96, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=47, siteId=7
+[OBJECT-COORD] epoch=2, localSeq=97, role=2, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=98, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=48, siteId=7
+[OBJECT-COORD] epoch=2, localSeq=99, role=2, event=READ, field=Main.normalArray, fieldId=1
+[ARRAY] epoch=2, localSeq=100, thread=28, roleId=2, event=ARRAY_WRITE(8), array=int[]@1a25d31b, arraySiteId=7, arrayCount=1, index=49, siteId=7
+[SYNC] epoch=3, localSeq=6, thread=1, roleId=1, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=10
+[SYNC] epoch=3, localSeq=7, thread=1, roleId=1, event=THREAD_JOIN(10), lock=Thread@2957fcb0, lockSiteId=4, lockCount=1, siteId=11
+[SYNC] epoch=4, localSeq=8, thread=1, roleId=1, event=THREAD_WAKEUP(13), lock=null, lockSiteId=0, lockCount=0, siteId=12
+[OBJECT-COORD] epoch=4, localSeq=9, role=1, event=READ, field=java/lang/System.out, fieldId=2
+[App] Done.
+[OBJECT-COORD] epoch=4, localSeq=10, role=1, event=READ, field=java/lang/System.out, fieldId=2
+[OBJECT-COORD] epoch=4, localSeq=11, role=1, event=READ, field=Main.normalArray, fieldId=1
+Final array values:[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49]

@@ -1,7 +1,6 @@
 Command to run the capture agent
 ```
-java -javaagent:lib
-s/trace-capture-agent.jar -cp build/test Main
+java -javaagent:libs/trace-capture-agent.jar -cp build/test Main
 ```
 
 Command to run the replay agent

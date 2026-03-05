@@ -2,7 +2,7 @@ import java.util.concurrent.atomic.AtomicIntegerArray;
 import java.util.Arrays;
 
 public class Main {
- 
+
     static int[] normalArray = new int[50];
 
     public static void main(String[] args) throws InterruptedException {

@@ -28,6 +28,7 @@ download_jar() {
 download_jar "https://repo1.maven.org/maven2/org/ow2/asm/asm/$ASM_VER/asm-$ASM_VER.jar" "$LIB_DIR/asm-$ASM_VER.jar"
 download_jar "https://repo1.maven.org/maven2/org/ow2/asm/asm-commons/$ASM_VER/asm-commons-$ASM_VER.jar" "$LIB_DIR/asm-commons-$ASM_VER.jar"
 download_jar "https://repo1.maven.org/maven2/org/ow2/asm/asm-tree/$ASM_VER/asm-tree-$ASM_VER.jar" "$LIB_DIR/asm-tree-$ASM_VER.jar"
+download_jar "https://repo1.maven.org/maven2/org/ow2/asm/asm-util/$ASM_VER/asm-util-$ASM_VER.jar" "$LIB_DIR/asm-util-$ASM_VER.jar"
 
 # --- Step 1: Build Common (The Schema) ---
 echo "=== [3/6] Building Trace Common ==="
@@ -38,7 +39,7 @@ echo " -> Created trace-common.jar"
 # --- Step 2: Build Shared Instrumentation Engine ---
 echo "=== [4/6] Building Shared Instrumentation Engine ==="
 # Needs ASM + Common
-CP_ASM="$LIB_DIR/asm-$ASM_VER.jar:$LIB_DIR/asm-commons-$ASM_VER.jar:$LIB_DIR/asm-tree-$ASM_VER.jar"
+CP_ASM="$LIB_DIR/asm-$ASM_VER.jar:$LIB_DIR/asm-commons-$ASM_VER.jar:$LIB_DIR/asm-tree-$ASM_VER.jar:$LIB_DIR/asm-util-$ASM_VER.jar"
 CP_INSTR="$DIST_DIR/trace-common.jar:$CP_ASM"
 javac -d $BUILD_DIR/instr -cp "$CP_INSTR" instr/*.java
 
@@ -65,8 +66,9 @@ package_agent() {
     
     # Unzip ASM libs
     (cd $tmp && jar -xf ../$LIB_DIR/asm-$ASM_VER.jar && \
-                jar -xf ../$LIB_DIR/asm-commons-$ASM_VER.jar && \
-                jar -xf ../$LIB_DIR/asm-tree-$ASM_VER.jar)
+            jar -xf ../$LIB_DIR/asm-commons-$ASM_VER.jar && \
+            jar -xf ../$LIB_DIR/asm-tree-$ASM_VER.jar && \
+            jar -xf ../$LIB_DIR/asm-util-$ASM_VER.jar)
     
     # Copy Compiled Classes
     cp -r $BUILD_DIR/common/* $tmp/

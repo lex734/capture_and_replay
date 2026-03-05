@@ -39,6 +39,7 @@ public class ReplayAgent {
             System.out.println("[ReplayAgent] Loaded " + totalEvents + " events. Instrumentation active.");
 
             // 4. Add the Transformer (The mode is handled by System Property tool.mode=REPLAY)
+            System.setProperty("tool.mode", "REPLAY");
             inst.addTransformer(new SyncTransformer(), true);
 
         } catch (Exception e) {

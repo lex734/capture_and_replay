@@ -7,7 +7,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 
 public class BinarySchema {
-    public static final int RECORD_SIZE = 32;
+    public static final int RECORD_SIZE = 40;
 
     // LongAdder uses per-thread striped counters internally — near-zero contention
     // compared to AtomicLong.incrementAndGet() under high concurrency.
@@ -17,13 +17,14 @@ public class BinarySchema {
 
     // ---- Batched write position allocation ----
     // Instead of every event doing a CAS on a shared atomic, each thread reserves
-    // BATCH_SIZE slots at once. It then fills those slots locally with zero contention.
+    // BATCH_SIZE slots at once. It then fills those slots locally with zero
+    // contention.
     // CAS only happens once per BATCH_SIZE events (64x reduction in atomic ops).
     private static final AtomicLong writePos = new AtomicLong(0);
     private static final int BATCH_SIZE = 64;
 
     // Per-thread batch state: [0] = batchStart, [1] = remainingSlots
-    private static final ThreadLocal<long[]> batchState = ThreadLocal.withInitial(() -> new long[]{-1, 0});
+    private static final ThreadLocal<long[]> batchState = ThreadLocal.withInitial(() -> new long[] { -1, 0 });
 
     public static class Event {
         public static final int MONITOR_ENTER = 1;
@@ -89,9 +90,10 @@ public class BinarySchema {
         return slot;
     }
 
-    public static void write(long seq, long roleId, int packedType, int objSite, int objCount, int data) {
+    public static void write(long seq, long roleId, int packedType, int objSite, int objCount, int data1, int data2) {
         long slot = allocateSlot();
-        if (buffer == null || slot >= maxAllowedEvents) return;
+        if (buffer == null || slot >= maxAllowedEvents)
+            return;
 
         // LongAdder.increment() — near-zero contention (striped counters)
         recordCount.increment();
@@ -99,12 +101,17 @@ public class BinarySchema {
         // Write at the allocated slot position (not at seq position)
         int pos = (int) (slot * RECORD_SIZE);
 
-        buffer.putLong(pos, seq);        // packed epoch<<32 | localSeq
+        buffer.putLong(pos, seq); // packed epoch<<32 | localSeq
         buffer.putLong(pos + 8, roleId);
         buffer.putInt(pos + 16, packedType);
         buffer.putInt(pos + 20, objSite);
         buffer.putInt(pos + 24, objCount);
-        buffer.putInt(pos + 28, data);
+        buffer.putInt(pos + 28, data1);
+        buffer.putInt(pos + 32, data2);
+    }
+
+    public static void write(long seq, long roleId, int packedType, int objSite, int objCount, int data) {
+        write(seq, roleId, packedType, objSite, objCount, 0, data);
     }
 
     // How many events were actually written

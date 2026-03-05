@@ -16,22 +16,29 @@ public class IdentityMapper {
     // --- Mappings ---
     private static final ConcurrentHashMap<Long, Integer> tidToRoleId = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, Integer> siteStringToId = new ConcurrentHashMap<>();
-    
+
     // Maps "ClassName#fieldName" to a unique global ID for static variables
     private static final ConcurrentHashMap<String, Integer> staticFieldToId = new ConcurrentHashMap<>();
-    
+
     // Maps "ClassID:fieldName" to a unique ID for instance variables
     private static final ConcurrentHashMap<String, Integer> instanceFieldToId = new ConcurrentHashMap<>();
 
     // Identity tracking for actual objects on the heap
     private static final Map<Object, BirthId> objToId = Collections.synchronizedMap(new WeakHashMap<>());
+    private static final Map<BirthId, Object> idToObj = Collections.synchronizedMap(new WeakHashMap<>());
     private static final ConcurrentHashMap<Integer, AtomicInteger> siteCounters = new ConcurrentHashMap<>();
+
+    private static final ConcurrentHashMap<Long, Integer> preAssignedRoles = new ConcurrentHashMap<>();
 
     public static class BirthId {
         public final int siteId;
         public final int count;
-        public BirthId(int s, int c) { this.siteId = s; this.count = c; }
-        
+
+        public BirthId(int s, int c) {
+            this.siteId = s;
+            this.count = c;
+        }
+
         // Static constant representing the "Global/Static" birthplace
         public static final BirthId GLOBAL = new BirthId(0, 0);
     }
@@ -40,7 +47,28 @@ public class IdentityMapper {
      * Maps a thread ID to a logical Role ID.
      */
     public static int getRoleIdBySite(long tid, int siteId) {
-        return tidToRoleId.computeIfAbsent(tid, k -> roleCounter.getAndIncrement());
+        Thread current = Thread.currentThread();
+        String name = current.getName();
+
+        // JVM infrastructure threads — never assign roles to these,
+        // they are non-deterministic across runs and should not be replayed
+        if (name.startsWith("Finalizer")
+                || name.startsWith("Reference Handler")
+                || name.startsWith("Signal Dispatcher")
+                || name.startsWith("Notification Thread")
+                || name.startsWith("Common-Cleaner")
+                || name.startsWith("ForkJoinPool.commonPool")
+                || name.startsWith("ForkJoinPool-")
+                || current.isDaemon() && current.getThreadGroup() != null
+                        && "system".equals(current.getThreadGroup().getName())) {
+            return -1; // sentinel: caller should skip logging for this thread
+        }
+        Integer preAssigned = preAssignedRoles.get(tid);
+        int roleId = tidToRoleId.computeIfAbsent(tid, k -> roleCounter.getAndIncrement());
+        System.err.println("[RoleAssign] tid=" + tid + " site=" + siteId + "-> role=" + roleId);
+        System.out.println("[RoleDebug] tid=" + tid + " siteId=" + siteId + " preAssigned=" + preAssigned);
+        if (preAssigned != null) return preAssigned;
+        return roleId;
     }
 
     /**
@@ -51,29 +79,33 @@ public class IdentityMapper {
     }
 
     /**
-     * Returns a BirthId for objects. 
+     * Returns a BirthId for objects.
      * If the object is null (Static), it returns the GLOBAL BirthId (Site 0).
      */
     public static BirthId getBirthId(Object obj, String ownerName, int currentInstructionSiteId) {
         if (obj == null) {
-            // Static fields belong to the "Global Site" (0), not the current thread's instruction site.
+            // Static fields belong to the "Global Site" (0), not the current thread's
+            // instruction site.
             return BirthId.GLOBAL;
         }
 
         synchronized (objToId) {
             BirthId existing = objToId.get(obj);
-            if (existing != null) return existing;
+            if (existing != null)
+                return existing;
 
             AtomicInteger counter = siteCounters.computeIfAbsent(currentInstructionSiteId, k -> new AtomicInteger(1));
             BirthId newId = new BirthId(currentInstructionSiteId, counter.getAndIncrement());
             objToId.put(obj, newId);
+            idToObj.put(newId, obj);
             return newId;
         }
     }
 
     /**
      * Returns a unique ID for a field.
-     * If birthId is GLOBAL (Site 0), it generates a static field ID based on the class name.
+     * If birthId is GLOBAL (Site 0), it generates a static field ID based on the
+     * class name.
      */
     public static int getFieldId(BirthId birthId, String fieldName, String ownerClassName) {
         if (birthId.siteId == 0) {
@@ -87,6 +119,14 @@ public class IdentityMapper {
             return instanceFieldToId.computeIfAbsent(key, k -> fieldCounter.getAndIncrement());
         }
     }
+
+    public static Object resolveByBirthId(int valueSiteId, int valueCount) {
+        return idToObj.get(new BirthId(valueSiteId, valueCount));
+    }
+    public static void preAssignRole(long tid, int roleId) {
+        preAssignedRoles.put(tid, roleId);
+    }
+
 
     public static void reset() {
         tidToRoleId.clear();

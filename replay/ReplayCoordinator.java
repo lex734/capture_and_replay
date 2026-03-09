@@ -45,20 +45,18 @@ public class ReplayCoordinator {
             if (seq == 0 && roleId == 0 && packedType == 0)
                 continue;
 
-            events.add(new long[] { seq, roleId, packedType, objSite, objCount, data1, data2 });
+            events.add(new long[] { seq, roleId, packedType, objSite, objCount, data1, data2, i });
         }
 
-        // Primary sort: epoch (high 32 bits of seq) — epoch boundaries are causal
-        // fences
-        // Secondary sort: localSeq (low 32 bits) — within an epoch, preserve per-thread
-        // order
+        // Sort: epoch first, then localSeq, then slot as true tie-breaker
         events.sort((a, b) -> {
             long epochA = a[0] >>> 32, epochB = b[0] >>> 32;
-            if (epochA != epochB)
-                return Long.compare(epochA, epochB);
-            return Long.compare(a[0] & 0xFFFFFFFFL, b[0] & 0xFFFFFFFFL);
+            if (epochA != epochB) return Long.compare(epochA, epochB);
+            long seqA = a[0] & 0xFFFFFFFFL, seqB = b[0] & 0xFFFFFFFFL;
+            if (seqA != seqB) return Long.compare(seqA, seqB);
+            return Long.compare(a[7], b[7]); // slot = actual write order to buffer
         });
-
+        
         sortedEvents = events.toArray(new long[0][]);
         totalEvents = sortedEvents.length;
 
@@ -148,6 +146,7 @@ public class ReplayCoordinator {
                 }
                 // Normal strict total-order match
                 if (roleId == expectedRole && packedType == expectedType) {
+                    System.out.println("ReplayCoordinator.awaitTurn: Processed event idx=" + idx + ", roleId=" + roleId + ", packedType=" + packedType + ", objSite=" + objSite + ", objCount=" + objCount + ", data=" + data);
                     if (isReleaseEvent(expectedType))
                         releasedEpoch.set(expected[0] >>> 32);
                     currentIdx.incrementAndGet();
@@ -183,6 +182,7 @@ public class ReplayCoordinator {
 
                 if (roleId == (int) expected[1] && packedType == (int) expected[2]) {
                     int returnValue = (int) expected[5];
+                    System.out.println("ReplayCoordinator.awaitTurnInt: Processed event idx=" + idx + ", roleId=" + roleId + ", packedType=" + packedType + ", currentSiteId=" + currentSiteId + ", returnValue=" + returnValue);
                     if (isReleaseEvent(packedType))
                         releasedEpoch.set(expected[0] >>> 32);
                     currentIdx.incrementAndGet();
@@ -210,11 +210,13 @@ public class ReplayCoordinator {
                 if (roleId == (int) expected[1] && packedType == (int) expected[2]) {
                     long high = (long) expected[5] << 32;
                     long low = expected[6] & 0xFFFFFFFFL;
+                    long returnValue = high | low;
+                    System.out.println("ReplayCoordinator.awaitTurnLong: Processed event idx=" + idx + ", roleId=" + roleId + ", packedType=" + packedType + ", currentSiteId=" + currentSiteId + ", returnValue=" + returnValue);
                     if (isReleaseEvent(packedType))
                         releasedEpoch.set(expected[0] >>> 32);
                     currentIdx.incrementAndGet();
                     controlLock.notifyAll();
-                    return high | low;
+                    return returnValue;
                 }
                 try {
                     controlLock.wait(100);
@@ -237,11 +239,13 @@ public class ReplayCoordinator {
                 if (roleId == (int) expected[1] && packedType == (int) expected[2]) {
                     int valueSiteId = (int) expected[5];
                     int valueCount = (int) expected[6];
+                    Object returnValue = IdentityMapper.resolveByBirthId(valueSiteId, valueCount);
+                    System.out.println("ReplayCoordinator.awaitTurnObj: Processed event idx=" + idx + ", roleId=" + roleId + ", packedType=" + packedType + ", currentSiteId=" + currentSiteId + ", valueSiteId=" + valueSiteId + ", valueCount=" + valueCount + ", returnValue=" + returnValue);
                     if (isReleaseEvent(packedType))
                         releasedEpoch.set(expected[0] >>> 32);
                     currentIdx.incrementAndGet();
                     controlLock.notifyAll();
-                    return IdentityMapper.resolveByBirthId(valueSiteId, valueCount);
+                    return returnValue;
                 }
                 try {
                     controlLock.wait(100);

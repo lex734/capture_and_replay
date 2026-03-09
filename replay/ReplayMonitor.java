@@ -41,6 +41,8 @@ public class ReplayMonitor {
             BirthId birthId = IdentityMapper.getBirthId(lock, null, currentSiteId);
             int packedType = (eventType & 0xFF) | (BinarySchema.Flags.NONE << 8);
 
+            System.out.println("ReplayMonitor.checkSync: eventType=" + eventType + ", lock=" + lock + ", siteString=" + siteString + ", roleId=" + roleId + ", birthId.siteId=" + birthId.siteId + ", birthId.count=" + birthId.count + ", currentSiteId=" + currentSiteId);
+
             ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, currentSiteId);
         } finally {
             isInside.set(false);
@@ -67,6 +69,8 @@ public class ReplayMonitor {
                         (isStatic  ? BinarySchema.Flags.IS_STATIC   : 0);
             int packedType = BinarySchema.packType(eventType, flags);
 
+            System.out.println("ReplayMonitor.checkField: eventType=" + eventType + ", owner=" + owner + ", siteString=" + siteString + ", isVolatile=" + isVolatile + ", isStatic=" + isStatic + ", fieldName=" + fieldName + ", ownerName=" + ownerName + ", roleId=" + roleId + ", birthId.siteId=" + birthId.siteId + ", birthId.count=" + birthId.count + ", fieldId=" + fieldId + ", flags=" + flags + ", packedType=" + packedType);
+
             ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, fieldId);
         } finally {
             isInside.set(false);
@@ -86,6 +90,8 @@ public class ReplayMonitor {
 
             BirthId birthId = IdentityMapper.getBirthId(array, null, currentSiteId);
             int packedType = (eventType & 0xFF) | (BinarySchema.Flags.NONE << 8);
+
+            System.out.println("ReplayMonitor.checkArray: eventType=" + eventType + ", array=" + array + ", index=" + index + ", siteString=" + siteString + ", roleId=" + roleId + ", birthId.siteId=" + birthId.siteId + ", birthId.count=" + birthId.count + ", packedType=" + packedType);
 
             ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, index);
         } finally {
@@ -107,6 +113,7 @@ public class ReplayMonitor {
             if (roleId == -1) return;
 
             // Mirror of logAtomicInt: arg2 = intValue, arg1 = 0 (birthId.siteId not needed for verification)
+            System.out.println("ReplayMonitor.checkAtomicInt(write): writtenValue=" + writtenValue + ", receiver=" + receiver + ", index=" + index + ", eventType=" + eventType + ", siteString=" + siteString + ", roleId=" + roleId + ", currentSiteId=" + currentSiteId);
             ReplayCoordinator.awaitTurn(roleId, eventType & 0xFF, 0, writtenValue, currentSiteId);
         } finally {
             isInside.set(false);
@@ -122,6 +129,7 @@ public class ReplayMonitor {
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) return;
             // logAtomicLong only stored (int)longValue — high 32 bits were discarded at capture time
+            System.out.println("ReplayMonitor.checkAtomicLong(write): writtenValue=" + writtenValue + ", receiver=" + receiver + ", index=" + index + ", eventType=" + eventType + ", siteString=" + siteString + ", roleId=" + roleId + ", currentSiteId=" + currentSiteId);
             ReplayCoordinator.awaitTurn(roleId, eventType & 0xFF, 0, (int)writtenValue, currentSiteId);
         } finally {
             isInside.set(false);
@@ -139,6 +147,7 @@ public class ReplayMonitor {
 
             // logAtomicObj stored valueBirth.siteId as the value field
             BirthId valueBirth = IdentityMapper.getBirthId(writtenValue, null, currentSiteId);
+            System.out.println("ReplayMonitor.checkAtomicObj(write): writtenValue=" + writtenValue + ", receiver=" + receiver + ", index=" + index + ", eventType=" + eventType + ", siteString=" + siteString + ", roleId=" + roleId + ", valueBirth.siteId=" + valueBirth.siteId + ", valueBirth.count=" + valueBirth.count + ", currentSiteId=" + currentSiteId);
             ReplayCoordinator.awaitTurn(roleId, eventType & 0xFF, 0, valueBirth.siteId, currentSiteId);
         } finally {
             isInside.set(false);
@@ -154,6 +163,7 @@ public class ReplayMonitor {
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
 
             // Logged field 5 = intValue → comes back as awaitTurn's arg2
+            System.out.println("ReplayMonitor.checkAtomicInt(read): receiver=" + receiver + ", index=" + index + ", eventType=" + eventType + ", siteString=" + siteString + ", roleId=" + roleId + ", currentSiteId=" + currentSiteId);
             return ReplayCoordinator.awaitTurnInt(roleId, eventType & 0xFF, currentSiteId);
         } finally {
             isInside.set(false);
@@ -169,6 +179,7 @@ public class ReplayMonitor {
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             // WARNING: capture only stored (int)longValue — high 32 bits are unrecoverable.
             // awaitTurnLong must reconstruct from the single stored int.
+            System.out.println("ReplayMonitor.checkAtomicLong(read): receiver=" + receiver + ", index=" + index + ", eventType=" + eventType + ", siteString=" + siteString + ", roleId=" + roleId + ", currentSiteId=" + currentSiteId);
             return ReplayCoordinator.awaitTurnLong(roleId, eventType & 0xFF, currentSiteId);
         } finally {
             isInside.set(false);
@@ -183,6 +194,7 @@ public class ReplayMonitor {
             int currentSiteId = IdentityMapper.getSiteId(siteString);
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             // Logged field 5 = valueBirth.siteId → coordinator resolves back to the live object
+            System.out.println("ReplayMonitor.checkAtomicObj(read): receiver=" + receiver + ", index=" + index + ", eventType=" + eventType + ", siteString=" + siteString + ", roleId=" + roleId + ", currentSiteId=" + currentSiteId);
             return ReplayCoordinator.awaitTurnObj(roleId, eventType & 0xFF, currentSiteId);
         } finally {
             isInside.set(false);

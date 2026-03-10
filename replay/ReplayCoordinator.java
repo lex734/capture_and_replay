@@ -18,6 +18,12 @@ public class ReplayCoordinator {
     private static final Object controlLock = new Object();
     private static final AtomicLong releasedEpoch = new AtomicLong(0);
 
+    // Stores the seq of the last matched event for the calling thread,
+    // so ReplayMonitor can print epoch/seq after awaitTurn returns.
+    private static final ThreadLocal<Long> lastMatchedSeq = ThreadLocal.withInitial(() -> 0L);
+
+    public static long getLastMatchedSeq() { return lastMatchedSeq.get(); }
+
     // Roles seen in the trace that haven't checked in yet
     private static final Set<Integer> pendingRoles = ConcurrentHashMap.newKeySet();
     // Roles that have called awaitTurn at least once — they're alive in replay
@@ -69,11 +75,28 @@ public class ReplayCoordinator {
         System.out.println("[ReplayCoordinator] Expecting roles: " + pendingRoles);
     }
 
-    // Returns the roleId of the earliest pending role in the trace
+    /**
+     * Registers the main thread so its role is immediately active.
+     * The main thread is always the first role in the sorted trace.
+     * Without this, the main thread's early events (CLASS_INIT, etc.) would be
+     * treated as deadlocked because its role stays in pendingRoles until checkIn
+     * is called — but checkIn is only called for newly spawned threads.
+     */
+    public static void registerMainThread(long mainTid) {
+        if (sortedEvents == null || sortedEvents.length == 0) return;
+        int mainRole = (int) sortedEvents[0][1];
+        pendingRoles.remove(mainRole);
+        activeRoles.add(mainRole);
+        IdentityMapper.preAssignRole(mainTid, mainRole);
+        System.out.println("[Replay] main thread registered as role=" + mainRole);
+    }
+
+    // Returns the roleId of the earliest pending role that hasn't been claimed yet.
+    // Skips roles already in startedRoles to prevent two threads being assigned the same role.
     public static int peekNextPendingRole() {
         for (long[] event : sortedEvents) {
             int roleId = (int) event[1];
-            if (pendingRoles.contains(roleId))
+            if (pendingRoles.contains(roleId) && !startedRoles.contains(roleId))
                 return roleId;
         }
         return -1;
@@ -81,10 +104,10 @@ public class ReplayCoordinator {
 
     // In ReplayCoordinator — called from IdentityMapper on first role assignment
     public static void checkIn(int roleId) {
-        if (pendingRoles.contains(roleId)) {
+        if (pendingRoles.remove(roleId)) {
             startedRoles.add(roleId);
             synchronized (controlLock) {
-                System.out.println("[ReplayCoordinator] Role=" + roleId + " started (not yet scheduled).");
+                System.out.println("[Replay] role=" + roleId + " started, waiting to be scheduled.");
                 controlLock.notifyAll();
             }
         }
@@ -94,7 +117,7 @@ public class ReplayCoordinator {
         if (startedRoles.remove(roleId)) {
             pendingRoles.remove(roleId);
             activeRoles.add(roleId);
-            System.out.println("[ReplayCoordinator] Role=" + roleId + " active.");
+            System.out.println("[Replay] role=" + roleId + " active.");
         }
     }
 
@@ -146,7 +169,7 @@ public class ReplayCoordinator {
                 }
                 // Normal strict total-order match
                 if (roleId == expectedRole && packedType == expectedType) {
-                    System.out.println("ReplayCoordinator.awaitTurn: Processed event idx=" + idx + ", roleId=" + roleId + ", packedType=" + packedType + ", objSite=" + objSite + ", objCount=" + objCount + ", data=" + data);
+                    lastMatchedSeq.set(expected[0]);
                     if (isReleaseEvent(expectedType))
                         releasedEpoch.set(expected[0] >>> 32);
                     currentIdx.incrementAndGet();
@@ -154,13 +177,8 @@ public class ReplayCoordinator {
                     return;
                 }
 
-                // Always print mismatch — remove the time condition so we see it immediately
-                System.err.println("[Replay Blocked]"
-                        + " idx=" + idx
-                        + " wants Role=" + expectedRole + " Type=" + expectedType
-                        + " (eventType=" + (expectedType & 0xFF) + " flags=" + (expectedType >> 8) + ")"
-                        + " got Role=" + roleId + " Type=" + packedType
-                        + " (eventType=" + (packedType & 0xFF) + " flags=" + (packedType >> 8) + ")");
+                System.err.println(String.format("[WAIT]  idx=%-4d expects role=%d type=%d  got role=%d type=%d",
+                        idx, expectedRole, expectedType & 0xFF, roleId, packedType & 0xFF));
 
                 try {
                     controlLock.wait(100);
@@ -181,8 +199,8 @@ public class ReplayCoordinator {
                 long[] expected = sortedEvents[(int) idx];
 
                 if (roleId == (int) expected[1] && packedType == (int) expected[2]) {
+                    lastMatchedSeq.set(expected[0]);
                     int returnValue = (int) expected[5];
-                    System.out.println("ReplayCoordinator.awaitTurnInt: Processed event idx=" + idx + ", roleId=" + roleId + ", packedType=" + packedType + ", currentSiteId=" + currentSiteId + ", returnValue=" + returnValue);
                     if (isReleaseEvent(packedType))
                         releasedEpoch.set(expected[0] >>> 32);
                     currentIdx.incrementAndGet();
@@ -208,10 +226,10 @@ public class ReplayCoordinator {
                 long[] expected = sortedEvents[(int) idx];
 
                 if (roleId == (int) expected[1] && packedType == (int) expected[2]) {
+                    lastMatchedSeq.set(expected[0]);
                     long high = (long) expected[5] << 32;
                     long low = expected[6] & 0xFFFFFFFFL;
                     long returnValue = high | low;
-                    System.out.println("ReplayCoordinator.awaitTurnLong: Processed event idx=" + idx + ", roleId=" + roleId + ", packedType=" + packedType + ", currentSiteId=" + currentSiteId + ", returnValue=" + returnValue);
                     if (isReleaseEvent(packedType))
                         releasedEpoch.set(expected[0] >>> 32);
                     currentIdx.incrementAndGet();
@@ -237,10 +255,10 @@ public class ReplayCoordinator {
                 long[] expected = sortedEvents[(int) idx];
 
                 if (roleId == (int) expected[1] && packedType == (int) expected[2]) {
+                    lastMatchedSeq.set(expected[0]);
                     int valueSiteId = (int) expected[5];
                     int valueCount = (int) expected[6];
                     Object returnValue = IdentityMapper.resolveByBirthId(valueSiteId, valueCount);
-                    System.out.println("ReplayCoordinator.awaitTurnObj: Processed event idx=" + idx + ", roleId=" + roleId + ", packedType=" + packedType + ", currentSiteId=" + currentSiteId + ", valueSiteId=" + valueSiteId + ", valueCount=" + valueCount + ", returnValue=" + returnValue);
                     if (isReleaseEvent(packedType))
                         releasedEpoch.set(expected[0] >>> 32);
                     currentIdx.incrementAndGet();

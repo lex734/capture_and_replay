@@ -18,6 +18,7 @@ public class ReplayAgent {
         try {
             // 1. Reset the "Brain" to ensure discovery order matches Capture
             IdentityMapper.reset();
+            SyncTransformer.resetSiteRegistry();
 
             // 2. Load the Trace File
             File traceFile = new File("trace.bin");
@@ -35,6 +36,13 @@ public class ReplayAgent {
 
             // 3. Initialize the Coordinator with the data
             ReplayCoordinator.init(buffer, totalEvents);
+
+            // 3b. Register the main thread before the app starts.
+            // The main thread never goes through preRegisterThread (which is only
+            // called for spawned threads), so without this its role stays in
+            // pendingRoles and every early event gets deadlock-skipped, racing
+            // currentIdx past all events before t1/t2 even launch.
+            ReplayCoordinator.registerMainThread(Thread.currentThread().getId());
 
             System.out.println("[ReplayAgent] Loaded " + totalEvents + " events. Instrumentation active.");
 

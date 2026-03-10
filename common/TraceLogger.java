@@ -76,37 +76,29 @@ public class TraceLogger {
     }
 
     // for synchronization events such as MONITOR_ENTER, MONITOR_EXIT
-    public static void logSync(int eventType, Object lock, String siteString) {
+    public static void logSync(int eventType, Object lock, int currentSiteId) {
         long seq = nextSeq(isHBRelease(eventType));
         long tid = Thread.currentThread().getId();
-        int currentSiteId = IdentityMapper.getSiteId(siteString);
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         if (roleId == -1) return;
         BirthId birthId = IdentityMapper.getBirthId(lock, null, currentSiteId);
         String eventName = getEventName(eventType);
         System.out.println(String.format(
-                "[SYNC] epoch=%d, localSeq=%d, thread=%d, roleId=%d, event=%s(%d), lock=%s, lockSiteId=%d, lockCount=%d, siteId=%d",
-                seq >>> 32, seq & 0xFFFFFFFFL, tid, roleId, eventName, eventType,
+                "[SYNC]   epoch=%d seq=%d role=%d  %-24s lock=%s  site=%d",
+                seq >>> 32, seq & 0xFFFFFFFFL, roleId, eventName,
                 lock != null
                         ? lock.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(lock))
                         : "null",
-                birthId.siteId, birthId.count, currentSiteId));
+                currentSiteId));
         BinarySchema.write(seq, (long) roleId, ((eventType & 0xFF) | (BinarySchema.Flags.NONE << 8)), birthId.siteId,
                 birthId.count, currentSiteId);
     }
 
-    public static void logField(int eventType, Object owner, String siteString, boolean isVolatile, boolean isStatic,
+    public static void logField(int eventType, Object owner, int currentSiteId, boolean isVolatile, boolean isStatic,
             String fieldName, String ownerName) {
-        // JMM 17.4.5: only volatile WRITES are release-side HB.
-        // Volatile READS are acquire-side — just read the epoch.
-        // Non-volatile accesses (including static field reads and writes) have no HB
-        // significance.
         boolean advanceEpoch = isVolatile && (eventType == BinarySchema.Event.FIELD_WRITE);
         long seq = nextSeq(advanceEpoch);
         long tid = Thread.currentThread().getId();
-
-        // 1. Get the instruction site (where the thread is right now)
-        int currentSiteId = IdentityMapper.getSiteId(siteString);
 
         // 2. Get the role (Who is doing this)
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
@@ -127,11 +119,12 @@ public class TraceLogger {
 
         int packedType = BinarySchema.packType(eventType, flags);
 
-        // Logging for visibility (Useful for debugging the deterministic interleaving)
         String eventName = (eventType == BinarySchema.Event.FIELD_READ) ? "READ" : "WRITE";
-        System.out.println(
-                String.format("[OBJECT-COORD] epoch=%d, localSeq=%d, role=%d, event=%s, field=%s.%s, fieldId=%d",
-                        seq >>> 32, seq & 0xFFFFFFFFL, roleId, eventName, ownerName, fieldName, fieldId));
+        System.out.println(String.format(
+                "[FIELD]  epoch=%d seq=%d role=%d  %-5s%s %s.%s  fieldId=%d",
+                seq >>> 32, seq & 0xFFFFFFFFL, roleId, eventName,
+                isVolatile ? "(volatile)" : "",
+                ownerName, fieldName, fieldId));
 
         // 6. Write to Binary Log
         // Data field contains the fieldId (the unique coordinate for this variable)
@@ -139,10 +132,9 @@ public class TraceLogger {
     }
 
     // for array access events
-    public static void logArray(int eventType, Object array, int index, String siteString) {
-        long seq = nextSeq(false); // array access — no JMM HB significance
+    public static void logArray(int eventType, Object array, int index, int currentSiteId) {
+        long seq = nextSeq(false);
         long tid = Thread.currentThread().getId();
-        int currentSiteId = IdentityMapper.getSiteId(siteString);
 
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         if (roleId == -1) return;
@@ -151,12 +143,12 @@ public class TraceLogger {
 
         String eventName = (eventType == BinarySchema.Event.ARRAY_READ) ? "ARRAY_READ" : "ARRAY_WRITE";
         System.out.println(String.format(
-                "[ARRAY] epoch=%d, localSeq=%d, thread=%d, roleId=%d, event=%s(%d), array=%s, arraySiteId=%d, arrayCount=%d, index=%d, siteId=%d",
-                seq >>> 32, seq & 0xFFFFFFFFL, tid, roleId, eventName, eventType,
+                "[ARRAY]  epoch=%d seq=%d role=%d  %-12s %s[%d]  site=%d",
+                seq >>> 32, seq & 0xFFFFFFFFL, roleId, eventName,
                 array != null
                         ? array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array))
                         : "null",
-                birthId.siteId, birthId.count, index, currentSiteId));
+                index, currentSiteId));
 
         BinarySchema.write(seq, roleId, ((eventType & 0xFF) | (BinarySchema.Flags.NONE << 8)), birthId.siteId,
                 birthId.count, index);
@@ -190,10 +182,9 @@ public class TraceLogger {
      *                 AtomicIntegerArray, etc.)
      * @param index    array element index, or -1 for scalar atomics
      */
-    public static void logAtomicInt(int intValue, Object receiver, int index, int eventType, String siteString) {
+    public static void logAtomicInt(int intValue, Object receiver, int index, int eventType, int currentSiteId) {
         long seq = nextSeq(isHBRelease(eventType));
         long tid = Thread.currentThread().getId();
-        int currentSiteId = IdentityMapper.getSiteId(siteString);
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         if (roleId == -1) return;
 
@@ -206,14 +197,12 @@ public class TraceLogger {
                 : "null";
         if (isArray) {
             System.out.println(String.format(
-                    "[ATOMIC] epoch=%d, localSeq=%d, thread=%d, roleId=%d, event=%s(%d), receiver=%s, index=%d, value=%d, siteId=%d",
-                    seq >>> 32, seq & 0xFFFFFFFFL, tid, roleId, eventName, eventType, receiverStr, index, intValue,
-                    currentSiteId));
+                    "[ATOMIC] epoch=%d seq=%d role=%d  %-12s %s[%d] = %d",
+                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, eventName, receiverStr, index, intValue));
         } else {
             System.out.println(String.format(
-                    "[ATOMIC] epoch=%d, localSeq=%d, thread=%d, roleId=%d, event=%s(%d), receiver=%s, value=%d, siteId=%d",
-                    seq >>> 32, seq & 0xFFFFFFFFL, tid, roleId, eventName, eventType, receiverStr, intValue,
-                    currentSiteId));
+                    "[ATOMIC] epoch=%d seq=%d role=%d  %-12s %s = %d",
+                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, eventName, receiverStr, intValue));
         }
 
         if (isArray) {
@@ -230,10 +219,9 @@ public class TraceLogger {
      * Array atomics: stores index + low 32 bits of long value.
      * Scalar atomics: stores full receiver BirthId + low 32 bits of long value.
      */
-    public static void logAtomicLong(long longValue, Object receiver, int index, int eventType, String siteString) {
+    public static void logAtomicLong(long longValue, Object receiver, int index, int eventType, int currentSiteId) {
         long seq = nextSeq(isHBRelease(eventType));
         long tid = Thread.currentThread().getId();
-        int currentSiteId = IdentityMapper.getSiteId(siteString);
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         if (roleId == -1) return;
 
@@ -246,14 +234,12 @@ public class TraceLogger {
                 : "null";
         if (isArray) {
             System.out.println(String.format(
-                    "[ATOMIC] epoch=%d, localSeq=%d, thread=%d, roleId=%d, event=%s(%d), receiver=%s, index=%d, value=%d, siteId=%d",
-                    seq >>> 32, seq & 0xFFFFFFFFL, tid, roleId, eventName, eventType, receiverStr, index, longValue,
-                    currentSiteId));
+                    "[ATOMIC] epoch=%d seq=%d role=%d  %-12s %s[%d] = %dL",
+                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, eventName, receiverStr, index, longValue));
         } else {
             System.out.println(String.format(
-                    "[ATOMIC] epoch=%d, localSeq=%d, thread=%d, roleId=%d, event=%s(%d), receiver=%s, value=%d, siteId=%d",
-                    seq >>> 32, seq & 0xFFFFFFFFL, tid, roleId, eventName, eventType, receiverStr, longValue,
-                    currentSiteId));
+                    "[ATOMIC] epoch=%d seq=%d role=%d  %-12s %s = %dL",
+                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, eventName, receiverStr, longValue));
         }
 
         if (isArray) {
@@ -272,10 +258,9 @@ public class TraceLogger {
      * Array atomics: stores index + value's BirthId.siteId.
      * Scalar atomics: stores receiver BirthId + value's BirthId.siteId.
      */
-    public static void logAtomicObj(Object objValue, Object receiver, int index, int eventType, String siteString) {
+    public static void logAtomicObj(Object objValue, Object receiver, int index, int eventType, int currentSiteId) {
         long seq = nextSeq(isHBRelease(eventType));
         long tid = Thread.currentThread().getId();
-        int currentSiteId = IdentityMapper.getSiteId(siteString);
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         if (roleId == -1) return;
 
@@ -292,14 +277,12 @@ public class TraceLogger {
                 : "null";
         if (isArray) {
             System.out.println(String.format(
-                    "[ATOMIC] epoch=%d, localSeq=%d, thread=%d, roleId=%d, event=%s(%d), receiver=%s, index=%d, value=%s, siteId=%d",
-                    seq >>> 32, seq & 0xFFFFFFFFL, tid, roleId, eventName, eventType, receiverStr, index, valueStr,
-                    currentSiteId));
+                    "[ATOMIC] epoch=%d seq=%d role=%d  %-12s %s[%d] = %s",
+                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, eventName, receiverStr, index, valueStr));
         } else {
             System.out.println(String.format(
-                    "[ATOMIC] epoch=%d, localSeq=%d, thread=%d, roleId=%d, event=%s(%d), receiver=%s, value=%s, siteId=%d",
-                    seq >>> 32, seq & 0xFFFFFFFFL, tid, roleId, eventName, eventType, receiverStr, valueStr,
-                    currentSiteId));
+                    "[ATOMIC] epoch=%d seq=%d role=%d  %-12s %s = %s",
+                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, eventName, receiverStr, valueStr));
         }
 
         if (isArray) {

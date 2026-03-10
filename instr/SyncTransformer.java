@@ -2,13 +2,31 @@ package instr;
 
 import java.lang.instrument.ClassFileTransformer;
 import java.security.ProtectionDomain;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.io.InputStream;
 import org.objectweb.asm.*;
 import org.objectweb.asm.commons.LocalVariablesSorter;
 
 public class SyncTransformer implements ClassFileTransformer {
+
+    // ---- Site ID registry (assigned at class-load/transform time, not runtime) ----
+    // This ensures site IDs are identical across capture and replay runs,
+    // regardless of thread scheduling during execution.
+    private static final ConcurrentHashMap<String, Integer> siteRegistry = new ConcurrentHashMap<>();
+    private static final AtomicInteger siteIdCounter = new AtomicInteger(1);
+
+    public static int registerSiteId(String siteString) {
+        return siteRegistry.computeIfAbsent(siteString, k -> siteIdCounter.getAndIncrement());
+    }
+
+    public static void resetSiteRegistry() {
+        siteRegistry.clear();
+        siteIdCounter.set(1);
+    }
 
     // ---- Global volatile field resolution ----
     // Maps "owner/className" → set of volatile field names.
@@ -135,9 +153,15 @@ public class SyncTransformer implements ClassFileTransformer {
         private final ClassLoader loader;
         private int instructionId = 0;
 
+        // Tracks pending NEW instructions (type name → allocation site string) so we
+        // can emit registerAllocation after the matching INVOKESPECIAL <init> call.
+        // Outer = most recent NEW (stack order: top = innermost allocation).
+        private final Deque<String> pendingNewTypes = new ArrayDeque<>();
+        private final Deque<String> pendingNewSites = new ArrayDeque<>();
+
         private final boolean isReplay = "REPLAY".equals(System.getProperty("tool.mode"));
         private final String monitorClass = isReplay ? "replay/ReplayMonitor" : "capture/CaptureMonitor";
-        private final String monitorDescriptor = "(ILjava/lang/Object;Ljava/lang/String;)V";
+        private final String monitorDescriptor = "(ILjava/lang/Object;I)V";
 
         private boolean isArrayLoad(int opcode) {
             return opcode >= Opcodes.IALOAD && opcode <= Opcodes.SALOAD;
@@ -145,6 +169,56 @@ public class SyncTransformer implements ClassFileTransformer {
 
         private boolean isArrayStore(int opcode) {
             return opcode >= Opcodes.IASTORE && opcode <= Opcodes.SASTORE;
+        }
+
+        // ---- Allocation tracking ----
+        // NEW: push the type and allocation site; matched by visitMethodInsn.
+        // NEWARRAY/ANEWARRAY/MULTIANEWARRAY: no <init>, so register inline.
+
+        @Override
+        public void visitTypeInsn(int opcode, String type) {
+            if (opcode == Opcodes.NEW) {
+                String allocSite = className + "." + methodName + "#alloc_" + instructionId++;
+                pendingNewTypes.push(type);
+                pendingNewSites.push(allocSite);
+                super.visitTypeInsn(opcode, type);
+            } else if (opcode == Opcodes.ANEWARRAY) {
+                String allocSite = className + "." + methodName + "#alloc_" + instructionId++;
+                int allocSiteId = SyncTransformer.registerSiteId(allocSite);
+                super.visitTypeInsn(opcode, type);
+                mv.visitInsn(Opcodes.DUP);
+                mv.visitLdcInsn(allocSiteId);
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, "common/IdentityMapper", "registerAllocation",
+                        "(Ljava/lang/Object;I)V", false);
+            } else {
+                super.visitTypeInsn(opcode, type);
+            }
+        }
+
+        @Override
+        public void visitIntInsn(int opcode, int operand) {
+            if (opcode == Opcodes.NEWARRAY) {
+                String allocSite = className + "." + methodName + "#alloc_" + instructionId++;
+                int allocSiteId = SyncTransformer.registerSiteId(allocSite);
+                super.visitIntInsn(opcode, operand);
+                mv.visitInsn(Opcodes.DUP);
+                mv.visitLdcInsn(allocSiteId);
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, "common/IdentityMapper", "registerAllocation",
+                        "(Ljava/lang/Object;I)V", false);
+            } else {
+                super.visitIntInsn(opcode, operand);
+            }
+        }
+
+        @Override
+        public void visitMultiANewArrayInsn(String descriptor, int numDimensions) {
+            String allocSite = className + "." + methodName + "#alloc_" + instructionId++;
+            int allocSiteId = SyncTransformer.registerSiteId(allocSite);
+            super.visitMultiANewArrayInsn(descriptor, numDimensions);
+            mv.visitInsn(Opcodes.DUP);
+            mv.visitLdcInsn(allocSiteId);
+            mv.visitMethodInsn(Opcodes.INVOKESTATIC, "common/IdentityMapper", "registerAllocation",
+                    "(Ljava/lang/Object;I)V", false);
         }
 
         private static boolean isAtomicArrayClass(String owner) {
@@ -168,69 +242,63 @@ public class SyncTransformer implements ClassFileTransformer {
                 String monitorMethod = isReplay ? "checkSync" : "logSync";
                 int eventType = (opcode == Opcodes.MONITORENTER) ? 1 : 2;
                 String siteString = className + "." + methodName + "#" + instructionId++;
+                int siteId = SyncTransformer.registerSiteId(siteString);
 
                 mv.visitInsn(Opcodes.DUP); // Keep the lock object
                 mv.visitLdcInsn(eventType); // [lock, lock, type]
                 mv.visitInsn(Opcodes.SWAP); // [lock, type, lock]
-                mv.visitLdcInsn(siteString); // [lock, type, lock, siteString]
+                mv.visitLdcInsn(siteId); // [lock, type, lock, siteId]
 
-                // Matches CaptureMonitor.logSync(int type, Object lock, String siteString)
+                // Matches CaptureMonitor.logSync(int type, Object lock, int siteId)
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, monitorMethod,
-                        "(ILjava/lang/Object;Ljava/lang/String;)V", false);
+                        "(ILjava/lang/Object;I)V", false);
                 // Handle long/double array operations (category-2 values take 2 stack slots)
             } else if (opcode == Opcodes.LASTORE || opcode == Opcodes.DASTORE || opcode == Opcodes.LALOAD
                     || opcode == Opcodes.DALOAD) {
                 String monitorMethod = isReplay ? "checkArray" : "logArray";
-                int eventType = (opcode == Opcodes.LALOAD || opcode == Opcodes.DALOAD) ? 7 : 8; // ARRAY_READ or
-                                                                                                // ARRAY_WRITE
+                int eventType = (opcode == Opcodes.LALOAD || opcode == Opcodes.DALOAD) ? 7 : 8;
                 String siteString = className + "." + methodName + "#" + instructionId++;
+                int siteId = SyncTransformer.registerSiteId(siteString);
 
                 if (opcode == Opcodes.LALOAD || opcode == Opcodes.DALOAD) {
-                    // Stack: [arrayRef, index] — identical to regular array load (value not yet
-                    // loaded)
                     mv.visitInsn(Opcodes.DUP2); // [arrayRef, index, arrayRef, index]
                     mv.visitLdcInsn(eventType); // [arrayRef, index, arrayRef, index, type]
                     mv.visitInsn(Opcodes.DUP_X2); // [arrayRef, index, type, arrayRef, index, type]
                     mv.visitInsn(Opcodes.POP); // [arrayRef, index, type, arrayRef, index]
-                    mv.visitLdcInsn(siteString); // [arrayRef, index, type, arrayRef, index, siteString]
+                    mv.visitLdcInsn(siteId); // [arrayRef, index, type, arrayRef, index, siteId]
 
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, monitorMethod,
-                            "(ILjava/lang/Object;ILjava/lang/String;)V", false);
+                            "(ILjava/lang/Object;II)V", false);
                 } else {
-                    // LASTORE / DASTORE — value is category-2 (2 stack slots)
-                    // Stack: [arrayRef, index, wide_value(cat2)]
-                    mv.visitInsn(Opcodes.DUP2_X2); // [wide_value, arrayRef, index, wide_value] (DUP2_X2 Form 2: cat2
-                                                   // over cat1+cat1)
-                    mv.visitInsn(Opcodes.POP2); // [wide_value, arrayRef, index]
-                    mv.visitInsn(Opcodes.DUP2); // [wide_value, arrayRef, index, arrayRef, index]
-                    mv.visitLdcInsn(eventType); // [wide_value, arrayRef, index, arrayRef, index, type]
-                    mv.visitInsn(Opcodes.DUP_X2); // [wide_value, arrayRef, index, type, arrayRef, index, type]
-                    mv.visitInsn(Opcodes.POP); // [wide_value, arrayRef, index, type, arrayRef, index]
-                    mv.visitLdcInsn(siteString); // [wide_value, arrayRef, index, type, arrayRef, index, site]
+                    // LASTORE / DASTORE
+                    mv.visitInsn(Opcodes.DUP2_X2);
+                    mv.visitInsn(Opcodes.POP2);
+                    mv.visitInsn(Opcodes.DUP2);
+                    mv.visitLdcInsn(eventType);
+                    mv.visitInsn(Opcodes.DUP_X2);
+                    mv.visitInsn(Opcodes.POP);
+                    mv.visitLdcInsn(siteId);
 
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, monitorMethod,
-                            "(ILjava/lang/Object;ILjava/lang/String;)V", false);
-                    // Stack: [wide_value, arrayRef, index] — restore to [arrayRef, index,
-                    // wide_value]
-                    mv.visitInsn(Opcodes.DUP2_X2); // [arrayRef, index, wide_value, arrayRef, index] (DUP2_X2 Form 3:
-                                                   // cat1+cat1 over cat2)
-                    mv.visitInsn(Opcodes.POP2); // [arrayRef, index, wide_value]
+                            "(ILjava/lang/Object;II)V", false);
+                    mv.visitInsn(Opcodes.DUP2_X2);
+                    mv.visitInsn(Opcodes.POP2);
                 }
             } else if (isArrayLoad(opcode) || isArrayStore(opcode)) {
                 String monitorMethod = isReplay ? "checkArray" : "logArray";
                 int eventType = isArrayLoad(opcode) ? 7 : 8;
                 String siteString = className + "." + methodName + "#" + instructionId++;
+                int siteId = SyncTransformer.registerSiteId(siteString);
 
                 if (isArrayLoad(opcode)) {
-                    // Stack: [arrayRef, index]
                     mv.visitInsn(Opcodes.DUP2); // [arrayRef, index, arrayRef, index]
                     mv.visitLdcInsn(eventType); // [arrayRef, index, arrayRef, index, type]
                     mv.visitInsn(Opcodes.DUP_X2); // [arrayRef, index, type, arrayRef, index, type]
                     mv.visitInsn(Opcodes.POP); // [arrayRef, index, type, arrayRef, index]
-                    mv.visitLdcInsn(siteString); // [arrayRef, index, type, arrayRef, index, siteString]
+                    mv.visitLdcInsn(siteId); // [arrayRef, index, type, arrayRef, index, siteId]
 
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, monitorMethod,
-                            "(ILjava/lang/Object;ILjava/lang/String;)V", false);
+                            "(ILjava/lang/Object;II)V", false);
                 } else {
                     mv.visitInsn(Opcodes.DUP_X2); // Stack: [value, arrayRef, index, value]
                     mv.visitInsn(Opcodes.POP); // Stack: [value, arrayRef, index]
@@ -240,9 +308,9 @@ public class SyncTransformer implements ClassFileTransformer {
                     mv.visitInsn(Opcodes.DUP_X2); // Stack: [value, arrayRef, index, type, arrayRef, index, type]
                     mv.visitInsn(Opcodes.POP); // Stack: [value, arrayRef, index, type, arrayRef, index]
 
-                    mv.visitLdcInsn(siteString); // Stack: [value, arrayRef, index, type, arrayRef, index, siteId]
+                    mv.visitLdcInsn(siteId); // Stack: [value, arrayRef, index, type, arrayRef, index, siteId]
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, monitorMethod,
-                            "(ILjava/lang/Object;ILjava/lang/String;)V", false);
+                            "(ILjava/lang/Object;II)V", false);
                     mv.visitInsn(Opcodes.DUP2_X1); // Stack: [arrayRef, index, value, arrayRef, index]
                     mv.visitInsn(Opcodes.POP2); // Stack: [arrayRef, index, value]
                 }
@@ -252,7 +320,27 @@ public class SyncTransformer implements ClassFileTransformer {
 
         @Override
         public void visitMethodInsn(int opcode, String owner, String name, String descriptor, boolean isInterface) {
+            // Detect the INVOKESPECIAL <init> that matches a preceding NEW instruction.
+            // We must handle this before incrementing instructionId for the sync site string
+            // so the allocation site and the constructor-call site remain distinct.
+            if (opcode == Opcodes.INVOKESPECIAL && name.equals("<init>")
+                    && !pendingNewTypes.isEmpty() && pendingNewTypes.peek().equals(owner)) {
+                pendingNewTypes.pop();
+                String allocSite = pendingNewSites.pop();
+                int allocSiteId = SyncTransformer.registerSiteId(allocSite);
+                // Execute the original constructor.
+                super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
+                // After <init> returns (void), the initialized object is on top of the stack.
+                // DUP it and register its allocation-time BirthId.
+                mv.visitInsn(Opcodes.DUP);
+                mv.visitLdcInsn(allocSiteId);
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, "common/IdentityMapper", "registerAllocation",
+                        "(Ljava/lang/Object;I)V", false);
+                return;
+            }
+
             String siteString = className + "." + methodName + "#" + instructionId++;
+            int siteId = SyncTransformer.registerSiteId(siteString);
 
             if (owner.equals("java/util/concurrent/locks/LockSupport")) {
                 if (name.equals("park")) {
@@ -261,25 +349,25 @@ public class SyncTransformer implements ClassFileTransformer {
                     } else {
                         mv.visitInsn(Opcodes.ACONST_NULL);
                     }
-                    logSyncCall(3, siteString); // THREAD_PARK
+                    logSyncCall(3, siteId); // THREAD_PARK
                 } else if (name.equals("parkNanos") || name.equals("parkUntil")) {
                     if (descriptor.startsWith("(Ljava/lang/Object;")) {
                         // Stack: [blocker, long] — extract blocker copy from under the long
                         mv.visitInsn(Opcodes.DUP2_X1); // [long, blocker, long]
                         mv.visitInsn(Opcodes.POP2); // [long, blocker]
                         mv.visitInsn(Opcodes.DUP); // [long, blocker, blocker_copy]
-                        logSyncCall(3, siteString); // consumes blocker_copy → [long, blocker]
+                        logSyncCall(3, siteId); // consumes blocker_copy → [long, blocker]
                         // Restore original stack order: [blocker, long]
                         mv.visitInsn(Opcodes.DUP_X2); // [blocker, long, blocker]
                         mv.visitInsn(Opcodes.POP); // [blocker, long]
                     } else {
                         // Stack: [long] — no blocker
                         mv.visitInsn(Opcodes.ACONST_NULL);
-                        logSyncCall(3, siteString); // THREAD_PARK
+                        logSyncCall(3, siteId); // THREAD_PARK
                     }
                 } else if (name.equals("unpark")) {
                     mv.visitInsn(Opcodes.DUP);
-                    logSyncCall(4, siteString); // THREAD_UNPARK
+                    logSyncCall(4, siteId); // THREAD_UNPARK
                 }
             } else if (owner.equals("java/lang/Thread")) {
                 if (name.equals("start")) {
@@ -288,7 +376,7 @@ public class SyncTransformer implements ClassFileTransformer {
                     if (isReplay) {
                         mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "preRegisterThread", "(Ljava/lang/Thread;)V", false);
                     }
-                    logSyncCall(9, siteString); // THREAD_START
+                    logSyncCall(9, siteId); // THREAD_START
                 } else if (name.equals("join")) {
                     // Determine if it is a timed join or infinite join
                     int eventType = descriptor.equals("()V") ? 10 : 18; // 10=JOIN, 18=JOIN_TIMEOUT
@@ -303,26 +391,26 @@ public class SyncTransformer implements ClassFileTransformer {
                         mv.visitInsn(Opcodes.DUP_X2); // Move duplicated ref behind long
                         mv.visitInsn(Opcodes.POP); // Clean up top
                     }
-                    logSyncCall(eventType, siteString);
+                    logSyncCall(eventType, siteId);
                 } else if (name.equals("sleep")) {
                     mv.visitInsn(Opcodes.ACONST_NULL);
-                    logSyncCall(12, siteString); // THREAD_SLEEP
+                    logSyncCall(12, siteId); // THREAD_SLEEP
                 } else if (name.equals("yield")) {
                     mv.visitInsn(Opcodes.ACONST_NULL);
-                    logSyncCall(14, siteString); // THREAD_YIELD
+                    logSyncCall(14, siteId); // THREAD_YIELD
                 } else if (name.equals("interrupt")) {
                     mv.visitInsn(Opcodes.DUP);
-                    logSyncCall(11, siteString); // THREAD_INTERRUPT
+                    logSyncCall(11, siteId); // THREAD_INTERRUPT
                 } else if (name.equals("interrupted")) {
                     // Static method — push current thread as the lock to identify
                     // which thread's interrupt status was checked (detection side of HB)
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Thread", "currentThread",
                             "()Ljava/lang/Thread;", false);
-                    logSyncCall(19, siteString); // THREAD_INTERRUPT_CHECK
+                    logSyncCall(19, siteId); // THREAD_INTERRUPT_CHECK
                 } else if (name.equals("isInterrupted")) {
                     // Instance method — receiver is the thread being checked
                     mv.visitInsn(Opcodes.DUP);
-                    logSyncCall(19, siteString); // THREAD_INTERRUPT_CHECK
+                    logSyncCall(19, siteId); // THREAD_INTERRUPT_CHECK
                 }
             } else if (owner.equals("java/lang/Object")) {
                 if (name.equals("wait")) {
@@ -336,10 +424,10 @@ public class SyncTransformer implements ClassFileTransformer {
                         mv.visitInsn(Opcodes.DUP_X2);
                         mv.visitInsn(Opcodes.POP);
                     }
-                    logSyncCall(15, siteString); // THREAD_WAIT
+                    logSyncCall(15, siteId); // THREAD_WAIT
                 } else if (name.equals("notify") || name.equals("notifyAll")) {
                     mv.visitInsn(Opcodes.DUP);
-                    logSyncCall(name.equals("notify") ? 16 : 17, siteString);
+                    logSyncCall(name.equals("notify") ? 16 : 17, siteId);
                 }
             }
 
@@ -364,8 +452,6 @@ public class SyncTransformer implements ClassFileTransformer {
 
                     if (isReplay) {
                         if (returnTypeChar == 'V') {
-                            // Void ops (set, lazySet): no return value needed, just consume the log entry.
-                            // Stack for check call: [value, receiver, index, eventType, siteString]
                             int valueArgIdx = argTypes.length - 1;
                             Type valueType = argTypes[valueArgIdx];
 
@@ -377,14 +463,10 @@ public class SyncTransformer implements ClassFileTransformer {
                             } else {
                                 mv.visitLdcInsn(-1);
                             }
-                            mv.visitInsn(atomicEventType);
-                            mv.visitLdcInsn(siteString);
-                            emitAtomicCheckCall(valueType); // void return
+                            mv.visitLdcInsn(atomicEventType);
+                            mv.visitLdcInsn(siteId);
+                            emitAtomicCheckCall(valueType);
                         } else {
-                            // Non-void ops (get, getAndAdd, CAS, etc.): replay must RETURN the logged
-                            // value.
-                            // Stack for check call: [receiver, index, eventType, siteString] → returns
-                            // value
                             mv.visitVarInsn(Opcodes.ALOAD, receiverSlot);
                             if (isArrayAtomic && argTypes.length > 0) {
                                 mv.visitVarInsn(Opcodes.ILOAD, argSlots[0]);
@@ -392,8 +474,8 @@ public class SyncTransformer implements ClassFileTransformer {
                                 mv.visitLdcInsn(-1);
                             }
                             mv.visitLdcInsn(atomicEventType);
-                            mv.visitLdcInsn(siteString);
-                            emitAtomicCheckCall(returnTypeChar); // pushes the logged value onto the stack
+                            mv.visitLdcInsn(siteId);
+                            emitAtomicCheckCall(returnTypeChar);
                         }
                         return;
                     } else {
@@ -407,13 +489,9 @@ public class SyncTransformer implements ClassFileTransformer {
 
                         // 3. Log the event — choose method based on return type / value type
                         if (returnTypeChar == 'V') {
-                            // Void return (set, lazySet) — capture the WRITTEN VALUE from saved args
-                            // For array types: value = last arg, index = first arg
-                            // For scalar types: value = last (and only) arg
                             int valueArgIdx = argTypes.length - 1;
                             Type valueType = argTypes[valueArgIdx];
 
-                            // Stack for log call: [value, receiver, index, eventType, siteString]
                             mv.visitVarInsn(valueType.getOpcode(Opcodes.ILOAD), argSlots[valueArgIdx]);
                             mv.visitVarInsn(Opcodes.ALOAD, receiverSlot);
                             if (isArrayAtomic) {
@@ -422,10 +500,9 @@ public class SyncTransformer implements ClassFileTransformer {
                                 mv.visitLdcInsn(-1);
                             }
                             mv.visitLdcInsn(atomicEventType);
-                            mv.visitLdcInsn(siteString);
+                            mv.visitLdcInsn(siteId);
                             emitAtomicLogCall(valueType);
                         } else {
-                            // Non-void return — capture the RETURN VALUE from the stack
                             if (returnTypeChar == 'J' || returnTypeChar == 'D') {
                                 mv.visitInsn(Opcodes.DUP2);
                             } else {
@@ -438,10 +515,10 @@ public class SyncTransformer implements ClassFileTransformer {
                                 mv.visitLdcInsn(-1);
                             }
                             mv.visitLdcInsn(atomicEventType);
-                            mv.visitLdcInsn(siteString);
+                            mv.visitLdcInsn(siteId);
                             emitAtomicLogCall(returnTypeChar);
                         }
-                        return; // Skip the super.visitMethodInsn below — already called above
+                        return;
                     }
                 }
             }
@@ -450,48 +527,46 @@ public class SyncTransformer implements ClassFileTransformer {
             super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
             if (isBlockingCall(owner, name)) {
                 String wakeupSite = className + "." + methodName + "#" + instructionId++;
+                int wakeupSiteId = SyncTransformer.registerSiteId(wakeupSite);
                 mv.visitInsn(Opcodes.ACONST_NULL);
-                logSyncCall(13, wakeupSite); // THREAD_WAKEUP
+                logSyncCall(13, wakeupSiteId); // THREAD_WAKEUP
             }
         }
 
         // Helper to keep the code clean and ensure the stack [eventType, object, site]
         // is correct
-        private void logSyncCall(int type, String site) {
+        private void logSyncCall(int type, int siteId) {
             String monitorMethod = isReplay ? "checkSync" : "logSync";
             mv.visitLdcInsn(type);
             mv.visitInsn(Opcodes.SWAP);
-            mv.visitLdcInsn(site);
+            mv.visitLdcInsn(siteId);
             mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, monitorMethod, monitorDescriptor, false);
         }
 
-        // Emit the INVOKESTATIC for the right logAtomic method based on value ASM Type
         private void emitAtomicLogCall(Type valueType) {
             int sort = valueType.getSort();
             if (sort == Type.LONG) {
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logAtomicLong",
-                        "(JLjava/lang/Object;IILjava/lang/String;)V", false);
+                        "(JLjava/lang/Object;III)V", false);
             } else if (sort == Type.OBJECT || sort == Type.ARRAY) {
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logAtomicObj",
-                        "(Ljava/lang/Object;Ljava/lang/Object;IILjava/lang/String;)V", false);
+                        "(Ljava/lang/Object;Ljava/lang/Object;III)V", false);
             } else {
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logAtomicInt",
-                        "(ILjava/lang/Object;IILjava/lang/String;)V", false);
+                        "(ILjava/lang/Object;III)V", false);
             }
         }
 
-        // Emit the INVOKESTATIC for the right logAtomic method based on return type
-        // char
         private void emitAtomicLogCall(char returnTypeChar) {
             if (returnTypeChar == 'J' || returnTypeChar == 'D') {
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logAtomicLong",
-                        "(JLjava/lang/Object;IILjava/lang/String;)V", false);
+                        "(JLjava/lang/Object;III)V", false);
             } else if (returnTypeChar == 'L' || returnTypeChar == '[') {
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logAtomicObj",
-                        "(Ljava/lang/Object;Ljava/lang/Object;IILjava/lang/String;)V", false);
+                        "(Ljava/lang/Object;Ljava/lang/Object;III)V", false);
             } else {
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logAtomicInt",
-                        "(ILjava/lang/Object;IILjava/lang/String;)V", false);
+                        "(ILjava/lang/Object;III)V", false);
             }
         }
 
@@ -499,26 +574,26 @@ public class SyncTransformer implements ClassFileTransformer {
             int sort = valueType.getSort();
             if (sort == Type.LONG) {
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkAtomicLong",
-                        "(JLjava/lang/Object;IILjava/lang/String;)V", false);
+                        "(JLjava/lang/Object;III)V", false);
             } else if (sort == Type.OBJECT || sort == Type.ARRAY) {
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkAtomicObj",
-                        "(Ljava/lang/Object;Ljava/lang/Object;IILjava/lang/String;)V", false);
+                        "(Ljava/lang/Object;Ljava/lang/Object;III)V", false);
             } else {
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkAtomicInt",
-                        "(ILjava/lang/Object;IILjava/lang/String;)V", false);
+                        "(ILjava/lang/Object;III)V", false);
             }
         }
 
         private void emitAtomicCheckCall(char returnTypeChar) {
             if (returnTypeChar == 'J' || returnTypeChar == 'D') {
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkAtomicLong",
-                        "(Ljava/lang/Object;IILjava/lang/String;)J", false);
+                        "(Ljava/lang/Object;III)J", false);
             } else if (returnTypeChar == 'L' || returnTypeChar == '[') {
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkAtomicObj",
-                        "(Ljava/lang/Object;IILjava/lang/String;)Ljava/lang/Object;", false);
+                        "(Ljava/lang/Object;III)Ljava/lang/Object;", false);
             } else {
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkAtomicInt",
-                        "(Ljava/lang/Object;IILjava/lang/String;)I", false);
+                        "(Ljava/lang/Object;III)I", false);
             }
         }
 
@@ -567,6 +642,7 @@ public class SyncTransformer implements ClassFileTransformer {
             boolean isStatic = (opcode == Opcodes.GETSTATIC || opcode == Opcodes.PUTSTATIC);
 
             String siteString = className + "." + methodName + "#" + instructionId++;
+            int siteId = SyncTransformer.registerSiteId(siteString);
 
             // Stack surgery to extract the owner object reference for logging
             if (opcode == Opcodes.PUTFIELD) {
@@ -590,13 +666,13 @@ public class SyncTransformer implements ClassFileTransformer {
             // Log the field access — objectRef (or null for static) is on top of stack
             mv.visitLdcInsn(eventType); // 5 or 6
             mv.visitInsn(Opcodes.SWAP);
-            mv.visitLdcInsn(siteString);
+            mv.visitLdcInsn(siteId);
             mv.visitInsn(isVolatile ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
             mv.visitLdcInsn(isStatic ? 1 : 0);
             mv.visitLdcInsn(name);
             mv.visitLdcInsn(owner);
             mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, monitorMethod,
-                    "(ILjava/lang/Object;Ljava/lang/String;ZZLjava/lang/String;Ljava/lang/String;)V", false);
+                    "(ILjava/lang/Object;IZZLjava/lang/String;Ljava/lang/String;)V", false);
 
             // Restore stack order for wide PUTFIELD
             if (opcode == Opcodes.PUTFIELD && isWide) {
@@ -620,7 +696,6 @@ public class SyncTransformer implements ClassFileTransformer {
         private final String className;
         private final String monitorClass;
         private final String monitorMethod;
-        private final String monitorDescriptor = "(ILjava/lang/Object;Ljava/lang/String;)V";
 
         public ClinitMethodVisitor(MethodVisitor mv, String className,
                                 String monitorClass, String monitorMethod) {
@@ -636,15 +711,15 @@ public class SyncTransformer implements ClassFileTransformer {
 
             // Log CLASS_INIT_BEGIN at the start of <clinit>
             String beginSite = className + ".<clinit>#begin";
-            // Stack for logSync(int, Object, String): [type, lock, site]
+            int beginSiteId = SyncTransformer.registerSiteId(beginSite);
             mv.visitLdcInsn(23); // BinarySchema.Event.CLASS_INIT_BEGIN
             mv.visitInsn(Opcodes.ACONST_NULL);
-            mv.visitLdcInsn(beginSite);
+            mv.visitLdcInsn(beginSiteId);
             mv.visitMethodInsn(
                     Opcodes.INVOKESTATIC,
                     monitorClass,
                     monitorMethod,
-                    "(ILjava/lang/Object;Ljava/lang/String;)V",
+                    "(ILjava/lang/Object;I)V",
                     false);
         }
 
@@ -653,14 +728,15 @@ public class SyncTransformer implements ClassFileTransformer {
             // For normal returns and throws, log CLASS_INIT_END before exiting
             if (opcode == Opcodes.RETURN) {
                 String endSite = className + ".<clinit>#end";
+                int endSiteId = SyncTransformer.registerSiteId(endSite);
                 mv.visitLdcInsn(24); // BinarySchema.Event.CLASS_INIT_END
                 mv.visitInsn(Opcodes.ACONST_NULL);
-                mv.visitLdcInsn(endSite);
+                mv.visitLdcInsn(endSiteId);
                 mv.visitMethodInsn(
                         Opcodes.INVOKESTATIC,
                         monitorClass,
                         monitorMethod,
-                        "(ILjava/lang/Object;Ljava/lang/String;)V",
+                        "(ILjava/lang/Object;I)V",
                         false);
             }
 

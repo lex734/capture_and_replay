@@ -10,12 +10,10 @@ public class IdentityMapper {
     // --- ID Spaces ---
     // 0 is reserved for GLOBAL/STATIC scope
     private static final AtomicInteger roleCounter = new AtomicInteger(1);
-    private static final AtomicInteger siteIdCounter = new AtomicInteger(1);
     private static final AtomicInteger fieldCounter = new AtomicInteger(1);
 
     // --- Mappings ---
     private static final ConcurrentHashMap<Long, Integer> tidToRoleId = new ConcurrentHashMap<>();
-    private static final ConcurrentHashMap<String, Integer> siteStringToId = new ConcurrentHashMap<>();
 
     // Maps "ClassName#fieldName" to a unique global ID for static variables
     private static final ConcurrentHashMap<String, Integer> staticFieldToId = new ConcurrentHashMap<>();
@@ -23,7 +21,10 @@ public class IdentityMapper {
     // Maps "ClassID:fieldName" to a unique ID for instance variables
     private static final ConcurrentHashMap<String, Integer> instanceFieldToId = new ConcurrentHashMap<>();
 
-    // Identity tracking for actual objects on the heap
+    // Identity tracking for actual objects on the heap.
+    // objToId: weak keys (Objects) so dead objects are evicted automatically.
+    // idToObj: strong keys (BirthIds are small value objects); values are Objects
+    //          held only weakly so we don't prevent GC of user objects.
     private static final Map<Object, BirthId> objToId = Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<BirthId, Object> idToObj = Collections.synchronizedMap(new WeakHashMap<>());
     private static final ConcurrentHashMap<Integer, AtomicInteger> siteCounters = new ConcurrentHashMap<>();
@@ -37,6 +38,18 @@ public class IdentityMapper {
         public BirthId(int s, int c) {
             this.siteId = s;
             this.count = c;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (!(o instanceof BirthId)) return false;
+            BirthId other = (BirthId) o;
+            return siteId == other.siteId && count == other.count;
+        }
+
+        @Override
+        public int hashCode() {
+            return siteId * 31 + count;
         }
 
         // Static constant representing the "Global/Static" birthplace
@@ -65,17 +78,8 @@ public class IdentityMapper {
         }
         Integer preAssigned = preAssignedRoles.get(tid);
         int roleId = tidToRoleId.computeIfAbsent(tid, k -> roleCounter.getAndIncrement());
-        System.err.println("[RoleAssign] tid=" + tid + " site=" + siteId + "-> role=" + roleId);
-        System.out.println("[RoleDebug] tid=" + tid + " siteId=" + siteId + " preAssigned=" + preAssigned);
         if (preAssigned != null) return preAssigned;
         return roleId;
-    }
-
-    /**
-     * Maps a code location string to a unique Site ID.
-     */
-    public static int getSiteId(String siteString) {
-        return siteStringToId.computeIfAbsent(siteString, k -> siteIdCounter.getAndIncrement());
     }
 
     /**
@@ -120,6 +124,23 @@ public class IdentityMapper {
         }
     }
 
+    /**
+     * Called immediately after a NEW/NEWARRAY/ANEWARRAY/MULTIANEWARRAY completes.
+     * Assigns a stable BirthId based on the allocation site and allocation order
+     * at that site. This ensures the same object gets the same BirthId in both
+     * capture and replay runs, regardless of access order.
+     */
+    public static void registerAllocation(Object obj, int siteId) {
+        if (obj == null) return;
+        synchronized (objToId) {
+            if (objToId.containsKey(obj)) return; // already registered
+            AtomicInteger counter = siteCounters.computeIfAbsent(siteId, k -> new AtomicInteger(1));
+            BirthId id = new BirthId(siteId, counter.getAndIncrement());
+            objToId.put(obj, id);
+            idToObj.put(id, obj);
+        }
+    }
+
     public static Object resolveByBirthId(int valueSiteId, int valueCount) {
         return idToObj.get(new BirthId(valueSiteId, valueCount));
     }
@@ -131,12 +152,12 @@ public class IdentityMapper {
     public static void reset() {
         tidToRoleId.clear();
         roleCounter.set(1);
-        siteStringToId.clear();
-        siteIdCounter.set(1);
+        preAssignedRoles.clear();
         staticFieldToId.clear();
         instanceFieldToId.clear();
         fieldCounter.set(1);
         objToId.clear();
+        idToObj.clear();
         siteCounters.clear();
         System.out.println("[IdentityMapper] All maps cleared for new trace.");
     }

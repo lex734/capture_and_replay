@@ -237,6 +237,19 @@ public class SyncTransformer implements ClassFileTransformer {
 
         @Override
         public void visitInsn(int opcode) {
+            // Handle explicit/implicit throws — log before the throw so the
+            // coordinator sees EXCEPTION_THROW in the right sequence position.
+            if (opcode == Opcodes.ATHROW) {
+                String logMethod = isReplay ? "checkException" : "logException";
+                String siteString = className + "." + methodName + "#throw_" + instructionId++;
+                int siteId = SyncTransformer.registerSiteId(siteString);
+                // Stack: [..., exception]
+                mv.visitInsn(Opcodes.DUP);       // [..., exception, exception]
+                mv.visitLdcInsn(siteId);          // [..., exception, exception, siteId]
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, logMethod,
+                        "(Ljava/lang/Object;I)V", false);
+                // Stack restored to [..., exception]; ATHROW executes below via super.visitInsn
+            }
             // Handle Intrinsic Locks
             if (opcode == Opcodes.MONITORENTER || opcode == Opcodes.MONITOREXIT) {
                 String monitorMethod = isReplay ? "checkSync" : "logSync";
@@ -371,9 +384,9 @@ public class SyncTransformer implements ClassFileTransformer {
                 }
             } else if (owner.equals("java/lang/Thread")) {
                 if (name.equals("start")) {
-                    mv.visitInsn(Opcodes.DUP);
-                    mv.visitInsn(Opcodes.DUP);
+                    mv.visitInsn(Opcodes.DUP); // for logSyncCall
                     if (isReplay) {
+                        mv.visitInsn(Opcodes.DUP); // extra copy consumed by preRegisterThread
                         mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "preRegisterThread", "(Ljava/lang/Thread;)V", false);
                     }
                     logSyncCall(9, siteId); // THREAD_START

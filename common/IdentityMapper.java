@@ -31,6 +31,7 @@ public class IdentityMapper {
 
     private static final ConcurrentHashMap<Long, Integer> preAssignedRoles = new ConcurrentHashMap<>();
 
+
     public static class BirthId {
         public final int siteId;
         public final int count;
@@ -144,6 +145,14 @@ public class IdentityMapper {
     public static Object resolveByBirthId(int valueSiteId, int valueCount) {
         return idToObj.get(new BirthId(valueSiteId, valueCount));
     }
+    /** Looks up the roleId for a thread that has already been assigned one, or -1. */
+    public static int getRoleId(long tid) {
+        Integer preAssigned = preAssignedRoles.get(tid);
+        if (preAssigned != null) return preAssigned;
+        Integer roleId = tidToRoleId.get(tid);
+        return roleId != null ? roleId : -1;
+    }
+
     public static void preAssignRole(long tid, int roleId) {
         preAssignedRoles.put(tid, roleId);
     }

@@ -301,6 +301,28 @@ public class ReplayMonitor {
         }
     }
 
+    public static void checkException(Object exception, int siteId) {
+        if (isInside.get()) return;
+        if (exception == null) return;
+        isInside.set(true);
+        try {
+            long tid = Thread.currentThread().getId();
+            int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
+            if (roleId == -1) return;
+
+            BirthId birthId = IdentityMapper.getBirthId(exception, null, siteId);
+            int packedType = BinarySchema.packType(BinarySchema.Event.EXCEPTION_THROW, BinarySchema.Flags.NONE);
+            ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, siteId);
+            long seq = ReplayCoordinator.getLastMatchedSeq();
+            System.out.println(String.format(
+                    "[CHECK-THROW] epoch=%d seq=%d role=%d  %s  site=%d",
+                    seq >>> 32, seq & 0xFFFFFFFFL, roleId,
+                    exception.getClass().getName(), siteId));
+        } finally {
+            isInside.set(false);
+        }
+    }
+
     public static void preRegisterThread(Thread thread) {
         if (isInside.get()) return;
         isInside.set(true);
@@ -341,6 +363,7 @@ public class ReplayMonitor {
             case BinarySchema.Event.ATOMIC_RMW:           return "ATOMIC_RMW";
             case BinarySchema.Event.CLASS_INIT_BEGIN:     return "CLASS_INIT_BEGIN";
             case BinarySchema.Event.CLASS_INIT_END:       return "CLASS_INIT_END";
+            case BinarySchema.Event.EXCEPTION_THROW:      return "EXCEPTION_THROW";
             default:                                      return "UNKNOWN(" + eventType + ")";
         }
     }

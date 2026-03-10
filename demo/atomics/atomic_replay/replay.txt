@@ -1,0 +1,229 @@
+[ReplayAgent] Initializing Enforcer...
+[IdentityMapper] All maps cleared for new trace.
+[ReplayCoordinator] Loaded and sorted 214 events.
+[ReplayCoordinator] Expecting roles: [1, 2, 3]
+[Replay] main thread registered as role=1
+[ReplayAgent] Loaded 1000000 events. Instrumentation active.
+[CHECK-SYNC]  epoch=0 seq=1 role=1  CLASS_INIT_BEGIN         lock=null  site=22
+[CHECK-FIELD] epoch=0 seq=2 role=1  WRITE Main.x  fieldId=1
+[CHECK-SYNC]  epoch=1 seq=3 role=1  CLASS_INIT_END           lock=null  site=26
+[CHECK-FIELD] epoch=1 seq=4 role=1  READ  java/lang/System.out  fieldId=2
+[App] Starting threads...
+[Replay] role=2 started, waiting to be scheduled.
+[PreRegister] role=2
+[CHECK-SYNC]  epoch=2 seq=5 role=1  THREAD_START             lock=Thread@6996db8  site=6
+[Replay] role=3 started, waiting to be scheduled.
+[PreRegister] role=3
+[Replay] role=2 active.
+[CHECK-FIELD] epoch=3 seq=1 role=2  READ  Main.x  fieldId=1
+[CHECK-SYNC]  epoch=3 seq=6 role=1  THREAD_START             lock=Thread@7fbe847c  site=7
+[Replay] role=3 active.
+[CHECK-FIELD] epoch=4 seq=1 role=3  READ  Main.x  fieldId=1
+[CHECK-SYNC]  epoch=4 seq=7 role=1  THREAD_JOIN              lock=Thread@6996db8  site=8
+[CHECK-ATOMIC] epoch=4 seq=2 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = 1  (read→replay)
+[CHECK-ATOMIC] epoch=5 seq=2 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = 0  (read→replay)
+[CHECK-FIELD] epoch=5 seq=3 role=2  READ  Main.x  fieldId=1
+[CHECK-FIELD] epoch=5 seq=3 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=6 seq=4 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -1  (read→replay)
+[CHECK-FIELD] epoch=6 seq=5 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=7 seq=6 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -2  (read→replay)
+[CHECK-FIELD] epoch=7 seq=7 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=8 seq=4 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -1  (read→replay)
+[CHECK-ATOMIC] epoch=9 seq=8 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -2  (read→replay)
+[CHECK-FIELD] epoch=9 seq=9 role=3  READ  Main.x  fieldId=1
+[CHECK-FIELD] epoch=10 seq=5 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=10 seq=10 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -3  (read→replay)
+[CHECK-FIELD] epoch=10 seq=11 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=11 seq=12 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -4  (read→replay)
+[CHECK-FIELD] epoch=11 seq=13 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=12 seq=6 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -3  (read→replay)
+[CHECK-ATOMIC] epoch=13 seq=14 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -4  (read→replay)
+[CHECK-FIELD] epoch=13 seq=7 role=2  READ  Main.x  fieldId=1
+[CHECK-FIELD] epoch=13 seq=15 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=14 seq=16 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -5  (read→replay)
+[CHECK-ATOMIC] epoch=15 seq=8 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -4  (read→replay)
+[CHECK-FIELD] epoch=15 seq=17 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=16 seq=18 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -5  (read→replay)
+[CHECK-FIELD] epoch=16 seq=9 role=2  READ  Main.x  fieldId=1
+[CHECK-FIELD] epoch=16 seq=19 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=17 seq=20 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -6  (read→replay)
+[CHECK-FIELD] epoch=18 seq=21 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=18 seq=10 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -5  (read→replay)
+[CHECK-FIELD] epoch=19 seq=11 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=19 seq=22 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -6  (read→replay)
+[CHECK-FIELD] epoch=19 seq=23 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=20 seq=12 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -5  (read→replay)
+[CHECK-FIELD] epoch=21 seq=13 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=21 seq=24 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -6  (read→replay)
+[CHECK-ATOMIC] epoch=22 seq=14 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -5  (read→replay)
+[CHECK-FIELD] epoch=22 seq=25 role=3  READ  Main.x  fieldId=1
+[CHECK-FIELD] epoch=22 seq=15 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=23 seq=16 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -4  (read→replay)
+[CHECK-FIELD] epoch=24 seq=17 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=24 seq=26 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -5  (read→replay)
+[CHECK-FIELD] epoch=24 seq=27 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=25 seq=18 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -4  (read→replay)
+[CHECK-FIELD] epoch=26 seq=19 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=26 seq=28 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -5  (read→replay)
+[CHECK-FIELD] epoch=26 seq=29 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=27 seq=20 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -4  (read→replay)
+[CHECK-FIELD] epoch=28 seq=21 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=28 seq=30 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -5  (read→replay)
+[CHECK-FIELD] epoch=28 seq=31 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=29 seq=32 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -6  (read→replay)
+[CHECK-ATOMIC] epoch=30 seq=22 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -5  (read→replay)
+[CHECK-FIELD] epoch=30 seq=33 role=3  READ  Main.x  fieldId=1
+[CHECK-FIELD] epoch=31 seq=23 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=31 seq=34 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -6  (read→replay)
+[CHECK-FIELD] epoch=31 seq=35 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=32 seq=36 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -7  (read→replay)
+[CHECK-FIELD] epoch=32 seq=37 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=33 seq=24 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -6  (read→replay)
+[CHECK-FIELD] epoch=34 seq=25 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=34 seq=38 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -7  (read→replay)
+[CHECK-FIELD] epoch=34 seq=39 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=36 seq=26 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -7  (read→replay)
+[CHECK-FIELD] epoch=36 seq=27 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=35 seq=40 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -8  (read→replay)
+[CHECK-ATOMIC] epoch=37 seq=28 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -6  (read→replay)
+[CHECK-FIELD] epoch=36 seq=41 role=3  READ  Main.x  fieldId=1
+[CHECK-FIELD] epoch=38 seq=29 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=39 seq=30 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -6  (read→replay)
+[CHECK-FIELD] epoch=39 seq=31 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=38 seq=42 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -7  (read→replay)
+[CHECK-FIELD] epoch=39 seq=43 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=40 seq=44 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -7  (read→replay)
+[CHECK-ATOMIC] epoch=41 seq=32 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -6  (read→replay)
+[CHECK-FIELD] epoch=41 seq=33 role=2  READ  Main.x  fieldId=1
+[CHECK-FIELD] epoch=41 seq=45 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=42 seq=46 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -7  (read→replay)
+[CHECK-ATOMIC] epoch=43 seq=34 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -6  (read→replay)
+[CHECK-FIELD] epoch=44 seq=35 role=2  READ  Main.x  fieldId=1
+[CHECK-FIELD] epoch=42 seq=47 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=44 seq=48 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -7  (read→replay)
+[CHECK-FIELD] epoch=44 seq=49 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=45 seq=50 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -8  (read→replay)
+[CHECK-FIELD] epoch=45 seq=51 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=46 seq=52 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -9  (read→replay)
+[CHECK-FIELD] epoch=46 seq=53 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=47 seq=54 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -10  (read→replay)
+[CHECK-ATOMIC] epoch=48 seq=36 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -9  (read→replay)
+[CHECK-FIELD] epoch=49 seq=37 role=2  READ  Main.x  fieldId=1
+[CHECK-FIELD] epoch=47 seq=55 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=49 seq=56 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -10  (read→replay)
+[CHECK-FIELD] epoch=49 seq=57 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=50 seq=58 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -11  (read→replay)
+[CHECK-FIELD] epoch=51 seq=59 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=52 seq=60 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -11  (read→replay)
+[CHECK-ATOMIC] epoch=51 seq=38 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -10  (read→replay)
+[CHECK-FIELD] epoch=52 seq=61 role=3  READ  Main.x  fieldId=1
+[CHECK-FIELD] epoch=53 seq=39 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=53 seq=62 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -12  (read→replay)
+[CHECK-FIELD] epoch=53 seq=63 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=54 seq=64 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -13  (read→replay)
+[CHECK-FIELD] epoch=54 seq=65 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=55 seq=40 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -12  (read→replay)
+[CHECK-FIELD] epoch=56 seq=41 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=56 seq=66 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -13  (read→replay)
+[CHECK-FIELD] epoch=56 seq=67 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=57 seq=68 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -14  (read→replay)
+[CHECK-ATOMIC] epoch=58 seq=42 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -13  (read→replay)
+[CHECK-FIELD] epoch=58 seq=43 role=2  READ  Main.x  fieldId=1
+[CHECK-FIELD] epoch=58 seq=69 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=60 seq=44 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -13  (read→replay)
+[CHECK-ATOMIC] epoch=59 seq=70 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -14  (read→replay)
+[CHECK-FIELD] epoch=60 seq=45 role=2  READ  Main.x  fieldId=1
+[CHECK-FIELD] epoch=60 seq=71 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=61 seq=72 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -14  (read→replay)
+[CHECK-FIELD] epoch=61 seq=73 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=62 seq=74 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -15  (read→replay)
+[CHECK-FIELD] epoch=62 seq=75 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=63 seq=76 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -16  (read→replay)
+[CHECK-FIELD] epoch=63 seq=77 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=64 seq=46 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -15  (read→replay)
+[CHECK-FIELD] epoch=65 seq=47 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=65 seq=78 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -16  (read→replay)
+[CHECK-ATOMIC] epoch=66 seq=48 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -15  (read→replay)
+[CHECK-FIELD] epoch=66 seq=79 role=3  READ  Main.x  fieldId=1
+[CHECK-FIELD] epoch=67 seq=49 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=67 seq=80 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -16  (read→replay)
+[CHECK-FIELD] epoch=67 seq=81 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=68 seq=50 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -15  (read→replay)
+[CHECK-FIELD] epoch=69 seq=51 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=69 seq=82 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -16  (read→replay)
+[CHECK-FIELD] epoch=69 seq=83 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=70 seq=52 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -15  (read→replay)
+[CHECK-ATOMIC] epoch=71 seq=84 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -16  (read→replay)
+[CHECK-FIELD] epoch=71 seq=85 role=3  READ  Main.x  fieldId=1
+[CHECK-FIELD] epoch=71 seq=53 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=72 seq=54 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -15  (read→replay)
+[CHECK-ATOMIC] epoch=73 seq=86 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -16  (read→replay)
+[CHECK-FIELD] epoch=73 seq=87 role=3  READ  Main.x  fieldId=1
+[CHECK-FIELD] epoch=73 seq=55 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=74 seq=56 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -15  (read→replay)
+[CHECK-FIELD] epoch=74 seq=57 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=75 seq=58 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -14  (read→replay)
+[CHECK-FIELD] epoch=76 seq=59 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=76 seq=88 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -15  (read→replay)
+[CHECK-FIELD] epoch=76 seq=89 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=77 seq=60 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -14  (read→replay)
+[CHECK-ATOMIC] epoch=78 seq=90 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -15  (read→replay)
+[CHECK-FIELD] epoch=78 seq=91 role=3  READ  Main.x  fieldId=1
+[CHECK-FIELD] epoch=79 seq=61 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=79 seq=92 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -16  (read→replay)
+[CHECK-FIELD] epoch=79 seq=93 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=80 seq=62 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -15  (read→replay)
+[CHECK-FIELD] epoch=81 seq=63 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=81 seq=94 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -16  (read→replay)
+[CHECK-FIELD] epoch=81 seq=95 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=82 seq=64 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -15  (read→replay)
+[CHECK-FIELD] epoch=83 seq=65 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=83 seq=96 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -16  (read→replay)
+[CHECK-FIELD] epoch=83 seq=97 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=84 seq=66 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -15  (read→replay)
+[CHECK-FIELD] epoch=85 seq=67 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=85 seq=98 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -16  (read→replay)
+[CHECK-FIELD] epoch=85 seq=99 role=3  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=86 seq=100 role=3  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -17  (read→replay)
+[CHECK-ATOMIC] epoch=87 seq=68 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -16  (read→replay)
+[CHECK-FIELD] epoch=87 seq=69 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=88 seq=70 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -15  (read→replay)
+[CHECK-FIELD] epoch=88 seq=71 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=89 seq=72 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -14  (read→replay)
+[CHECK-FIELD] epoch=89 seq=73 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=90 seq=74 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -13  (read→replay)
+[CHECK-FIELD] epoch=90 seq=75 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=91 seq=76 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -12  (read→replay)
+[CHECK-FIELD] epoch=91 seq=77 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=92 seq=78 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -11  (read→replay)
+[CHECK-FIELD] epoch=92 seq=79 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=93 seq=80 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -10  (read→replay)
+[CHECK-FIELD] epoch=93 seq=81 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=94 seq=82 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -9  (read→replay)
+[CHECK-FIELD] epoch=94 seq=83 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=95 seq=84 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -8  (read→replay)
+[CHECK-FIELD] epoch=95 seq=85 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=96 seq=86 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -7  (read→replay)
+[CHECK-FIELD] epoch=96 seq=87 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=97 seq=88 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -6  (read→replay)
+[CHECK-FIELD] epoch=97 seq=89 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=98 seq=90 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -5  (read→replay)
+[CHECK-FIELD] epoch=98 seq=91 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=99 seq=92 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -4  (read→replay)
+[CHECK-FIELD] epoch=99 seq=93 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=100 seq=94 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -3  (read→replay)
+[CHECK-FIELD] epoch=100 seq=95 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=101 seq=96 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -2  (read→replay)
+[CHECK-FIELD] epoch=101 seq=97 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=102 seq=98 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = -1  (read→replay)
+[CHECK-FIELD] epoch=102 seq=99 role=2  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=103 seq=100 role=2  ATOMIC_RMW   AtomicInteger@4dcbadb4 = 0  (read→replay)
+[CHECK-SYNC]  epoch=104 seq=8 role=1  THREAD_WAKEUP            lock=null  site=9
+[CHECK-SYNC]  epoch=104 seq=9 role=1  THREAD_JOIN              lock=Thread@7fbe847c  site=10
+[CHECK-SYNC]  epoch=105 seq=10 role=1  THREAD_WAKEUP            lock=null  site=11
+[CHECK-FIELD] epoch=105 seq=11 role=1  READ  java/lang/System.out  fieldId=2
+[App] Done.
+[CHECK-FIELD] epoch=105 seq=12 role=1  READ  java/lang/System.out  fieldId=2
+[CHECK-FIELD] epoch=105 seq=13 role=1  READ  Main.x  fieldId=1
+[CHECK-ATOMIC] epoch=105 seq=14 role=1  ATOMIC_READ  AtomicInteger@4dcbadb4 = 0  (read→replay)
+Final value of x: 0

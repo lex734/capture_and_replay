@@ -122,7 +122,19 @@ public class ReplayMonitor {
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) return;
 
-            ReplayCoordinator.awaitTurn(roleId, eventType & 0xFF, 0, writtenValue, currentSiteId);
+            BirthId receiverBirth = IdentityMapper.getBirthId(receiver, null, currentSiteId);
+            boolean isArray = (index >= 0);
+            int packedType, objSite, objCount;
+            if (isArray) {
+                packedType = (eventType & 0xFF) | (BinarySchema.Flags.IS_ARRAY_ATOMIC << 8) | ((receiverBirth.siteId & 0xFFFF) << 16);
+                objSite = receiverBirth.count;
+                objCount = index;
+            } else {
+                packedType = BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
+                objSite = receiverBirth.siteId;
+                objCount = receiverBirth.count;
+            }
+            ReplayCoordinator.awaitTurn(roleId, packedType, objSite, objCount, writtenValue);
             long seq = ReplayCoordinator.getLastMatchedSeq();
             System.out.println(String.format("[CHECK-ATOMIC] epoch=%d seq=%d role=%d  %-12s %s = %d  (write)",
                     seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
@@ -140,7 +152,20 @@ public class ReplayMonitor {
             long tid = Thread.currentThread().getId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) return;
-            ReplayCoordinator.awaitTurn(roleId, eventType & 0xFF, 0, (int)writtenValue, currentSiteId);
+
+            BirthId receiverBirth = IdentityMapper.getBirthId(receiver, null, currentSiteId);
+            boolean isArray = (index >= 0);
+            int packedType, objSite, objCount;
+            if (isArray) {
+                packedType = (eventType & 0xFF) | (BinarySchema.Flags.IS_ARRAY_ATOMIC << 8) | ((receiverBirth.siteId & 0xFFFF) << 16);
+                objSite = receiverBirth.count;
+                objCount = index;
+            } else {
+                packedType = BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
+                objSite = receiverBirth.siteId;
+                objCount = receiverBirth.count;
+            }
+            ReplayCoordinator.awaitTurn(roleId, packedType, objSite, objCount, (int) writtenValue);
             long seq = ReplayCoordinator.getLastMatchedSeq();
             System.out.println(String.format("[CHECK-ATOMIC] epoch=%d seq=%d role=%d  %-12s %s = %dL  (write)",
                     seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
@@ -159,8 +184,20 @@ public class ReplayMonitor {
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) return;
 
+            BirthId receiverBirth = IdentityMapper.getBirthId(receiver, null, currentSiteId);
+            boolean isArray = (index >= 0);
+            int packedType, objSite, objCount;
+            if (isArray) {
+                packedType = (eventType & 0xFF) | (BinarySchema.Flags.IS_ARRAY_ATOMIC << 8) | ((receiverBirth.siteId & 0xFFFF) << 16);
+                objSite = receiverBirth.count;
+                objCount = index;
+            } else {
+                packedType = BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
+                objSite = receiverBirth.siteId;
+                objCount = receiverBirth.count;
+            }
             BirthId valueBirth = IdentityMapper.getBirthId(writtenValue, null, currentSiteId);
-            ReplayCoordinator.awaitTurn(roleId, eventType & 0xFF, 0, valueBirth.siteId, currentSiteId);
+            ReplayCoordinator.awaitTurn(roleId, packedType, objSite, objCount, valueBirth.siteId);
             long seq = ReplayCoordinator.getLastMatchedSeq();
             System.out.println(String.format("[CHECK-ATOMIC] epoch=%d seq=%d role=%d  %-12s %s = %s  (write)",
                     seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
@@ -178,7 +215,19 @@ public class ReplayMonitor {
             long tid = Thread.currentThread().getId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
 
-            int val = ReplayCoordinator.awaitTurnInt(roleId, eventType & 0xFF, currentSiteId);
+            BirthId receiverBirth = IdentityMapper.getBirthId(receiver, null, currentSiteId);
+            boolean isArray = (index >= 0);
+            int packedType, objSite, objCount;
+            if (isArray) {
+                packedType = (eventType & 0xFF) | (BinarySchema.Flags.IS_ARRAY_ATOMIC << 8) | ((receiverBirth.siteId & 0xFFFF) << 16);
+                objSite = receiverBirth.count;
+                objCount = index;
+            } else {
+                packedType = BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
+                objSite = receiverBirth.siteId;
+                objCount = receiverBirth.count;
+            }
+            int val = ReplayCoordinator.awaitTurnInt(roleId, packedType, objSite, objCount);
             long seq = ReplayCoordinator.getLastMatchedSeq();
             System.out.println(String.format("[CHECK-ATOMIC] epoch=%d seq=%d role=%d  %-12s %s = %d  (read→replay)",
                     seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
@@ -196,7 +245,20 @@ public class ReplayMonitor {
         try {
             long tid = Thread.currentThread().getId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-            long val = ReplayCoordinator.awaitTurnLong(roleId, eventType & 0xFF, currentSiteId);
+
+            BirthId receiverBirth = IdentityMapper.getBirthId(receiver, null, currentSiteId);
+            boolean isArray = (index >= 0);
+            int packedType, objSite, objCount;
+            if (isArray) {
+                packedType = (eventType & 0xFF) | (BinarySchema.Flags.IS_ARRAY_ATOMIC << 8) | ((receiverBirth.siteId & 0xFFFF) << 16);
+                objSite = receiverBirth.count;
+                objCount = index;
+            } else {
+                packedType = BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
+                objSite = receiverBirth.siteId;
+                objCount = receiverBirth.count;
+            }
+            long val = ReplayCoordinator.awaitTurnLong(roleId, packedType, objSite, objCount);
             long seq = ReplayCoordinator.getLastMatchedSeq();
             System.out.println(String.format("[CHECK-ATOMIC] epoch=%d seq=%d role=%d  %-12s %s = %dL  (read→replay)",
                     seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
@@ -214,7 +276,20 @@ public class ReplayMonitor {
         try {
             long tid = Thread.currentThread().getId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-            Object val = ReplayCoordinator.awaitTurnObj(roleId, eventType & 0xFF, currentSiteId);
+
+            BirthId receiverBirth = IdentityMapper.getBirthId(receiver, null, currentSiteId);
+            boolean isArray = (index >= 0);
+            int packedType, objSite, objCount;
+            if (isArray) {
+                packedType = (eventType & 0xFF) | (BinarySchema.Flags.IS_ARRAY_ATOMIC << 8) | ((receiverBirth.siteId & 0xFFFF) << 16);
+                objSite = receiverBirth.count;
+                objCount = index;
+            } else {
+                packedType = BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
+                objSite = receiverBirth.siteId;
+                objCount = receiverBirth.count;
+            }
+            Object val = ReplayCoordinator.awaitTurnObj(roleId, packedType, objSite, objCount);
             long seq = ReplayCoordinator.getLastMatchedSeq();
             System.out.println(String.format("[CHECK-ATOMIC] epoch=%d seq=%d role=%d  %-12s %s = %s  (read→replay)",
                     seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),

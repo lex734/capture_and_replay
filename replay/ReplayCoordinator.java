@@ -168,7 +168,8 @@ public class ReplayCoordinator {
                     continue;
                 }
                 // Normal strict total-order match
-                if (roleId == expectedRole && packedType == expectedType) {
+                if (roleId == expectedRole && packedType == expectedType
+                        && (int) expected[3] == objSite && (int) expected[4] == objCount) {
                     lastMatchedSeq.set(expected[0]);
                     if (isReleaseEvent(expectedType))
                         releasedEpoch.set(expected[0] >>> 32);
@@ -190,7 +191,7 @@ public class ReplayCoordinator {
         }
     }
 
-    public static int awaitTurnInt(int roleId, int packedType, int currentSiteId) {
+    public static int awaitTurnInt(int roleId, int packedType, int objSite, int objCount) {
         synchronized (controlLock) {
             while (true) {
                 long idx = currentIdx.get();
@@ -198,9 +199,10 @@ public class ReplayCoordinator {
                     return 0;
                 long[] expected = sortedEvents[(int) idx];
 
-                if (roleId == (int) expected[1] && packedType == (int) expected[2]) {
+                if (roleId == (int) expected[1] && packedType == (int) expected[2]
+                        && (int) expected[3] == objSite && (int) expected[4] == objCount) {
                     lastMatchedSeq.set(expected[0]);
-                    int returnValue = (int) expected[5];
+                    int returnValue = (int) expected[6];
                     if (isReleaseEvent(packedType))
                         releasedEpoch.set(expected[0] >>> 32);
                     currentIdx.incrementAndGet();
@@ -217,7 +219,7 @@ public class ReplayCoordinator {
         }
     }
 
-    public static long awaitTurnLong(int roleId, int packedType, int currentSiteId) {
+    public static long awaitTurnLong(int roleId, int packedType, int objSite, int objCount) {
         synchronized (controlLock) {
             while (true) {
                 long idx = currentIdx.get();
@@ -225,7 +227,8 @@ public class ReplayCoordinator {
                     return 0L;
                 long[] expected = sortedEvents[(int) idx];
 
-                if (roleId == (int) expected[1] && packedType == (int) expected[2]) {
+                if (roleId == (int) expected[1] && packedType == (int) expected[2]
+                        && (int) expected[3] == objSite && (int) expected[4] == objCount) {
                     lastMatchedSeq.set(expected[0]);
                     long high = (long) expected[5] << 32;
                     long low = expected[6] & 0xFFFFFFFFL;
@@ -246,7 +249,7 @@ public class ReplayCoordinator {
         }
     }
 
-    public static Object awaitTurnObj(int roleId, int packedType, int currentSiteId) {
+    public static Object awaitTurnObj(int roleId, int packedType, int objSite, int objCount) {
         synchronized (controlLock) {
             while (true) {
                 long idx = currentIdx.get();
@@ -254,7 +257,8 @@ public class ReplayCoordinator {
                     return null;
                 long[] expected = sortedEvents[(int) idx];
 
-                if (roleId == (int) expected[1] && packedType == (int) expected[2]) {
+                if (roleId == (int) expected[1] && packedType == (int) expected[2]
+                        && (int) expected[3] == objSite && (int) expected[4] == objCount) {
                     lastMatchedSeq.set(expected[0]);
                     int valueSiteId = (int) expected[5];
                     int valueCount = (int) expected[6];

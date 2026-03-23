@@ -1,0 +1,31 @@
+[ReplayAgent] Initializing Enforcer...
+[IdentityMapper] All maps cleared for new trace.
+[ReplayCoordinator] Loaded and sorted 14 events.
+[ReplayCoordinator] Expecting roles: [1, 2, 3]
+[Replay] main thread registered as role=1
+[ReplayAgent] Loaded 1000000 events. Instrumentation active.
+[Replay] role=2 started, waiting to be scheduled.
+[PreRegister] role=2
+[CHECK-SYNC]  epoch=1 seq=1 role=1  THREAD_START             lock=Thread@5fcfe4b2  site=4
+[Replay] role=3 started, waiting to be scheduled.
+[PreRegister] role=3
+[CHECK-SYNC]  epoch=2 seq=2 role=1  THREAD_START             lock=Thread@3f8f9dd6  site=5
+[Replay] role=2 active.
+[Replay] role=3 active.
+[CHECK-FIELD] epoch=2 seq=1 role=2  READ  java/lang/System.out  fieldId=1
+Worker: Processing task 1
+[CHECK-SYNC]  epoch=2 seq=2 role=2  THREAD_SLEEP             lock=null  site=14
+[CHECK-FIELD] epoch=2 seq=1 role=3  READ  java/lang/System.out  fieldId=1
+Validator: Critical error detected! Throwing exception...
+[CHECK-THROW] epoch=2 seq=2 role=3  java.lang.RuntimeException  site=9
+[CHECK-SYNC]  epoch=3 seq=3 role=2  THREAD_WAKEUP            lock=null  site=15
+[CHECK-FIELD] epoch=3 seq=4 role=2  READ  java/lang/System.out  fieldId=1
+Worker: Processing task 2
+[CHECK-SYNC]  epoch=3 seq=5 role=2  THREAD_SLEEP             lock=null  site=14
+[CHECK-SYNC]  epoch=4 seq=6 role=2  THREAD_WAKEUP            lock=null  site=15
+[CHECK-FIELD] epoch=4 seq=7 role=2  READ  java/lang/System.out  fieldId=1
+Worker: Processing task 3
+[CHECK-SYNC]  epoch=4 seq=8 role=2  THREAD_SLEEP             lock=null  site=14
+[CHECK-SYNC]  epoch=5 seq=9 role=2  THREAD_WAKEUP            lock=null  site=15
+[CHECK-FIELD] epoch=5 seq=10 role=2  READ  java/lang/System.out  fieldId=1
+Worker: All tasks complete!

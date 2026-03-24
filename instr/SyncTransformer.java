@@ -258,7 +258,7 @@ public class SyncTransformer implements ClassFileTransformer {
             boolean isIntOp  = isArrayLoad(opcode) || (opcode >= Opcodes.IASTORE && opcode <= Opcodes.SASTORE && opcode != Opcodes.AASTORE);
 
             if (isLongOp || isObjOp || isIntOp) {
-                String typeSuffix = isLongOp ? "Long" : (isObjOp ? "Object" : "Int");
+                String typeSuffix = isLongOp ? "Long" : (isObjOp ? "Obj" : "Int");
                 String valDesc    = isLongOp ? "J" : (isObjOp ? "Ljava/lang/Object;" : "I");
                 boolean isLoad    = isLongOp ? (opcode == Opcodes.LALOAD || opcode == Opcodes.DALOAD) : isArrayLoad(opcode);
                 
@@ -312,34 +312,39 @@ public class SyncTransformer implements ClassFileTransformer {
 
                     } else {
                         /** LOG STORE: [array, index, VALUE] **/
-                        // 1. Snapshot the stack for the log call
+                        // Snapshot value/index/array into locals, log, then restore for the actual store.
+                        // Pure stack manipulation cannot work here because the log call consumes
+                        // array and index, leaving nothing to restore from.
+                        int valStoreOp, valLoadOp;
+                        Type valType;
                         if (isLongOp) {
-                            mv.visitInsn(Opcodes.DUP2_X2); // [VALUE, array, index, VALUE]
-                            mv.visitInsn(Opcodes.DUP2_X2); // [VALUE, VALUE, array, index, VALUE]
-                            mv.visitInsn(Opcodes.POP2);    // [VALUE, VALUE, array, index]
+                            valStoreOp = Opcodes.LSTORE; valLoadOp = Opcodes.LLOAD;
+                            valType = Type.LONG_TYPE;
+                        } else if (isObjOp) {
+                            valStoreOp = Opcodes.ASTORE; valLoadOp = Opcodes.ALOAD;
+                            valType = Type.getType(Object.class);
                         } else {
-                            mv.visitInsn(Opcodes.DUP_X2);  // [VALUE, array, index, VALUE]
-                            mv.visitInsn(Opcodes.DUP_X2);  // [VALUE, VALUE, array, index, VALUE]
-                            mv.visitInsn(Opcodes.POP);     // [VALUE, VALUE, array, index]
+                            valStoreOp = Opcodes.ISTORE; valLoadOp = Opcodes.ILOAD;
+                            valType = Type.INT_TYPE;
                         }
-
-                        // 2. Metadata
-                        mv.visitLdcInsn(eventType); 
-                        mv.visitInsn(Opcodes.DUP_X2); 
-                        mv.visitInsn(Opcodes.POP); 
-                        mv.visitLdcInsn(siteId); 
-                        
+                        int valLocal = newLocal(valType);
+                        int idxLocal = newLocal(Type.INT_TYPE);
+                        int arrLocal = newLocal(Type.getType(Object.class));
+                        // Pop [VALUE, index, array] into locals (stack top = VALUE)
+                        mv.visitVarInsn(valStoreOp, valLocal);
+                        mv.visitVarInsn(Opcodes.ISTORE, idxLocal);
+                        mv.visitVarInsn(Opcodes.ASTORE, arrLocal);
+                        // Log call: (value, eventType, array, index, siteId)
+                        mv.visitVarInsn(valLoadOp, valLocal);
+                        mv.visitLdcInsn(eventType);
+                        mv.visitVarInsn(Opcodes.ALOAD, arrLocal);
+                        mv.visitVarInsn(Opcodes.ILOAD, idxLocal);
+                        mv.visitLdcInsn(siteId);
                         mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logArray" + typeSuffix, "(" + valDesc + "ILjava/lang/Object;II)V", false);
-                        
-                        // 3. RESTORE stack for original store: Currently [VALUE, array, index]
-                        if (isLongOp) {
-                            mv.visitInsn(Opcodes.DUP2_X2); 
-                            mv.visitInsn(Opcodes.POP2);
-                        } else {
-                            mv.visitInsn(Opcodes.SWAP); 
-                            mv.visitInsn(Opcodes.DUP2_X1); 
-                            mv.visitInsn(Opcodes.POP2);
-                        }
+                        // Restore [array, index, VALUE] for actual store
+                        mv.visitVarInsn(Opcodes.ALOAD, arrLocal);
+                        mv.visitVarInsn(Opcodes.ILOAD, idxLocal);
+                        mv.visitVarInsn(valLoadOp, valLocal);
                         super.visitInsn(opcode);
                         return;
                     }

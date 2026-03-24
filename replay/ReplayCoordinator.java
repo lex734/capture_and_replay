@@ -4,6 +4,9 @@ import common.BinarySchema;
 import common.IdentityMapper;
 import java.nio.MappedByteBuffer;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedList;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -29,51 +32,43 @@ public class ReplayCoordinator {
     private static final Set<Integer> activeRoles = ConcurrentHashMap.newKeySet();
     private static final Set<Integer> startedRoles = ConcurrentHashMap.newKeySet();
 
+    // Map each role to its own sequence of events
+    private static final Map<Integer, LinkedList<long[]>> roleQueues = new ConcurrentHashMap<>();
+    private static final AtomicLong globalMatchCount = new AtomicLong(0);
+
     public static void init(MappedByteBuffer traceBuffer, long count) {
-        // Read all non-empty records from the buffer.
-        // With batched slot allocation, records may not be contiguous —
-        // zero-filled gaps exist where batch tails were unused.
-        ArrayList<long[]> events = new ArrayList<>();
+        ArrayList<long[]> allEvents = new ArrayList<>();
         long maxSlots = traceBuffer.capacity() / BinarySchema.RECORD_SIZE;
 
         for (long i = 0; i < maxSlots; i++) {
             int pos = (int) (i * BinarySchema.RECORD_SIZE);
             long seq = traceBuffer.getLong(pos);
-            long roleId = traceBuffer.getLong(pos + 8);
-            int packedType = traceBuffer.getInt(pos + 16);
-            int objSite = traceBuffer.getInt(pos + 20);
-            int objCount = traceBuffer.getInt(pos + 24);
-            int data1 = traceBuffer.getInt(pos + 28);
-            int data2 = traceBuffer.getInt(pos + 32);
+            if (seq == 0) continue; // Quick skip
 
-            // Skip zero-filled slots (unused batch tails)
-            if (seq == 0 && roleId == 0 && packedType == 0)
-                continue;
-
-            events.add(new long[] { seq, roleId, packedType, objSite, objCount, data1, data2, i });
+            allEvents.add(new long[] {
+                seq,                               // [0] Full Seq (Epoch | Local)
+                traceBuffer.getLong(pos + 8),      // [1] roleId
+                traceBuffer.getInt(pos + 16),      // [2] packedType
+                traceBuffer.getInt(pos + 20),      // [3] objSite
+                traceBuffer.getInt(pos + 24),      // [4] objCount
+                traceBuffer.getInt(pos + 28),      // [5] data1
+                traceBuffer.getInt(pos + 32)       // [6] data2
+            });
         }
 
-        // Sort: epoch first, then localSeq, then slot as true tie-breaker
-        events.sort((a, b) -> {
-            long epochA = a[0] >>> 32, epochB = b[0] >>> 32;
-            if (epochA != epochB) return Long.compare(epochA, epochB);
-            long seqA = a[0] & 0xFFFFFFFFL, seqB = b[0] & 0xFFFFFFFFL;
-            if (seqA != seqB) return Long.compare(seqA, seqB);
-            return Long.compare(a[7], b[7]); // slot = actual write order to buffer
-        });
-        
-        sortedEvents = events.toArray(new long[0][]);
-        totalEvents = sortedEvents.length;
+        // Sort globally once to maintain the 'ideal' trace order
+        allEvents.sort(Comparator.comparingLong(a -> a[0]));
 
-        System.out.println("[ReplayCoordinator] Loaded and sorted " + totalEvents + " events.");
-
-        // must not advance past their first event until they arrive.
-        for (long[] event : sortedEvents) {
-            pendingRoles.add((int) event[1]); // event[1] = roleId
+        // Distribute into Per-Role Queues
+        for (long[] event : allEvents) {
+            int rId = (int) event[1];
+            roleQueues.computeIfAbsent(rId, k -> new LinkedList<>()).add(event);
+            pendingRoles.add(rId); 
         }
-        System.out.println("[ReplayCoordinator] Expecting roles: " + pendingRoles);
+
+        totalEvents = allEvents.size();
+        System.out.println("[Replay] Distributed " + totalEvents + " events into " + roleQueues.keySet().size() + " role queues.");
     }
-
     /**
      * Registers the main thread so its role is immediately active.
      * The main thread is always the first role in the sorted trace.
@@ -90,15 +85,31 @@ public class ReplayCoordinator {
         System.out.println("[Replay] main thread registered as role=" + mainRole);
     }
 
-    // Returns the roleId of the earliest pending role that hasn't been claimed yet.
-    // Skips roles already in startedRoles to prevent two threads being assigned the same role.
     public static int peekNextPendingRole() {
-        for (long[] event : sortedEvents) {
-            int roleId = (int) event[1];
-            if (pendingRoles.contains(roleId) && !startedRoles.contains(roleId))
-                return roleId;
+        synchronized (controlLock) {
+            int bestRole = -1;
+            long lowestSeq = Long.MAX_VALUE;
+
+            // Iterate through all queues to find the 'next' logical thread to start
+            for (Map.Entry<Integer, LinkedList<long[]>> entry : roleQueues.entrySet()) {
+                int roleId = entry.getKey();
+                
+                // Only consider roles that are truly PENDING (not started, not active)
+                if (pendingRoles.contains(roleId) && !startedRoles.contains(roleId) && !activeRoles.contains(roleId)) {
+                    LinkedList<long[]> queue = entry.getValue();
+                    if (queue != null && !queue.isEmpty()) {
+                        long headSeq = queue.peek()[0];
+                        
+                        // We want the role that appears EARLIEST in the global timeline
+                        if (headSeq < lowestSeq) {
+                            lowestSeq = headSeq;
+                            bestRole = roleId;
+                        }
+                    }
+                }
+            }
+            return bestRole;
         }
-        return -1;
     }
 
     // In ReplayCoordinator — called from IdentityMapper on first role assignment
@@ -113,14 +124,17 @@ public class ReplayCoordinator {
     }
 
     private static void activateRole(int roleId) {
+        if (activeRoles.contains(roleId))
+            return;
         System.out.println("[Replay] Activating role=" + roleId);
         synchronized (controlLock) {
-            if (startedRoles.remove(roleId)) {
-                pendingRoles.remove(roleId);
-                activeRoles.add(roleId);
-                System.out.println("[Replay] role=" + roleId + " active.");
-                controlLock.notifyAll();
-            }
+            // Re-check after acquiring lock to prevent double-activation
+            if (activeRoles.contains(roleId)) return;
+            // Move the role to active regardless of its current state (pending or started)
+            boolean removed = pendingRoles.remove(roleId) || startedRoles.remove(roleId);
+            activeRoles.add(roleId);
+            System.out.println("[Replay] role=" + roleId + " is now active.");
+            controlLock.notifyAll();
         }
     }
 
@@ -141,143 +155,151 @@ public class ReplayCoordinator {
      */
     public static void awaitTurn(int roleId, int packedType, int objSite, int objCount, int data) {
         activateRole(roleId);
+        LinkedList<long[]> myQueue = roleQueues.get(roleId);
+        if (myQueue == null) return;
 
         synchronized (controlLock) {
             while (true) {
-                long idx = currentIdx.get();
-                if (idx >= totalEvents)
-                    return;
+                long[] expected = myQueue.peek();
+                if (expected == null) return;
 
-                long[] expected = sortedEvents[(int) idx];
-                int expectedRole = (int) expected[1];
-                int expectedType = (int) expected[2];
+                long eSeq = expected[0];
+                long eEpoch = eSeq >>> 32;
+                int eType = (int) expected[2];
 
-                // Block advancing past an event whose role hasn't checked in yet —
-                // that thread exists in the trace but hasn't started in replay yet.
-                // Give it time to start rather than deadlocking immediately.
-                if (pendingRoles.contains(expectedRole)) {
-                    // Truly missing — never started, deadlock
-                    System.err.println("[Replay DEADLOCK] Role=" + expectedRole + " never started.");
-                    currentIdx.incrementAndGet();
-                    controlLock.notifyAll();
-                    continue;
+                // --- THE ACTIVE EPOCH GUARD ---
+                if (eEpoch > releasedEpoch.get()) {
+                    // Check if anyone actually "active" is still in a previous epoch
+                    if (!isAnyRoleBehind(eEpoch)) {
+                        // We are the leader or the only one left. Advance the timeline.
+                        System.out.println("[Replay] Role " + roleId + " advancing Epoch to " + eEpoch + " for type " + (eType & 0xFF));
+                        releasedEpoch.set(eEpoch);
+                        // Now that releasedEpoch == eEpoch, the loop continues to the match logic
+                    } else {
+                        // A physical dependency exists. We MUST wait for the laggard.
+                        try {
+                            controlLock.wait(100);
+                            continue;
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            return;
+                        }
+                    }
                 }
 
-                if (startedRoles.contains(expectedRole)) {
-                    // Thread exists but hasn't been scheduled yet — wait patiently
-                    // MUST release lock so the thread can call awaitTurn when scheduled
-                    try { controlLock.wait(10); }
-                    catch (InterruptedException e) { Thread.currentThread().interrupt(); return; }
-                    continue;
-                }
-                // Normal strict total-order match
-                if (roleId == expectedRole && packedType == expectedType
-                        && (int) expected[3] == objSite && (int) expected[4] == objCount) {
-                    lastMatchedSeq.set(expected[0]);
-                    if (isReleaseEvent(expectedType))
-                        releasedEpoch.set(expected[0] >>> 32);
-                    currentIdx.incrementAndGet();
-                    controlLock.notifyAll();
-                    return;
-                }
-
-                System.err.println(String.format("[WAIT]  idx=%-4d expects role=%d type=%d  got role=%d type=%d",
-                        idx, expectedRole, expectedType & 0xFF, roleId, packedType & 0xFF));
-
-                try {
-                    controlLock.wait(100);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
+                // --- THE MATCH CHECK ---
+                if (packedType == eType && objSite == (int) expected[3] && objCount == (int) expected[4]) {
+                    myQueue.poll(); // Consume the CLASS_INIT_END
+                    
+                    lastMatchedSeq.set(eSeq);
+                    // Standard JMM release check (redundant now, but good for safety)
+                    if (isReleaseEvent(eType)) {
+                        releasedEpoch.set(eEpoch);
+                    }
+                    
+                    controlLock.notifyAll(); // Wake up anyone waiting for this epoch/seq
                     return;
                 }
+
+                // --- DIVERGENCE ---
+                System.err.println(String.format("[DIVERGENCE] Role %d at Epoch %d. Trace wants Type %d, Code did Type %d",
+                                roleId, eEpoch, eType & 0xFF, packedType & 0xFF));
+                throw new RuntimeException("Replay Divergence");
             }
         }
     }
 
     public static int awaitTurnInt(int roleId, int packedType, int objSite, int objCount) {
+        activateRole(roleId);
+        LinkedList<long[]> myQueue = roleQueues.get(roleId);
+        if (myQueue == null) return 0;
+
         synchronized (controlLock) {
             while (true) {
-                long idx = currentIdx.get();
-                if (idx >= totalEvents)
-                    return 0;
-                long[] expected = sortedEvents[(int) idx];
+                long[] expected = myQueue.peek();
+                if (expected == null) return 0;
 
-                if (roleId == (int) expected[1] && packedType == (int) expected[2]
-                        && (int) expected[3] == objSite && (int) expected[4] == objCount) {
-                    lastMatchedSeq.set(expected[0]);
-                    int returnValue = (int) expected[6];
-                    if (isReleaseEvent(packedType))
-                        releasedEpoch.set(expected[0] >>> 32);
-                    currentIdx.incrementAndGet();
+                long eSeq = expected[0];
+                long eEpoch = eSeq >>> 32;
+
+                if (eEpoch > releasedEpoch.get()) {
+                    try { controlLock.wait(100); continue; } 
+                    catch (InterruptedException e) { return 0; }
+                }
+
+                if (packedType == (int) expected[2] && objSite == (int) expected[3] && objCount == (int) expected[4]) {
+                    myQueue.poll();
+                    int returnValue = (int) expected[6]; // data2
+                    
+                    lastMatchedSeq.set(eSeq);
+                    if (isReleaseEvent(packedType)) releasedEpoch.set(eEpoch);
+                    
                     controlLock.notifyAll();
                     return returnValue;
                 }
-                try {
-                    controlLock.wait(100);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    return 0;
-                }
+                throw new RuntimeException("Divergence in awaitTurnInt for Role " + roleId);
             }
         }
     }
 
     public static long awaitTurnLong(int roleId, int packedType, int objSite, int objCount) {
+        activateRole(roleId);
+        LinkedList<long[]> myQueue = roleQueues.get(roleId);
+        if (myQueue == null) return 0L;
+
         synchronized (controlLock) {
             while (true) {
-                long idx = currentIdx.get();
-                if (idx >= totalEvents)
-                    return 0L;
-                long[] expected = sortedEvents[(int) idx];
+                long[] expected = myQueue.peek();
+                if (expected == null) return 0L;
 
-                if (roleId == (int) expected[1] && packedType == (int) expected[2]
-                        && (int) expected[3] == objSite && (int) expected[4] == objCount) {
-                    lastMatchedSeq.set(expected[0]);
-                    long high = (long) expected[5] << 32;
-                    long low = expected[6] & 0xFFFFFFFFL;
+                if ((expected[0] >>> 32) > releasedEpoch.get()) {
+                    try { controlLock.wait(100); continue; } catch (Exception e) { return 0L; }
+                }
+
+                if (packedType == (int) expected[2] && objSite == (int) expected[3] && objCount == (int) expected[4]) {
+                    myQueue.poll();
+                    long high = (long) expected[5] << 32; // data1
+                    long low = expected[6] & 0xFFFFFFFFL; // data2
                     long returnValue = high | low;
-                    if (isReleaseEvent(packedType))
-                        releasedEpoch.set(expected[0] >>> 32);
-                    currentIdx.incrementAndGet();
+
+                    lastMatchedSeq.set(expected[0]);
+                    if (isReleaseEvent(packedType)) releasedEpoch.set(expected[0] >>> 32);
+                    
                     controlLock.notifyAll();
                     return returnValue;
                 }
-                try {
-                    controlLock.wait(100);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    return 0L;
-                }
+                throw new RuntimeException("Divergence in awaitTurnLong for Role " + roleId);
             }
         }
     }
 
     public static Object awaitTurnObj(int roleId, int packedType, int objSite, int objCount) {
+        activateRole(roleId);
+        LinkedList<long[]> myQueue = roleQueues.get(roleId);
+        if (myQueue == null) return null;
+
         synchronized (controlLock) {
             while (true) {
-                long idx = currentIdx.get();
-                if (idx >= totalEvents)
-                    return null;
-                long[] expected = sortedEvents[(int) idx];
+                long[] expected = myQueue.peek();
+                if (expected == null) return null;
 
-                if (roleId == (int) expected[1] && packedType == (int) expected[2]
-                        && (int) expected[3] == objSite && (int) expected[4] == objCount) {
-                    lastMatchedSeq.set(expected[0]);
+                if ((expected[0] >>> 32) > releasedEpoch.get()) {
+                    try { controlLock.wait(100); continue; } catch (Exception e) { return null; }
+                }
+
+                if (packedType == (int) expected[2] && objSite == (int) expected[3] && objCount == (int) expected[4]) {
+                    myQueue.poll();
                     int valueSiteId = (int) expected[5];
                     int valueCount = (int) expected[6];
                     Object returnValue = IdentityMapper.resolveByBirthId(valueSiteId, valueCount);
-                    if (isReleaseEvent(packedType))
-                        releasedEpoch.set(expected[0] >>> 32);
-                    currentIdx.incrementAndGet();
+
+                    lastMatchedSeq.set(expected[0]);
+                    if (isReleaseEvent(packedType)) releasedEpoch.set(expected[0] >>> 32);
+                    
                     controlLock.notifyAll();
                     return returnValue;
                 }
-                try {
-                    controlLock.wait(100);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    return null;
-                }
+                throw new RuntimeException("Divergence in awaitTurnObj for Role " + roleId);
             }
         }
     }
@@ -287,48 +309,50 @@ public class ReplayCoordinator {
     // started-role deadlock detection that plain awaitTurn provides, since field
     // accesses can be the first event a newly-started thread encounters.
 
-    private static long[] doAwaitTurnValued(int roleId, int packedType, int objSite, int objCount) {
-        System.out.println(String.format("[awaitTurnValued] role=%d type=%d site=%d count=%d",
-                roleId, packedType & 0xFF, objSite, objCount));
+    public static long[] doAwaitTurnValued(int roleId, int packedType, int objSite, int objCount) {
         activateRole(roleId);
-        System.out.println(String.format("[activeRoles] %s", activeRoles));
-        System.out.println(String.format("[pendingRoles] %s", pendingRoles));
-        System.out.println(String.format("[startedRoles] %s", startedRoles));
+        LinkedList<long[]> myQueue = roleQueues.get(roleId);
+        if (myQueue == null || myQueue.isEmpty()) return null;
+
         synchronized (controlLock) {
             while (true) {
-                System.out.println(String.format("[awaitTurnValued] Method called for idx=%d for role=%d type=%d site=%d count=%d",
-                        currentIdx.get(), roleId, packedType & 0xFF, objSite, objCount));
-                long idx = currentIdx.get();
-                if (idx >= totalEvents) return null;
-                long[] expected = sortedEvents[(int) idx];
-                int expectedRole = (int) expected[1];
-                System.out.println(String.format("[awaitTurnValued] idx=%d expects role=%d type=%d site=%d count=%d",
-                        idx, expectedRole, (int) expected[2] & 0xFF, (int) expected[3], (int) expected[4]));
+                long[] expected = myQueue.peek();
+                long eSeq = expected[0];
+                long eEpoch = eSeq >>> 32;
 
-                if (roleId == expectedRole && packedType == (int) expected[2]
-                        && objSite == (int) expected[3] && objCount == (int) expected[4]) {
-                    lastMatchedSeq.set(expected[0]);
-                    if (isReleaseEvent((int) expected[2]))
-                        releasedEpoch.set(expected[0] >>> 32);
-                    currentIdx.incrementAndGet();
+                // --- THE CORRECTED GUARD ---
+                if (eEpoch > releasedEpoch.get()) {
+                    // If I'm the only one active, or no other active role is still in a lower epoch,
+                    // I am allowed to 'Open' this new epoch.
+                    if (!isAnyRoleBehind(eEpoch)) {
+                        System.out.println("[Replay] Role " + roleId + " advancing global epoch to " + eEpoch);
+                        releasedEpoch.set(eEpoch);
+                        // No 'continue' needed, just fall through to the match logic
+                    } else {
+                        // Someone else is still working on Epoch 0. I MUST wait for them.
+                        try {
+                            controlLock.wait(100);
+                            continue;
+                        } catch (InterruptedException e) { return null; }
+                    }
+                }
+
+                // --- THE MATCH ---
+                if (packedType == (int) expected[2] && objSite == (int) expected[3] && objCount == (int) expected[4]) {
+                    myQueue.poll();
+                    lastMatchedSeq.set(eSeq);
+                    
+                    // If this specific event was a release, make sure we update (redundancy)
+                    if (isReleaseEvent((int)expected[2])) {
+                        releasedEpoch.set(eEpoch);
+                    }
+                    
                     controlLock.notifyAll();
                     return expected;
                 }
-                if (pendingRoles.contains(expectedRole)) {
-                    System.err.println("[Replay DEADLOCK] Role=" + expectedRole + " never started.");
-                    currentIdx.incrementAndGet();
-                    controlLock.notifyAll();
-                    continue;
-                }
-                if (startedRoles.contains(expectedRole)) {
-                    System.out.println("[Replay] Waiting for role=" + expectedRole + " to be scheduled.");
-                    try { controlLock.wait(5000); Thread.yield();} catch (InterruptedException e) { Thread.currentThread().interrupt(); throw new RuntimeException("Replay interrupted at idx " + idx); }
-                    continue;
-                }
-                
-                System.err.println(String.format("[WAIT]  idx=%-4d expects role=%d type=%d  got role=%d type=%d",
-                        idx, expectedRole, (int) expected[2] & 0xFF, roleId, packedType & 0xFF));
-                try { controlLock.wait(100); } catch (InterruptedException e) { Thread.currentThread().interrupt(); return null; }
+
+                // DIVERGENCE CHECK...
+                throw new RuntimeException("Divergence at Role " + roleId);
             }
         }
     }
@@ -385,4 +409,20 @@ public class ReplayCoordinator {
                 || eventType == BinarySchema.Event.ATOMIC_WRITE
                 || eventType == BinarySchema.Event.ATOMIC_RMW;
     }
+
+    private static boolean isAnyRoleBehind(long targetEpoch) {
+        for (Integer activeId : activeRoles) {
+            LinkedList<long[]> queue = roleQueues.get(activeId);
+            if (queue != null && !queue.isEmpty()) {
+                long headEpoch = queue.peek()[0] >>> 32;
+                if (headEpoch < targetEpoch) {
+                    // An active thread still has events to process in an older epoch.
+                    return true; 
+                }
+            }
+        }
+        return false;
+    }
 }
+
+

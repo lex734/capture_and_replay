@@ -58,6 +58,9 @@ public class BinarySchema {
         public static final int IS_VOLATILE = 1 << 0;
         public static final int IS_STATIC = 1 << 1;
         public static final int IS_ARRAY_ATOMIC = 1 << 2;
+        // Set on array field/array access events: siteId packed into upper 16 bits
+        // of packedType, objSite = birthId.count, objCount = index, data = value.
+        public static final int IS_ARRAY_VALUED = 1 << 3;
     }
 
     public static void init(String fileName, long maxEvents) throws Exception {

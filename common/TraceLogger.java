@@ -94,64 +94,140 @@ public class TraceLogger {
                 birthId.count, currentSiteId);
     }
 
-    public static void logField(int eventType, Object owner, int currentSiteId, boolean isVolatile, boolean isStatic,
-            String fieldName, String ownerName) {
+    // ---- Field loggers (capture) ----
+    // Each variant captures the field value alongside identity/ordering metadata.
+    // Record layout: objSite=birthId.siteId, objCount=birthId.count,
+    //   Int:  data1=0,              data2=value
+    //   Long: data1=value>>32,      data2=(int)value
+    //   Obj:  data1=valueSiteId,    data2=valueCount
+
+    private static int packFieldType(int eventType, boolean isVolatile, boolean isStatic) {
+        int flags = (isVolatile ? BinarySchema.Flags.IS_VOLATILE : 0)
+                  | (isStatic  ? BinarySchema.Flags.IS_STATIC   : 0);
+        return BinarySchema.packType(eventType, flags);
+    }
+
+    public static void logFieldInt(int value, int eventType, Object owner, int currentSiteId,
+            boolean isVolatile, boolean isStatic, String fieldName, String ownerName) {
         boolean advanceEpoch = isVolatile && (eventType == BinarySchema.Event.FIELD_WRITE);
         long seq = nextSeq(advanceEpoch);
         long tid = Thread.currentThread().getId();
-
-        // 2. Get the role (Who is doing this)
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         if (roleId == -1) return;
-
-        // 3. Get the BirthId
-        // For statics (owner == null), IdentityMapper returns BirthId.GLOBAL (0, 0)
         BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
-
-        // 4. Get the FieldId
-        // Consistent ID for the same field across all threads
-        int fieldId = IdentityMapper.getFieldId(birthId, fieldName, ownerName);
-
-        // 5. Pack flags and event type
-        int flags = (isVolatile ? BinarySchema.Flags.IS_VOLATILE : 0) |
-                (isStatic ? BinarySchema.Flags.IS_STATIC : 0);
-        // System.out.println(String.format("isVolatile: %b", isVolatile));
-
-        int packedType = BinarySchema.packType(eventType, flags);
-
-        String eventName = (eventType == BinarySchema.Event.FIELD_READ) ? "READ" : "WRITE";
-        System.out.println(String.format(
-                "[FIELD]  epoch=%d seq=%d role=%d  %-5s%s %s.%s  fieldId=%d",
-                seq >>> 32, seq & 0xFFFFFFFFL, roleId, eventName,
-                isVolatile ? "(volatile)" : "",
-                ownerName, fieldName, fieldId));
-
-        // 6. Write to Binary Log
-        // Data field contains the fieldId (the unique coordinate for this variable)
-        BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, fieldId);
+        int packedType = packFieldType(eventType, isVolatile, isStatic);
+        String evName = (eventType == BinarySchema.Event.FIELD_READ) ? "READ" : "WRITE";
+        System.out.println(String.format("[FIELD]  epoch=%d seq=%d role=%d  %-5s%s %s.%s = %d",
+                seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
+                isVolatile ? "(volatile)" : "", ownerName, fieldName, value));
+        BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, 0, value);
     }
 
-    // for array access events
-    public static void logArray(int eventType, Object array, int index, int currentSiteId) {
-        long seq = nextSeq(false);
+    public static void logFieldLong(long value, int eventType, Object owner, int currentSiteId,
+            boolean isVolatile, boolean isStatic, String fieldName, String ownerName) {
+        boolean advanceEpoch = isVolatile && (eventType == BinarySchema.Event.FIELD_WRITE);
+        long seq = nextSeq(advanceEpoch);
         long tid = Thread.currentThread().getId();
-
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         if (roleId == -1) return;
+        BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
+        int packedType = packFieldType(eventType, isVolatile, isStatic);
+        String evName = (eventType == BinarySchema.Event.FIELD_READ) ? "READ" : "WRITE";
+        System.out.println(String.format("[FIELD]  epoch=%d seq=%d role=%d  %-5s%s %s.%s = %dL",
+                seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
+                isVolatile ? "(volatile)" : "", ownerName, fieldName, value));
+        BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count,
+                (int) (value >> 32), (int) value);
+    }
 
+    public static void logFieldObj(Object value, int eventType, Object owner, int currentSiteId,
+            boolean isVolatile, boolean isStatic, String fieldName, String ownerName) {
+        boolean advanceEpoch = isVolatile && (eventType == BinarySchema.Event.FIELD_WRITE);
+        long seq = nextSeq(advanceEpoch);
+        long tid = Thread.currentThread().getId();
+        int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+        if (roleId == -1) return;
+        BirthId birthId   = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
+        BirthId valueBirth = IdentityMapper.getBirthId(value, null, currentSiteId);
+        int packedType = packFieldType(eventType, isVolatile, isStatic);
+        String evName = (eventType == BinarySchema.Event.FIELD_READ) ? "READ" : "WRITE";
+        System.out.println(String.format("[FIELD]  epoch=%d seq=%d role=%d  %-5s%s %s.%s = %s",
+                seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
+                isVolatile ? "(volatile)" : "", ownerName, fieldName,
+                value != null ? value.getClass().getSimpleName()
+                        + "@" + Integer.toHexString(System.identityHashCode(value)) : "null"));
+        BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count,
+                valueBirth.siteId, valueBirth.count);
+    }
+
+    // ---- Array loggers (capture) ----
+    // Uses the same upper-16-bit packing as atomic arrays so the record still fits
+    // in 40 bytes while carrying both the index (WHERE) and the value (WHAT).
+    // Record layout:
+    //   packedType = (eventType & 0xFF) | (IS_ARRAY_VALUED << 8) | (birthId.siteId << 16)
+    //   objSite    = birthId.count
+    //   objCount   = index
+    //   Int:  data1=0,              data2=value
+    //   Long: data1=value>>32,      data2=(int)value
+    //   Obj:  data1=valueSiteId,    data2=valueCount
+
+    private static int packArrayValuedType(int eventType, int receiverSiteId) {
+        return (eventType & 0xFF)
+                | (BinarySchema.Flags.IS_ARRAY_VALUED << 8)
+                | ((receiverSiteId & 0xFFFF) << 16);
+    }
+
+    public static void logArrayInt(int value, int eventType, Object array, int index, int currentSiteId) {
+        long seq = nextSeq(false);
+        long tid = Thread.currentThread().getId();
+        int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+        if (roleId == -1) return;
         BirthId birthId = IdentityMapper.getBirthId(array, null, currentSiteId);
+        int packedType = packArrayValuedType(eventType, birthId.siteId);
+        String evName = (eventType == BinarySchema.Event.ARRAY_READ) ? "ARRAY_READ" : "ARRAY_WRITE";
+        System.out.println(String.format("[ARRAY]  epoch=%d seq=%d role=%d  %-12s %s[%d] = %d",
+                seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
+                array != null ? array.getClass().getSimpleName()
+                        + "@" + Integer.toHexString(System.identityHashCode(array)) : "null",
+                index, value));
+        BinarySchema.write(seq, (long) roleId, packedType, birthId.count, index, 0, value);
+    }
 
-        String eventName = (eventType == BinarySchema.Event.ARRAY_READ) ? "ARRAY_READ" : "ARRAY_WRITE";
-        System.out.println(String.format(
-                "[ARRAY]  epoch=%d seq=%d role=%d  %-12s %s[%d]  site=%d",
-                seq >>> 32, seq & 0xFFFFFFFFL, roleId, eventName,
-                array != null
-                        ? array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array))
-                        : "null",
-                index, currentSiteId));
+    public static void logArrayLong(long value, int eventType, Object array, int index, int currentSiteId) {
+        long seq = nextSeq(false);
+        long tid = Thread.currentThread().getId();
+        int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+        if (roleId == -1) return;
+        BirthId birthId = IdentityMapper.getBirthId(array, null, currentSiteId);
+        int packedType = packArrayValuedType(eventType, birthId.siteId);
+        String evName = (eventType == BinarySchema.Event.ARRAY_READ) ? "ARRAY_READ" : "ARRAY_WRITE";
+        System.out.println(String.format("[ARRAY]  epoch=%d seq=%d role=%d  %-12s %s[%d] = %dL",
+                seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
+                array != null ? array.getClass().getSimpleName()
+                        + "@" + Integer.toHexString(System.identityHashCode(array)) : "null",
+                index, value));
+        BinarySchema.write(seq, (long) roleId, packedType, birthId.count, index,
+                (int) (value >> 32), (int) value);
+    }
 
-        BinarySchema.write(seq, roleId, ((eventType & 0xFF) | (BinarySchema.Flags.NONE << 8)), birthId.siteId,
-                birthId.count, index);
+    public static void logArrayObj(Object value, int eventType, Object array, int index, int currentSiteId) {
+        long seq = nextSeq(false);
+        long tid = Thread.currentThread().getId();
+        int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+        if (roleId == -1) return;
+        BirthId birthId    = IdentityMapper.getBirthId(array, null, currentSiteId);
+        BirthId valueBirth = IdentityMapper.getBirthId(value, null, currentSiteId);
+        int packedType = packArrayValuedType(eventType, birthId.siteId);
+        String evName = (eventType == BinarySchema.Event.ARRAY_READ) ? "ARRAY_READ" : "ARRAY_WRITE";
+        System.out.println(String.format("[ARRAY]  epoch=%d seq=%d role=%d  %-12s %s[%d] = %s",
+                seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
+                array != null ? array.getClass().getSimpleName()
+                        + "@" + Integer.toHexString(System.identityHashCode(array)) : "null",
+                index,
+                value != null ? value.getClass().getSimpleName()
+                        + "@" + Integer.toHexString(System.identityHashCode(value)) : "null"));
+        BinarySchema.write(seq, (long) roleId, packedType, birthId.count, index,
+                valueBirth.siteId, valueBirth.count);
     }
 
     // ---- Unified atomic loggers ----

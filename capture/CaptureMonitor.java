@@ -22,11 +22,34 @@ public class CaptureMonitor {
     }
   }
 
-  public static void logField(int eventType, Object owner, int siteId, boolean isVolatile, boolean isStatic, String fieldName, String ownerName) {
+  public static void logFieldInt(int value, int eventType, Object owner, int siteId,
+      boolean isVolatile, boolean isStatic, String fieldName, String ownerName) {
     if (isInside.get()) return;
     isInside.set(true);
     try {
-      TraceLogger.logField(eventType, owner, siteId, isVolatile, isStatic, fieldName, ownerName);
+      TraceLogger.logFieldInt(value, eventType, owner, siteId, isVolatile, isStatic, fieldName, ownerName);
+    } finally {
+      isInside.set(false);
+    }
+  }
+
+  public static void logFieldLong(long value, int eventType, Object owner, int siteId,
+      boolean isVolatile, boolean isStatic, String fieldName, String ownerName) {
+    if (isInside.get()) return;
+    isInside.set(true);
+    try {
+      TraceLogger.logFieldLong(value, eventType, owner, siteId, isVolatile, isStatic, fieldName, ownerName);
+    } finally {
+      isInside.set(false);
+    }
+  }
+
+  public static void logFieldObj(Object value, int eventType, Object owner, int siteId,
+      boolean isVolatile, boolean isStatic, String fieldName, String ownerName) {
+    if (isInside.get()) return;
+    isInside.set(true);
+    try {
+      TraceLogger.logFieldObj(value, eventType, owner, siteId, isVolatile, isStatic, fieldName, ownerName);
     } finally {
       isInside.set(false);
     }
@@ -62,11 +85,31 @@ public class CaptureMonitor {
     }
   }
 
-  public static void logArray(int eventType, Object array, int index, int siteId) {
+  public static void logArrayInt(int value, int eventType, Object array, int index, int siteId) {
     if (isInside.get() || array == null) return;
     isInside.set(true);
     try {
-      TraceLogger.logArray(eventType, array, index, siteId);
+      TraceLogger.logArrayInt(value, eventType, array, index, siteId);
+    } finally {
+      isInside.set(false);
+    }
+  }
+
+  public static void logArrayLong(long value, int eventType, Object array, int index, int siteId) {
+    if (isInside.get() || array == null) return;
+    isInside.set(true);
+    try {
+      TraceLogger.logArrayLong(value, eventType, array, index, siteId);
+    } finally {
+      isInside.set(false);
+    }
+  }
+
+  public static void logArrayObj(Object value, int eventType, Object array, int index, int siteId) {
+    if (isInside.get() || array == null) return;
+    isInside.set(true);
+    try {
+      TraceLogger.logArrayObj(value, eventType, array, index, siteId);
     } finally {
       isInside.set(false);
     }

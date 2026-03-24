@@ -2,7 +2,6 @@ package replay;
 
 import common.BinarySchema;
 import common.IdentityMapper;
-
 import java.nio.MappedByteBuffer;
 import java.util.ArrayList;
 import java.util.Set;
@@ -114,10 +113,14 @@ public class ReplayCoordinator {
     }
 
     private static void activateRole(int roleId) {
-        if (startedRoles.remove(roleId)) {
-            pendingRoles.remove(roleId);
-            activeRoles.add(roleId);
-            System.out.println("[Replay] role=" + roleId + " active.");
+        System.out.println("[Replay] Activating role=" + roleId);
+        synchronized (controlLock) {
+            if (startedRoles.remove(roleId)) {
+                pendingRoles.remove(roleId);
+                activeRoles.add(roleId);
+                System.out.println("[Replay] role=" + roleId + " active.");
+                controlLock.notifyAll();
+            }
         }
     }
 
@@ -277,6 +280,96 @@ public class ReplayCoordinator {
                 }
             }
         }
+    }
+
+    // ---- Value-returning field turn methods ----
+    // Same wait-loop structure as awaitTurnInt/Long/Obj but include the pending/
+    // started-role deadlock detection that plain awaitTurn provides, since field
+    // accesses can be the first event a newly-started thread encounters.
+
+    private static long[] doAwaitTurnValued(int roleId, int packedType, int objSite, int objCount) {
+        System.out.println(String.format("[awaitTurnValued] role=%d type=%d site=%d count=%d",
+                roleId, packedType & 0xFF, objSite, objCount));
+        activateRole(roleId);
+        System.out.println(String.format("[activeRoles] %s", activeRoles));
+        System.out.println(String.format("[pendingRoles] %s", pendingRoles));
+        System.out.println(String.format("[startedRoles] %s", startedRoles));
+        synchronized (controlLock) {
+            while (true) {
+                System.out.println(String.format("[awaitTurnValued] Method called for idx=%d for role=%d type=%d site=%d count=%d",
+                        currentIdx.get(), roleId, packedType & 0xFF, objSite, objCount));
+                long idx = currentIdx.get();
+                if (idx >= totalEvents) return null;
+                long[] expected = sortedEvents[(int) idx];
+                int expectedRole = (int) expected[1];
+                System.out.println(String.format("[awaitTurnValued] idx=%d expects role=%d type=%d site=%d count=%d",
+                        idx, expectedRole, (int) expected[2] & 0xFF, (int) expected[3], (int) expected[4]));
+
+                if (roleId == expectedRole && packedType == (int) expected[2]
+                        && objSite == (int) expected[3] && objCount == (int) expected[4]) {
+                    lastMatchedSeq.set(expected[0]);
+                    if (isReleaseEvent((int) expected[2]))
+                        releasedEpoch.set(expected[0] >>> 32);
+                    currentIdx.incrementAndGet();
+                    controlLock.notifyAll();
+                    return expected;
+                }
+                if (pendingRoles.contains(expectedRole)) {
+                    System.err.println("[Replay DEADLOCK] Role=" + expectedRole + " never started.");
+                    currentIdx.incrementAndGet();
+                    controlLock.notifyAll();
+                    continue;
+                }
+                if (startedRoles.contains(expectedRole)) {
+                    System.out.println("[Replay] Waiting for role=" + expectedRole + " to be scheduled.");
+                    try { controlLock.wait(5000); Thread.yield();} catch (InterruptedException e) { Thread.currentThread().interrupt(); throw new RuntimeException("Replay interrupted at idx " + idx); }
+                    continue;
+                }
+                
+                System.err.println(String.format("[WAIT]  idx=%-4d expects role=%d type=%d  got role=%d type=%d",
+                        idx, expectedRole, (int) expected[2] & 0xFF, roleId, packedType & 0xFF));
+                try { controlLock.wait(100); } catch (InterruptedException e) { Thread.currentThread().interrupt(); return null; }
+            }
+        }
+    }
+
+    public static int awaitTurnFieldInt(int roleId, int packedType, int objSite, int objCount) {
+        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount);
+        return (ev == null) ? 0 : (int) ev[6]; // data2
+    }
+
+    public static long awaitTurnFieldLong(int roleId, int packedType, int objSite, int objCount) {
+        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount);
+        if (ev == null) return 0L;
+        return ((long) ev[5] << 32) | (ev[6] & 0xFFFFFFFFL); // data1<<32 | data2
+    }
+
+    public static Object awaitTurnFieldObj(int roleId, int packedType, int objSite, int objCount) {
+        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount);
+        if (ev == null) return null;
+        return IdentityMapper.resolveByBirthId((int) ev[5], (int) ev[6]); // data1=siteId, data2=count
+    }
+
+    // ---- Value-returning array turn methods ----
+    // Array records use the IS_ARRAY_VALUED packing:
+    //   packedType upper 16 bits = birthId.siteId
+    //   objSite = birthId.count,  objCount = index
+
+    public static int awaitTurnArrayInt(int roleId, int packedType, int objSite, int objCount) {
+        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount);
+        return (ev == null) ? 0 : (int) ev[6];
+    }
+
+    public static long awaitTurnArrayLong(int roleId, int packedType, int objSite, int objCount) {
+        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount);
+        if (ev == null) return 0L;
+        return ((long) ev[5] << 32) | (ev[6] & 0xFFFFFFFFL);
+    }
+
+    public static Object awaitTurnArrayObj(int roleId, int packedType, int objSite, int objCount) {
+        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount);
+        if (ev == null) return null;
+        return IdentityMapper.resolveByBirthId((int) ev[5], (int) ev[6]);
     }
 
     private static boolean isReleaseEvent(int packedType) {

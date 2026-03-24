@@ -10,6 +10,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.io.InputStream;
 import org.objectweb.asm.*;
 import org.objectweb.asm.commons.LocalVariablesSorter;
+import org.w3c.dom.events.EventTarget;
 
 public class SyncTransformer implements ClassFileTransformer {
 
@@ -234,85 +235,114 @@ public class SyncTransformer implements ClassFileTransformer {
             this.methodName = methodName;
             this.loader = loader;
         }
-
+        
         @Override
         public void visitInsn(int opcode) {
-            // Handle Intrinsic Locks
+            // 1. Handle Intrinsic Locks
             if (opcode == Opcodes.MONITORENTER || opcode == Opcodes.MONITOREXIT) {
                 String monitorMethod = isReplay ? "checkSync" : "logSync";
                 int eventType = (opcode == Opcodes.MONITORENTER) ? 1 : 2;
-                String siteString = className + "." + methodName + "#" + instructionId++;
-                int siteId = SyncTransformer.registerSiteId(siteString);
+                int siteId = SyncTransformer.registerSiteId(className + "." + methodName + "#" + instructionId++);
+                mv.visitInsn(Opcodes.DUP); 
+                mv.visitLdcInsn(eventType); 
+                mv.visitInsn(Opcodes.SWAP); 
+                mv.visitLdcInsn(siteId); 
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, monitorMethod, "(ILjava/lang/Object;I)V", false);
+                super.visitInsn(opcode);
+                return;
+            }
 
-                mv.visitInsn(Opcodes.DUP); // Keep the lock object
-                mv.visitLdcInsn(eventType); // [lock, lock, type]
-                mv.visitInsn(Opcodes.SWAP); // [lock, type, lock]
-                mv.visitLdcInsn(siteId); // [lock, type, lock, siteId]
+            // 2. Identify the type group
+            boolean isLongOp = (opcode == Opcodes.LALOAD || opcode == Opcodes.DALOAD || opcode == Opcodes.LASTORE || opcode == Opcodes.DASTORE);
+            boolean isObjOp  = (opcode == Opcodes.AALOAD || opcode == Opcodes.AASTORE);
+            boolean isIntOp  = isArrayLoad(opcode) || (opcode >= Opcodes.IASTORE && opcode <= Opcodes.SASTORE && opcode != Opcodes.AASTORE);
 
-                // Matches CaptureMonitor.logSync(int type, Object lock, int siteId)
-                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, monitorMethod,
-                        "(ILjava/lang/Object;I)V", false);
-                // Handle long/double array operations (category-2 values take 2 stack slots)
-            } else if (opcode == Opcodes.LASTORE || opcode == Opcodes.DASTORE || opcode == Opcodes.LALOAD
-                    || opcode == Opcodes.DALOAD) {
-                String monitorMethod = isReplay ? "checkArray" : "logArray";
-                int eventType = (opcode == Opcodes.LALOAD || opcode == Opcodes.DALOAD) ? 7 : 8;
-                String siteString = className + "." + methodName + "#" + instructionId++;
-                int siteId = SyncTransformer.registerSiteId(siteString);
+            if (isLongOp || isObjOp || isIntOp) {
+                String typeSuffix = isLongOp ? "Long" : (isObjOp ? "Object" : "Int");
+                String valDesc    = isLongOp ? "J" : (isObjOp ? "Ljava/lang/Object;" : "I");
+                boolean isLoad    = isLongOp ? (opcode == Opcodes.LALOAD || opcode == Opcodes.DALOAD) : isArrayLoad(opcode);
+                
+                int eventType = isLoad ? 7 : 8;
+                int siteId = SyncTransformer.registerSiteId(className + "." + methodName + "#" + instructionId++);
 
-                if (opcode == Opcodes.LALOAD || opcode == Opcodes.DALOAD) {
-                    mv.visitInsn(Opcodes.DUP2); // [arrayRef, index, arrayRef, index]
-                    mv.visitLdcInsn(eventType); // [arrayRef, index, arrayRef, index, type]
-                    mv.visitInsn(Opcodes.DUP_X2); // [arrayRef, index, type, arrayRef, index, type]
-                    mv.visitInsn(Opcodes.POP); // [arrayRef, index, type, arrayRef, index]
-                    mv.visitLdcInsn(siteId); // [arrayRef, index, type, arrayRef, index, siteId]
+                if (isReplay) {
+                    if (isLoad) {
+                        // Stack: [array, index]
+                        // Push eventType then slide it under [array, index] so the call
+                        // sees (eventType, array, index, siteId) and consumes all four,
+                        // leaving just [returned_value] on the stack.
+                        mv.visitLdcInsn(eventType);
+                        mv.visitInsn(Opcodes.DUP_X2);   // [eventType, array, index, eventType]
+                        mv.visitInsn(Opcodes.POP);       // [eventType, array, index]
+                        mv.visitLdcInsn(siteId);
+                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkArray" + typeSuffix, "(ILjava/lang/Object;II)" + valDesc, false);
+                    } else {
+                        // Stack: [array, index, value]
+                        // Pop value; DUP2 keeps [array, index] for the actual store instruction.
+                        if (isLongOp) mv.visitInsn(Opcodes.POP2); else mv.visitInsn(Opcodes.POP);
+                        mv.visitInsn(Opcodes.DUP2);
+                        mv.visitLdcInsn(eventType);
+                        mv.visitInsn(Opcodes.DUP_X2);
+                        mv.visitInsn(Opcodes.POP);
+                        mv.visitLdcInsn(siteId);
+                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkArray" + typeSuffix, "(ILjava/lang/Object;II)" + valDesc, false);
+                        super.visitInsn(opcode);
+                    }
+                    return;
 
-                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, monitorMethod,
-                            "(ILjava/lang/Object;II)V", false);
                 } else {
-                    // LASTORE / DASTORE
-                    mv.visitInsn(Opcodes.DUP2_X2);
-                    mv.visitInsn(Opcodes.POP2);
-                    mv.visitInsn(Opcodes.DUP2);
-                    mv.visitLdcInsn(eventType);
-                    mv.visitInsn(Opcodes.DUP_X2);
-                    mv.visitInsn(Opcodes.POP);
-                    mv.visitLdcInsn(siteId);
+                    /** LOGGING **/
+                    if (isLoad) {
+                        mv.visitInsn(Opcodes.DUP2); 
+                        super.visitInsn(opcode); // [array, index, VALUE]
+                        
+                        // Move VALUE to bottom: [VALUE, array, index]
+                        if (isLongOp) {
+                            mv.visitInsn(Opcodes.DUP2_X2); mv.visitInsn(Opcodes.POP2);
+                        } else {
+                            mv.visitInsn(Opcodes.DUP_X2); mv.visitInsn(Opcodes.POP);
+                        }
+                        
+                        mv.visitLdcInsn(eventType); 
+                        mv.visitInsn(Opcodes.DUP_X2); 
+                        mv.visitInsn(Opcodes.POP); 
+                        mv.visitLdcInsn(siteId); 
+                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logArray" + typeSuffix, "(" + valDesc + "ILjava/lang/Object;II)V", false);
+                        return;
 
-                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, monitorMethod,
-                            "(ILjava/lang/Object;II)V", false);
-                    mv.visitInsn(Opcodes.DUP2_X2);
-                    mv.visitInsn(Opcodes.POP2);
-                }
-            } else if (isArrayLoad(opcode) || isArrayStore(opcode)) {
-                String monitorMethod = isReplay ? "checkArray" : "logArray";
-                int eventType = isArrayLoad(opcode) ? 7 : 8;
-                String siteString = className + "." + methodName + "#" + instructionId++;
-                int siteId = SyncTransformer.registerSiteId(siteString);
+                    } else {
+                        /** LOG STORE: [array, index, VALUE] **/
+                        // 1. Snapshot the stack for the log call
+                        if (isLongOp) {
+                            mv.visitInsn(Opcodes.DUP2_X2); // [VALUE, array, index, VALUE]
+                            mv.visitInsn(Opcodes.DUP2_X2); // [VALUE, VALUE, array, index, VALUE]
+                            mv.visitInsn(Opcodes.POP2);    // [VALUE, VALUE, array, index]
+                        } else {
+                            mv.visitInsn(Opcodes.DUP_X2);  // [VALUE, array, index, VALUE]
+                            mv.visitInsn(Opcodes.DUP_X2);  // [VALUE, VALUE, array, index, VALUE]
+                            mv.visitInsn(Opcodes.POP);     // [VALUE, VALUE, array, index]
+                        }
 
-                if (isArrayLoad(opcode)) {
-                    mv.visitInsn(Opcodes.DUP2); // [arrayRef, index, arrayRef, index]
-                    mv.visitLdcInsn(eventType); // [arrayRef, index, arrayRef, index, type]
-                    mv.visitInsn(Opcodes.DUP_X2); // [arrayRef, index, type, arrayRef, index, type]
-                    mv.visitInsn(Opcodes.POP); // [arrayRef, index, type, arrayRef, index]
-                    mv.visitLdcInsn(siteId); // [arrayRef, index, type, arrayRef, index, siteId]
-
-                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, monitorMethod,
-                            "(ILjava/lang/Object;II)V", false);
-                } else {
-                    mv.visitInsn(Opcodes.DUP_X2); // Stack: [value, arrayRef, index, value]
-                    mv.visitInsn(Opcodes.POP); // Stack: [value, arrayRef, index]
-
-                    mv.visitInsn(Opcodes.DUP2); // Stack: [value, arrayRef, index, arrayRef, index]
-                    mv.visitLdcInsn(eventType); // Stack: [value, arrayRef, index, arrayRef, index, type]
-                    mv.visitInsn(Opcodes.DUP_X2); // Stack: [value, arrayRef, index, type, arrayRef, index, type]
-                    mv.visitInsn(Opcodes.POP); // Stack: [value, arrayRef, index, type, arrayRef, index]
-
-                    mv.visitLdcInsn(siteId); // Stack: [value, arrayRef, index, type, arrayRef, index, siteId]
-                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, monitorMethod,
-                            "(ILjava/lang/Object;II)V", false);
-                    mv.visitInsn(Opcodes.DUP2_X1); // Stack: [arrayRef, index, value, arrayRef, index]
-                    mv.visitInsn(Opcodes.POP2); // Stack: [arrayRef, index, value]
+                        // 2. Metadata
+                        mv.visitLdcInsn(eventType); 
+                        mv.visitInsn(Opcodes.DUP_X2); 
+                        mv.visitInsn(Opcodes.POP); 
+                        mv.visitLdcInsn(siteId); 
+                        
+                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logArray" + typeSuffix, "(" + valDesc + "ILjava/lang/Object;II)V", false);
+                        
+                        // 3. RESTORE stack for original store: Currently [VALUE, array, index]
+                        if (isLongOp) {
+                            mv.visitInsn(Opcodes.DUP2_X2); 
+                            mv.visitInsn(Opcodes.POP2);
+                        } else {
+                            mv.visitInsn(Opcodes.SWAP); 
+                            mv.visitInsn(Opcodes.DUP2_X1); 
+                            mv.visitInsn(Opcodes.POP2);
+                        }
+                        super.visitInsn(opcode);
+                        return;
+                    }
                 }
             }
             super.visitInsn(opcode);
@@ -628,61 +658,142 @@ public class SyncTransformer implements ClassFileTransformer {
         private static char getReturnType(String descriptor) {
             return descriptor.charAt(descriptor.indexOf(')') + 1);
         }
-
+        
         @Override
         public void visitFieldInsn(int opcode, String owner, String name, String descriptor) {
-            String monitorMethod = isReplay ? "checkField" : "logField";
-            boolean isWide = descriptor.startsWith("J") || descriptor.startsWith("D");
+            char typeCode = descriptor.charAt(0);
+            boolean isWide = (typeCode == 'J' || typeCode == 'D');
+            // Map to your specific method suffixes
+            String typeSuffix = isWide ? "Long" : (typeCode == 'L' || typeCode == '[') ? "Obj" : "Int";
+            String retDesc = isWide ? "J" : (typeCode == 'L' || typeCode == '[') ? "Ljava/lang/Object;" : "I";
+
             int eventType = (opcode == Opcodes.GETFIELD || opcode == Opcodes.GETSTATIC) ? 5 : 6;
-
-            // Resolve volatility from the OWNER class, not just the current class.
-            // This handles cross-class field accesses (e.g., Main accessing Counter.x).
-            boolean isVolatile = SyncTransformer.isFieldVolatile(loader, owner, name);
-            // Check if we need the IS_STATIC flag
             boolean isStatic = (opcode == Opcodes.GETSTATIC || opcode == Opcodes.PUTSTATIC);
+            boolean isVolatile = SyncTransformer.isFieldVolatile(loader, owner, name);
+            int siteId = SyncTransformer.registerSiteId(className + "." + methodName + "#" + instructionId++);
 
-            String siteString = className + "." + methodName + "#" + instructionId++;
-            int siteId = SyncTransformer.registerSiteId(siteString);
-
-            // Stack surgery to extract the owner object reference for logging
-            if (opcode == Opcodes.PUTFIELD) {
-                if (isWide) {
-                    // Stack: [objectRef, wide_value(cat2)]
-                    mv.visitInsn(Opcodes.DUP2_X1); // [wide_value, objectRef, wide_value] (DUP2_X1 Form 2: cat2 over
-                                                   // cat1)
-                    mv.visitInsn(Opcodes.POP2); // [wide_value, objectRef]
-                    mv.visitInsn(Opcodes.DUP); // [wide_value, objectRef, objectRef_copy]
+            if (isReplay) {
+                /** REPLAY: checkFieldT(...) returns the value to be used **/
+                if (!isStatic) {
+                    if (opcode == Opcodes.PUTFIELD) {
+                        if (isWide) mv.visitInsn(Opcodes.POP2); else mv.visitInsn(Opcodes.POP);
+                        // DUP owner so checkField can take one copy as its param
+                        // and the original copy remains for the actual PUTFIELD below.
+                        mv.visitInsn(Opcodes.DUP);
+                    }
+                    // Stack: [owner] for GETFIELD, [owner, owner] for PUTFIELD
                 } else {
-                    // Stack: [objectRef, value(cat1)]
-                    mv.visitInsn(Opcodes.DUP2); // [objectRef, value, objectRef, value]
-                    mv.visitInsn(Opcodes.POP); // [objectRef, value, objectRef]
+                    if (opcode == Opcodes.PUTSTATIC) {
+                        if (isWide) mv.visitInsn(Opcodes.POP2); else mv.visitInsn(Opcodes.POP);
+                    }
+                    mv.visitInsn(Opcodes.ACONST_NULL); // owner is null for static
                 }
-            } else if (opcode == Opcodes.GETFIELD) {
-                mv.visitInsn(Opcodes.DUP); // [objectRef, objectRef_copy]
+
+                // Args: (int type, Object owner, int siteId, boolean vol, boolean stat, String name, String ownerName)
+                mv.visitLdcInsn(eventType);
+                mv.visitInsn(Opcodes.SWAP); // [type, owner]
+                mv.visitLdcInsn(siteId);
+                mv.visitInsn(isVolatile ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
+                mv.visitInsn(isStatic ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
+                mv.visitLdcInsn(name);
+                mv.visitLdcInsn(owner);
+
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkField" + typeSuffix,
+                        "(ILjava/lang/Object;IZZLjava/lang/String;Ljava/lang/String;)" + retDesc, false);
+
+                // checkFieldObj returns java/lang/Object; the JVM verifier requires the
+                // actual field type on the stack before any invokevirtual / putfield use.
+                if (typeSuffix.equals("Obj") && !descriptor.equals("Ljava/lang/Object;")) {
+                    String castType = descriptor.startsWith("[")
+                            ? descriptor
+                            : descriptor.substring(1, descriptor.length() - 1);
+                    mv.visitTypeInsn(Opcodes.CHECKCAST, castType);
+                }
+
+                if (opcode == Opcodes.PUTFIELD || opcode == Opcodes.PUTSTATIC) {
+                    super.visitFieldInsn(opcode, owner, name, descriptor);
+                }
+                return; 
+
             } else {
-                mv.visitInsn(Opcodes.ACONST_NULL); // GETSTATIC/PUTSTATIC — no owner instance
+                /** LOGGING: logFieldT(value, ...) called BEFORE stores, AFTER loads **/
+                if (opcode == Opcodes.PUTFIELD) {
+                    if (isWide) {
+                        // Stack: [owner(1), val(2)]
+                        mv.visitInsn(Opcodes.DUP2_X1); // [val(2), owner(1), val(2)]
+                        mv.visitInsn(Opcodes.DUP2_X1); // [val(2), val(2), owner(1), val(2)]
+                        mv.visitInsn(Opcodes.POP2);    // [val(2), val(2), owner(1)]
+                    } else {
+                        // Stack: [owner(1), val(1)]
+                        mv.visitInsn(Opcodes.DUP2);    // [owner, val, owner, val]
+                        mv.visitInsn(Opcodes.DUP);     // [owner, val, owner, val, val]
+                        mv.visitInsn(Opcodes.DUP_X2);  // [owner, val, val, owner, val, val]
+                        mv.visitInsn(Opcodes.POP2);    // [owner, val, val, owner]
+                        mv.visitInsn(Opcodes.DUP_X2);  // [owner, val, owner, val, val, owner]
+                        mv.visitInsn(Opcodes.POP);     // [owner, val, val, owner] (This is the pair for log)
+                    }
+                    // Prep Log Args
+                    pushLogArgs(typeSuffix, retDesc, eventType, siteId, isVolatile, isStatic, name, owner);
+                    super.visitFieldInsn(opcode, owner, name, descriptor);
+
+                } else if (opcode == Opcodes.PUTSTATIC) {
+                    if (isWide) mv.visitInsn(Opcodes.DUP2); else mv.visitInsn(Opcodes.DUP);
+                    mv.visitInsn(Opcodes.ACONST_NULL); // owner
+                    pushLogArgs(typeSuffix, retDesc, eventType, siteId, isVolatile, isStatic, name, owner);
+                    super.visitFieldInsn(opcode, owner, name, descriptor);
+
+                } else if (opcode == Opcodes.GETFIELD) {
+                    mv.visitInsn(Opcodes.DUP); // Save owner: [owner, owner]
+                    super.visitFieldInsn(opcode, owner, name, descriptor); // [owner, value]
+
+                    // Duplicate value so one copy is passed to logField and one remains
+                    // for the program to consume (same pattern as atomics DUP-before-log).
+                    if (isWide) {
+                        // DUP2_X1: [val_copy(wide), owner, val] — val_copy preserved at bottom
+                        mv.visitInsn(Opcodes.DUP2_X1);
+                    } else {
+                        // DUP_X1 + SWAP: [owner, value] → [val_copy, owner, value] → [val_copy, value, owner]
+                        mv.visitInsn(Opcodes.DUP_X1);
+                        mv.visitInsn(Opcodes.SWAP);
+                    }
+                    pushLogArgs(typeSuffix, retDesc, eventType, siteId, isVolatile, isStatic, name, owner);
+
+                } else { // GETSTATIC
+                    super.visitFieldInsn(opcode, owner, name, descriptor); // [value]
+                    // DUP before handing off to pushLogArgs so the program copy stays at
+                    // the bottom of the stack after the void log call returns.
+                    if (isWide) mv.visitInsn(Opcodes.DUP2); else mv.visitInsn(Opcodes.DUP);
+                    mv.visitInsn(Opcodes.ACONST_NULL); // owner (null for static)
+                    pushLogArgs(typeSuffix, retDesc, eventType, siteId, isVolatile, isStatic, name, owner);
+                }
+                return;
             }
-
-            // Log the field access — objectRef (or null for static) is on top of stack
-            mv.visitLdcInsn(eventType); // 5 or 6
-            mv.visitInsn(Opcodes.SWAP);
-            mv.visitLdcInsn(siteId);
-            mv.visitInsn(isVolatile ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
-            mv.visitLdcInsn(isStatic ? 1 : 0);
-            mv.visitLdcInsn(name);
-            mv.visitLdcInsn(owner);
-            mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, monitorMethod,
-                    "(ILjava/lang/Object;IZZLjava/lang/String;Ljava/lang/String;)V", false);
-
-            // Restore stack order for wide PUTFIELD
-            if (opcode == Opcodes.PUTFIELD && isWide) {
-                // Stack is [wide_value, objectRef] — need [objectRef, wide_value]
-                mv.visitInsn(Opcodes.DUP_X2); // [objectRef, wide_value, objectRef] (DUP_X2 Form 2: cat1 over cat2)
-                mv.visitInsn(Opcodes.POP); // [objectRef, wide_value]
-            }
-
-            super.visitFieldInsn(opcode, owner, name, descriptor);
         }
+
+        private void pushLogArgs(String suffix, String valDesc, int type, int siteId, boolean vol, boolean stat, String name, String own) {
+            // Stack is [value(1 or 2), owner(1)]
+            mv.visitLdcInsn(type);
+            // Stack: [value, owner, type]
+            if (valDesc.equals("J") || valDesc.equals("D")) {
+                // Value is 2 slots. We need type to go BEFORE owner but AFTER value.
+                // Current: [V_hi, V_lo, Owner, Type]
+                mv.visitInsn(Opcodes.SWAP); // [V_hi, V_lo, Type, Owner]
+                // Now move Type behind V: [Type, V_hi, V_lo, Owner] -> Hard with SWAP.
+                // Let's assume your logField signature is (Value, Type, Owner, ...)
+                // If Type is already after value, we just need siteId etc.
+            } else {
+                mv.visitInsn(Opcodes.SWAP); // [value, type, owner]
+            }
+            
+            mv.visitLdcInsn(siteId);
+            mv.visitInsn(vol ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
+            mv.visitInsn(stat ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
+            mv.visitLdcInsn(name);
+            mv.visitLdcInsn(own);
+
+            mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logField" + suffix,
+                    "(" + valDesc + "ILjava/lang/Object;IZZLjava/lang/String;Ljava/lang/String;)V", false);
+        } 
     }
 
     /**

@@ -50,61 +50,176 @@ public class ReplayMonitor {
         }
     }
 
-    // ---- Field access events (instance & static, volatile & non-volatile) ----
+    // ---- Field access events ----
+    // Each method blocks until the event's turn in the total order, then returns
+    // the value that was recorded during capture.  The SyncTransformer uses the
+    // returned value as the actual field value (for reads) or the value to write
+    // (for writes), eliminating ordering dependence between reads and writes.
 
-    public static void checkField(int eventType, Object owner, int currentSiteId,
-                                boolean isVolatile, boolean isStatic,
-                                String fieldName, String ownerName) {
-        if (isInside.get()) return;
+    private static int resolveFieldRole(Object owner, String ownerName, int currentSiteId,
+            boolean isVolatile, boolean isStatic, int eventType,
+            int[] outPacked, int[] outSite, int[] outCount) {
+        long tid = Thread.currentThread().getId();
+        int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+        if (roleId == -1) return -1;
+        BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
+        int flags = (isVolatile ? BinarySchema.Flags.IS_VOLATILE : 0)
+                  | (isStatic  ? BinarySchema.Flags.IS_STATIC   : 0);
+        outPacked[0] = BinarySchema.packType(eventType, flags);
+        outSite[0]   = birthId.siteId;
+        outCount[0]  = birthId.count;
+        return roleId;
+    }
+
+    public static int checkFieldInt(int eventType, Object owner, int currentSiteId,
+            boolean isVolatile, boolean isStatic, String fieldName, String ownerName) {
+        if (isInside.get()) return 0;
         isInside.set(true);
+        
         try {
-            long tid = Thread.currentThread().getId();
-            int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-            if (roleId == -1) return;
+            int[] packed = new int[1], site = new int[1], count = new int[1];
+            int roleId = resolveFieldRole(owner, ownerName, currentSiteId,
+                    isVolatile, isStatic, eventType, packed, site, count);
+            if (roleId == -1) return 0;
+            int val = ReplayCoordinator.awaitTurnFieldInt(roleId, packed[0], site[0], count[0]);
+            System.out.println("CheckFieldInt called by " + roleId + " for " + ownerName + "." + fieldName);
 
-            BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
-            int fieldId = IdentityMapper.getFieldId(birthId, fieldName, ownerName);
-
-            int flags = (isVolatile ? BinarySchema.Flags.IS_VOLATILE : 0) |
-                        (isStatic  ? BinarySchema.Flags.IS_STATIC   : 0);
-            int packedType = BinarySchema.packType(eventType, flags);
+            long seq = ReplayCoordinator.getLastMatchedSeq();
 
             String evName = (eventType == BinarySchema.Event.FIELD_READ) ? "READ" : "WRITE";
-
-            ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, fieldId);
-            long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format(
-                    "[CHECK-FIELD] epoch=%d seq=%d role=%d  %-5s%s %s.%s  fieldId=%d",
+            System.out.println(String.format("[CHECK-FIELD] epoch=%d seq=%d role=%d  %-5s%s %s.%s = %d",
                     seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
-                    isVolatile ? "(volatile)" : "",
-                    ownerName, fieldName, fieldId));
+                    isVolatile ? "(volatile)" : "", ownerName, fieldName, val));
+            return val;
+        } finally {
+            isInside.set(false);
+        }
+    }
+
+    public static long checkFieldLong(int eventType, Object owner, int currentSiteId,
+            boolean isVolatile, boolean isStatic, String fieldName, String ownerName) {
+        if (isInside.get()) return 0L;
+        isInside.set(true);
+        try {
+            int[] packed = new int[1], site = new int[1], count = new int[1];
+            int roleId = resolveFieldRole(owner, ownerName, currentSiteId,
+                    isVolatile, isStatic, eventType, packed, site, count);
+            if (roleId == -1) return 0L;
+            long val = ReplayCoordinator.awaitTurnFieldLong(roleId, packed[0], site[0], count[0]);
+            long seq = ReplayCoordinator.getLastMatchedSeq();
+            String evName = (eventType == BinarySchema.Event.FIELD_READ) ? "READ" : "WRITE";
+            System.out.println(String.format("[CHECK-FIELD] epoch=%d seq=%d role=%d  %-5s%s %s.%s = %dL",
+                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
+                    isVolatile ? "(volatile)" : "", ownerName, fieldName, val));
+            return val;
+        } finally {
+            isInside.set(false);
+        }
+    }
+
+    public static Object checkFieldObj(int eventType, Object owner, int currentSiteId,
+            boolean isVolatile, boolean isStatic, String fieldName, String ownerName) {
+        if (isInside.get()) return null;
+        isInside.set(true);
+        try {
+            int[] packed = new int[1], site = new int[1], count = new int[1];
+            int roleId = resolveFieldRole(owner, ownerName, currentSiteId,
+                    isVolatile, isStatic, eventType, packed, site, count);
+            if (roleId == -1) return null;
+            Object val = ReplayCoordinator.awaitTurnFieldObj(roleId, packed[0], site[0], count[0]);
+            if (val == null && eventType == BinarySchema.Event.FIELD_READ) {
+                try {
+                    Class<?> cls = Class.forName(ownerName.replace('/', '.'));
+                    java.lang.reflect.Field f = cls.getDeclaredField(fieldName);
+                    f.setAccessible(true);
+                    val = f.get(isStatic ? null : owner);
+                } catch (Exception ignored) {}
+            }
+            long seq = ReplayCoordinator.getLastMatchedSeq();
+            String evName = (eventType == BinarySchema.Event.FIELD_READ) ? "READ" : "WRITE";
+            System.out.println(String.format("[CHECK-FIELD] epoch=%d seq=%d role=%d  %-5s%s %s.%s = %s",
+                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
+                    isVolatile ? "(volatile)" : "", ownerName, fieldName,
+                    val != null ? val.getClass().getSimpleName()
+                            + "@" + Integer.toHexString(System.identityHashCode(val)) : "null"));
+            return val;
         } finally {
             isInside.set(false);
         }
     }
 
     // ---- Array access events ----
+    // Mirror of field methods: block on total order, return captured element value.
 
-    public static void checkArray(int eventType, Object array, int index, int currentSiteId) {
-        if (isInside.get() || array == null) return;
+    public static int checkArrayInt(int eventType, Object array, int index, int currentSiteId) {
+        if (isInside.get() || array == null) return 0;
         isInside.set(true);
         try {
             long tid = Thread.currentThread().getId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-            if (roleId == -1) return;
-
+            if (roleId == -1) return 0;
             BirthId birthId = IdentityMapper.getBirthId(array, null, currentSiteId);
-            int packedType = (eventType & 0xFF) | (BinarySchema.Flags.NONE << 8);
-
-            String evName = (eventType == BinarySchema.Event.ARRAY_READ) ? "ARRAY_READ" : "ARRAY_WRITE";
-
-            ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, index);
+            int packedType = (eventType & 0xFF)
+                    | (BinarySchema.Flags.IS_ARRAY_VALUED << 8)
+                    | ((birthId.siteId & 0xFFFF) << 16);
+            int val = ReplayCoordinator.awaitTurnArrayInt(roleId, packedType, birthId.count, index);
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format(
-                    "[CHECK-ARRAY] epoch=%d seq=%d role=%d  %-12s %s[%d]  site=%d",
+            String evName = (eventType == BinarySchema.Event.ARRAY_READ) ? "ARRAY_READ" : "ARRAY_WRITE";
+            System.out.println(String.format("[CHECK-ARRAY] epoch=%d seq=%d role=%d  %-12s %s[%d] = %d",
                     seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
                     array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array)),
-                    index, currentSiteId));
+                    index, val));
+            return val;
+        } finally {
+            isInside.set(false);
+        }
+    }
+
+    public static long checkArrayLong(int eventType, Object array, int index, int currentSiteId) {
+        if (isInside.get() || array == null) return 0L;
+        isInside.set(true);
+        try {
+            long tid = Thread.currentThread().getId();
+            int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+            if (roleId == -1) return 0L;
+            BirthId birthId = IdentityMapper.getBirthId(array, null, currentSiteId);
+            int packedType = (eventType & 0xFF)
+                    | (BinarySchema.Flags.IS_ARRAY_VALUED << 8)
+                    | ((birthId.siteId & 0xFFFF) << 16);
+            long val = ReplayCoordinator.awaitTurnArrayLong(roleId, packedType, birthId.count, index);
+            long seq = ReplayCoordinator.getLastMatchedSeq();
+            String evName = (eventType == BinarySchema.Event.ARRAY_READ) ? "ARRAY_READ" : "ARRAY_WRITE";
+            System.out.println(String.format("[CHECK-ARRAY] epoch=%d seq=%d role=%d  %-12s %s[%d] = %dL",
+                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
+                    array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array)),
+                    index, val));
+            return val;
+        } finally {
+            isInside.set(false);
+        }
+    }
+
+    public static Object checkArrayObj(int eventType, Object array, int index, int currentSiteId) {
+        if (isInside.get() || array == null) return null;
+        isInside.set(true);
+        try {
+            long tid = Thread.currentThread().getId();
+            int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+            if (roleId == -1) return null;
+            BirthId birthId = IdentityMapper.getBirthId(array, null, currentSiteId);
+            int packedType = (eventType & 0xFF)
+                    | (BinarySchema.Flags.IS_ARRAY_VALUED << 8)
+                    | ((birthId.siteId & 0xFFFF) << 16);
+            Object val = ReplayCoordinator.awaitTurnArrayObj(roleId, packedType, birthId.count, index);
+            long seq = ReplayCoordinator.getLastMatchedSeq();
+            String evName = (eventType == BinarySchema.Event.ARRAY_READ) ? "ARRAY_READ" : "ARRAY_WRITE";
+            System.out.println(String.format("[CHECK-ARRAY] epoch=%d seq=%d role=%d  %-12s %s[%d] = %s",
+                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
+                    array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array)),
+                    index,
+                    val != null ? val.getClass().getSimpleName()
+                            + "@" + Integer.toHexString(System.identityHashCode(val)) : "null"));
+            return val;
         } finally {
             isInside.set(false);
         }

@@ -54,13 +54,22 @@ public class ReplayCoordinator {
             events.add(new long[] { seq, roleId, packedType, objSite, objCount, data1, data2, i });
         }
 
-        // Sort: epoch first, then localSeq, then slot as true tie-breaker
+        // Sort: epoch → roleId → localSeq.
+        //
+        // Epoch encodes JMM happens-before boundaries (only release events advance it).
+        // RoleId breaks ties within an epoch: parents are always assigned lower roleIds
+        // than their children (roles are assigned in creation order), so a parent's
+        // THREAD_START naturally sorts before the child's first event without any
+        // special causal pass. LocalSeq orders events within the same thread/epoch.
+        // The buffer slot index is an artifact of batched allocation and carries no
+        // causal meaning, so it is not used.
         events.sort((a, b) -> {
             long epochA = a[0] >>> 32, epochB = b[0] >>> 32;
             if (epochA != epochB) return Long.compare(epochA, epochB);
+            long roleA = a[1], roleB = b[1];
+            if (roleA != roleB) return Long.compare(roleA, roleB);
             long seqA = a[0] & 0xFFFFFFFFL, seqB = b[0] & 0xFFFFFFFFL;
-            if (seqA != seqB) return Long.compare(seqA, seqB);
-            return Long.compare(a[7], b[7]); // slot = actual write order to buffer
+            return Long.compare(seqA, seqB);
         });
         
         sortedEvents = events.toArray(new long[0][]);
@@ -110,6 +119,17 @@ public class ReplayCoordinator {
                 System.out.println("[Replay] role=" + roleId + " started, waiting to be scheduled.");
                 controlLock.notifyAll();
             }
+        }
+    }
+
+    /** Called by the UncaughtExceptionHandler when a replay thread dies early. */
+    public static void reportThreadDead(int roleId) {
+        activeRoles.remove(roleId);
+        startedRoles.remove(roleId);
+        pendingRoles.remove(roleId);
+        System.err.println("[Replay] role=" + roleId + " died (uncaught exception) — skipping its remaining events.");
+        synchronized (controlLock) {
+            controlLock.notifyAll();
         }
     }
 
@@ -167,6 +187,16 @@ public class ReplayCoordinator {
                     catch (InterruptedException e) { Thread.currentThread().interrupt(); return; }
                     continue;
                 }
+
+                // Role is not pending, not started, and not active — it died early.
+                // Skip its remaining events so other threads can make progress.
+                if (!activeRoles.contains(expectedRole)) {
+                    System.err.println("[Replay] role=" + expectedRole + " is dead, skipping event at idx=" + idx);
+                    currentIdx.incrementAndGet();
+                    controlLock.notifyAll();
+                    continue;
+                }
+
                 // Normal strict total-order match
                 if (roleId == expectedRole && packedType == expectedType
                         && (int) expected[3] == objSite && (int) expected[4] == objCount) {

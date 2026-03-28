@@ -1,0 +1,15 @@
+[Agent] Initializing Recorder...
+[IdentityMapper] All maps cleared for new trace.
+[Agent] Found Agent at: /home/lex/enxing_fyp/capture_and_replay/libs/trace-capture-agent.jar
+[Agent] Found Common at: /home/lex/enxing_fyp/capture_and_replay/libs/trace-common.jar
+[Agent] Instrumentation active. Recording started.
+[SYNC]   epoch=1 seq=1 role=1  THREAD_START             lock=Thread@61e717c2  site=4  childRole=2
+[SYNC]   epoch=2 seq=2 role=1  THREAD_START             lock=Thread@4f8e5cde  site=5  childRole=3
+[SYNC]   epoch=2 seq=1 role=2  THREAD_SLEEP             lock=null  site=13
+[FIELD]  epoch=2 seq=1 role=3  READ  java/lang/System.out  fieldId=1
+Crashing Thread: About to divide by zero...
+[FIELD]  epoch=2 seq=2 role=3  READ  java/lang/System.out  fieldId=1
+Caught an ArithmeticException: / by zero
+[SYNC]   epoch=3 seq=2 role=2  THREAD_WAKEUP            lock=null  site=14
+[FIELD]  epoch=3 seq=3 role=2  READ  java/lang/System.out  fieldId=1
+Safe Thread: I'm still running fine!

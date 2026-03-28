@@ -1,0 +1,24 @@
+[Agent] Initializing Recorder...
+[IdentityMapper] All maps cleared for new trace.
+[Agent] Found Agent at: /home/lex/enxing_fyp/capture_and_replay/libs/trace-capture-agent.jar
+[Agent] Found Common at: /home/lex/enxing_fyp/capture_and_replay/libs/trace-common.jar
+[Agent] Instrumentation active. Recording started.
+[SYNC]   epoch=1 seq=1 role=1  THREAD_START             lock=Thread@61e717c2  site=4  childRole=2
+[SYNC]   epoch=2 seq=2 role=1  THREAD_START             lock=Thread@4f8e5cde  site=5  childRole=3
+[FIELD]  epoch=2 seq=1 role=2  READ  java/lang/System.out  fieldId=1
+[FIELD]  epoch=2 seq=1 role=3  READ  java/lang/System.out  fieldId=1
+Validator: Critical error detected! Throwing exception...
+[THROW]  epoch=2 seq=2 role=3  java.lang.RuntimeException  site=9
+Worker: Processing task 1
+[SYNC]   epoch=2 seq=2 role=2  THREAD_SLEEP             lock=null  site=14
+[SYNC]   epoch=3 seq=3 role=2  THREAD_WAKEUP            lock=null  site=15
+[FIELD]  epoch=3 seq=4 role=2  READ  java/lang/System.out  fieldId=1
+Worker: Processing task 2
+[SYNC]   epoch=3 seq=5 role=2  THREAD_SLEEP             lock=null  site=14
+[SYNC]   epoch=4 seq=6 role=2  THREAD_WAKEUP            lock=null  site=15
+[FIELD]  epoch=4 seq=7 role=2  READ  java/lang/System.out  fieldId=1
+Worker: Processing task 3
+[SYNC]   epoch=4 seq=8 role=2  THREAD_SLEEP             lock=null  site=14
+[SYNC]   epoch=5 seq=9 role=2  THREAD_WAKEUP            lock=null  site=15
+[FIELD]  epoch=5 seq=10 role=2  READ  java/lang/System.out  fieldId=1
+Worker: All tasks complete!

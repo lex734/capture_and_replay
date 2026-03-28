@@ -37,6 +37,17 @@ public class ReplayAgent {
             // 3. Initialize the Coordinator with the data
             ReplayCoordinator.init(buffer, totalEvents);
 
+            // 3a. Install a global handler so threads that die from uncaught exceptions
+            // are removed from the active-role set, preventing coordinator deadlock.
+            Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
+                int roleId = IdentityMapper.getRoleId(thread.getId());
+                if (roleId != -1) {
+                    ReplayCoordinator.reportThreadDead(roleId);
+                }
+                // Print the full stack trace so it matches what capture produced.
+                throwable.printStackTrace(System.err);
+            });
+
             // 3b. Register the main thread before the app starts.
             // The main thread never goes through preRegisterThread (which is only
             // called for spawned threads), so without this its role stays in

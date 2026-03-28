@@ -83,6 +83,23 @@ public class TraceLogger {
         if (roleId == -1) return;
         BirthId birthId = IdentityMapper.getBirthId(lock, null, currentSiteId);
         String eventName = getEventName(eventType);
+
+        // For THREAD_START, eagerly pre-assign the child thread's roleId and store it
+        // in data1. This lets the replay coordinator enforce causality: the child's
+        // events must be ordered AFTER the parent's THREAD_START, not before.
+        if (eventType == BinarySchema.Event.THREAD_START && lock instanceof Thread) {
+            long childTid = ((Thread) lock).getId();
+            int childRoleId = IdentityMapper.getRoleIdBySite(childTid, currentSiteId);
+            System.out.println(String.format(
+                    "[SYNC]   epoch=%d seq=%d role=%d  %-24s lock=%s  site=%d  childRole=%d",
+                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, eventName,
+                    lock.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(lock)),
+                    currentSiteId, childRoleId));
+            BinarySchema.write(seq, (long) roleId, ((eventType & 0xFF) | (BinarySchema.Flags.NONE << 8)),
+                    birthId.siteId, birthId.count, childRoleId, currentSiteId);
+            return;
+        }
+
         System.out.println(String.format(
                 "[SYNC]   epoch=%d seq=%d role=%d  %-24s lock=%s  site=%d",
                 seq >>> 32, seq & 0xFFFFFFFFL, roleId, eventName,
@@ -296,6 +313,23 @@ public class TraceLogger {
         }
     }
 
+    public static void logException(Object exception, int siteId) {
+        long seq = nextSeq(false); // exceptions are not JMM release events
+        long tid = Thread.currentThread().getId();
+        int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
+        if (roleId == -1) return;
+
+        BirthId birthId = IdentityMapper.getBirthId(exception, null, siteId);
+        String className = exception.getClass().getName();
+        System.out.println(String.format(
+                "[THROW]  epoch=%d seq=%d role=%d  %s  site=%d",
+                seq >>> 32, seq & 0xFFFFFFFFL, roleId, className, siteId));
+
+        BinarySchema.write(seq, (long) roleId,
+                BinarySchema.packType(BinarySchema.Event.EXCEPTION_THROW, BinarySchema.Flags.NONE),
+                birthId.siteId, birthId.count, siteId);
+    }
+
     // Helper method to get event name for sync events
     private static String getEventName(int eventType) {
         switch (eventType) {
@@ -339,6 +373,8 @@ public class TraceLogger {
                 return "CLASS_INIT_BEGIN";
             case BinarySchema.Event.CLASS_INIT_END:
                 return "CLASS_INIT_END";
+            case BinarySchema.Event.EXCEPTION_THROW:
+                return "EXCEPTION_THROW";
             default:
                 return "UNKNOWN(" + eventType + ")";
         }

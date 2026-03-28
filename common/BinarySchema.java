@@ -51,6 +51,7 @@ public class BinarySchema {
         public static final int ATOMIC_RMW = 22;
         public static final int CLASS_INIT_BEGIN = 23;
         public static final int CLASS_INIT_END = 24;
+        public static final int EXCEPTION_THROW = 25;
     }
 
     public static class Flags {
@@ -67,6 +68,12 @@ public class BinarySchema {
             file.setLength(totalSize);
             buffer = file.getChannel().map(FileChannel.MapMode.READ_WRITE, 0, totalSize);
         }
+        // Ensure dirty mapped pages are flushed to disk even if the JVM exits
+        // abruptly (e.g. uncaught exception). The OS does this on Linux anyway,
+        // but force() makes it explicit and portable.
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            if (buffer != null) buffer.force();
+        }, "trace-flush"));
     }
 
     public static int packType(int eventId, int flags) {

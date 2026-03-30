@@ -16,10 +16,9 @@ public class ReplayCoordinator {
     private static long totalEvents;
     private static final AtomicLong currentIdx = new AtomicLong(0);
     private static final Object controlLock = new Object();
-    private static final AtomicLong releasedEpoch = new AtomicLong(0);
 
     // Stores the seq of the last matched event for the calling thread,
-    // so ReplayMonitor can print epoch/seq after awaitTurn returns.
+    // so ReplayMonitor can print seq after awaitTurn returns.
     private static final ThreadLocal<Long> lastMatchedSeq = ThreadLocal.withInitial(() -> 0L);
 
     public static long getLastMatchedSeq() { return lastMatchedSeq.get(); }
@@ -54,23 +53,17 @@ public class ReplayCoordinator {
             events.add(new long[] { seq, roleId, packedType, objSite, objCount, data1, data2, i });
         }
 
-        // Sort: epoch → roleId → localSeq.
+        // Sort by global total-order sequence number.
         //
-        // Epoch encodes JMM happens-before boundaries (only release events advance it).
-        // RoleId breaks ties within an epoch: parents are always assigned lower roleIds
-        // than their children (roles are assigned in creation order), so a parent's
-        // THREAD_START naturally sorts before the child's first event without any
-        // special causal pass. LocalSeq orders events within the same thread/epoch.
-        // The buffer slot index is an artifact of batched allocation and carries no
-        // causal meaning, so it is not used.
-        events.sort((a, b) -> {
-            long epochA = a[0] >>> 32, epochB = b[0] >>> 32;
-            if (epochA != epochB) return Long.compare(epochA, epochB);
-            long roleA = a[1], roleB = b[1];
-            if (roleA != roleB) return Long.compare(roleA, roleB);
-            long seqA = a[0] & 0xFFFFFFFFL, seqB = b[0] & 0xFFFFFFFFL;
-            return Long.compare(seqA, seqB);
-        });
+        // Each event is assigned a globally unique, monotonically increasing seq
+        // at capture time, reflecting the actual execution order across all threads.
+        // This eliminates the within-epoch ambiguity of the old causal-order scheme
+        // and makes intermediate states fully deterministic during replay.
+        //
+        // Happens-before structure for future validity analysis can be reconstructed
+        // from event types (MONITOR_EXIT/ENTER pairs, THREAD_START, etc.) and object
+        // identity (objSite/objCount) — no separate epoch storage is needed.
+        events.sort((a, b) -> Long.compare(a[0], b[0]));
         
         sortedEvents = events.toArray(new long[0][]);
         totalEvents = sortedEvents.length;
@@ -157,9 +150,8 @@ public class ReplayCoordinator {
      *                   array index for arrays, return value / siteId for atomics)
      */
     public static void awaitTurn(int roleId, int packedType, int objSite, int objCount, int data) {
-        activateRole(roleId);
-
         synchronized (controlLock) {
+            activateRole(roleId);
             while (true) {
                 long idx = currentIdx.get();
                 if (idx >= totalEvents)
@@ -201,8 +193,6 @@ public class ReplayCoordinator {
                 if (roleId == expectedRole && packedType == expectedType
                         && (int) expected[3] == objSite && (int) expected[4] == objCount) {
                     lastMatchedSeq.set(expected[0]);
-                    if (isReleaseEvent(expectedType))
-                        releasedEpoch.set(expected[0] >>> 32);
                     currentIdx.incrementAndGet();
                     controlLock.notifyAll();
                     return;
@@ -233,8 +223,6 @@ public class ReplayCoordinator {
                         && (int) expected[3] == objSite && (int) expected[4] == objCount) {
                     lastMatchedSeq.set(expected[0]);
                     int returnValue = (int) expected[6];
-                    if (isReleaseEvent(packedType))
-                        releasedEpoch.set(expected[0] >>> 32);
                     currentIdx.incrementAndGet();
                     controlLock.notifyAll();
                     return returnValue;
@@ -263,8 +251,6 @@ public class ReplayCoordinator {
                     long high = (long) expected[5] << 32;
                     long low = expected[6] & 0xFFFFFFFFL;
                     long returnValue = high | low;
-                    if (isReleaseEvent(packedType))
-                        releasedEpoch.set(expected[0] >>> 32);
                     currentIdx.incrementAndGet();
                     controlLock.notifyAll();
                     return returnValue;
@@ -293,8 +279,6 @@ public class ReplayCoordinator {
                     int valueSiteId = (int) expected[5];
                     int valueCount = (int) expected[6];
                     Object returnValue = IdentityMapper.resolveByBirthId(valueSiteId, valueCount);
-                    if (isReleaseEvent(packedType))
-                        releasedEpoch.set(expected[0] >>> 32);
                     currentIdx.incrementAndGet();
                     controlLock.notifyAll();
                     return returnValue;
@@ -309,17 +293,4 @@ public class ReplayCoordinator {
         }
     }
 
-    private static boolean isReleaseEvent(int packedType) {
-        int eventType = packedType & 0xFF;
-        return eventType == BinarySchema.Event.MONITOR_EXIT
-                || eventType == BinarySchema.Event.THREAD_START
-                || eventType == BinarySchema.Event.THREAD_NOTIFY
-                || eventType == BinarySchema.Event.THREAD_NOTIFY_ALL
-                || eventType == BinarySchema.Event.THREAD_UNPARK
-                || eventType == BinarySchema.Event.THREAD_INTERRUPT
-                || eventType == BinarySchema.Event.THREAD_WAKEUP
-                || eventType == BinarySchema.Event.CLASS_INIT_END
-                || eventType == BinarySchema.Event.ATOMIC_WRITE
-                || eventType == BinarySchema.Event.ATOMIC_RMW;
-    }
 }

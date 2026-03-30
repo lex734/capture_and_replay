@@ -150,6 +150,16 @@ public class ReplayCoordinator {
      *                   array index for arrays, return value / siteId for atomics)
      */
     public static void awaitTurn(int roleId, int packedType, int objSite, int objCount, int data) {
+        awaitTurn(roleId, packedType, objSite, objCount, data, null);
+    }
+
+    /**
+     * Like awaitTurn, but executes {@code onMatch} within the lock before
+     * advancing currentIdx. Used for atomic writes so the side-effect (the
+     * actual set() on the atomic object) is part of the same ordered step as
+     * the trace event — no gap where another thread can slip its write in first.
+     */
+    public static void awaitTurn(int roleId, int packedType, int objSite, int objCount, int data, Runnable onMatch) {
         synchronized (controlLock) {
             activateRole(roleId);
             while (true) {
@@ -193,6 +203,7 @@ public class ReplayCoordinator {
                 if (roleId == expectedRole && packedType == expectedType
                         && (int) expected[3] == objSite && (int) expected[4] == objCount) {
                     lastMatchedSeq.set(expected[0]);
+                    if (onMatch != null) onMatch.run();
                     currentIdx.incrementAndGet();
                     controlLock.notifyAll();
                     return;

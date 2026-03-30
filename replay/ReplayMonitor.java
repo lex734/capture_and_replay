@@ -134,7 +134,16 @@ public class ReplayMonitor {
                 objSite = receiverBirth.siteId;
                 objCount = receiverBirth.count;
             }
-            ReplayCoordinator.awaitTurn(roleId, packedType, objSite, objCount, writtenValue);
+            // Pass the write as onMatch so it executes within controlLock before
+            // currentIdx advances — prevents another thread from processing its write
+            // event (possibly to the same index) before this write lands.
+            // ReplayMonitor is excluded from instrumentation, so the set() call goes
+            // directly to the JDK without being re-intercepted.
+            final boolean isArrayFinal = isArray;
+            ReplayCoordinator.awaitTurn(roleId, packedType, objSite, objCount, writtenValue,
+                isArrayFinal
+                    ? () -> ((java.util.concurrent.atomic.AtomicIntegerArray) receiver).set(index, writtenValue)
+                    : () -> ((java.util.concurrent.atomic.AtomicInteger) receiver).set(writtenValue));
             long seq = ReplayCoordinator.getLastMatchedSeq();
             System.out.println(String.format("[CHECK-ATOMIC] seq=%d role=%d  %-12s %s = %d  (write)",
                     seq, roleId, getEventName(eventType),
@@ -165,7 +174,11 @@ public class ReplayMonitor {
                 objSite = receiverBirth.siteId;
                 objCount = receiverBirth.count;
             }
-            ReplayCoordinator.awaitTurn(roleId, packedType, objSite, objCount, (int) writtenValue);
+            final boolean isArrayFinal = isArray;
+            ReplayCoordinator.awaitTurn(roleId, packedType, objSite, objCount, (int) writtenValue,
+                isArrayFinal
+                    ? () -> ((java.util.concurrent.atomic.AtomicLongArray) receiver).set(index, writtenValue)
+                    : () -> ((java.util.concurrent.atomic.AtomicLong) receiver).set(writtenValue));
             long seq = ReplayCoordinator.getLastMatchedSeq();
             System.out.println(String.format("[CHECK-ATOMIC] seq=%d role=%d  %-12s %s = %dL  (write)",
                     seq, roleId, getEventName(eventType),
@@ -176,6 +189,7 @@ public class ReplayMonitor {
         }
     }
 
+    @SuppressWarnings("unchecked")
     public static void checkAtomicObj(Object writtenValue, Object receiver, int index, int eventType, int currentSiteId) {
         if (isInside.get()) return;
         isInside.set(true);
@@ -197,7 +211,11 @@ public class ReplayMonitor {
                 objCount = receiverBirth.count;
             }
             BirthId valueBirth = IdentityMapper.getBirthId(writtenValue, null, currentSiteId);
-            ReplayCoordinator.awaitTurn(roleId, packedType, objSite, objCount, valueBirth.siteId);
+            final boolean isArrayFinal = isArray;
+            ReplayCoordinator.awaitTurn(roleId, packedType, objSite, objCount, valueBirth.siteId,
+                isArrayFinal
+                    ? () -> ((java.util.concurrent.atomic.AtomicReferenceArray<Object>) receiver).set(index, writtenValue)
+                    : () -> ((java.util.concurrent.atomic.AtomicReference<Object>) receiver).set(writtenValue));
             long seq = ReplayCoordinator.getLastMatchedSeq();
             System.out.println(String.format("[CHECK-ATOMIC] seq=%d role=%d  %-12s %s = %s  (write)",
                     seq, roleId, getEventName(eventType),

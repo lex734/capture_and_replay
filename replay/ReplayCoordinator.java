@@ -7,7 +7,10 @@ import java.nio.MappedByteBuffer;
 import java.util.ArrayList;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.ReentrantLock;
 
 public class ReplayCoordinator {
     // Pre-sorted event array: each element is [seq, roleId, packedType, objSite,
@@ -15,7 +18,15 @@ public class ReplayCoordinator {
     private static long[][] sortedEvents;
     private static long totalEvents;
     private static final AtomicLong currentIdx = new AtomicLong(0);
-    private static final Object controlLock = new Object();
+    private static final ReentrantLock controlLock = new ReentrantLock();
+
+    // Per-role condition: a thread waiting for its turn parks here.
+    // Signalled precisely when currentIdx advances to that role's next event.
+    private static final ConcurrentHashMap<Integer, Condition> roleConditions = new ConcurrentHashMap<>();
+
+    // Signalled for system-level state changes: thread check-in, thread death,
+    // role activation — used by threads polling the startedRoles transition.
+    private static final Condition anyChange = controlLock.newCondition();
 
     // Stores the seq of the last matched event for the calling thread,
     // so ReplayMonitor can print seq after awaitTurn returns.
@@ -28,6 +39,27 @@ public class ReplayCoordinator {
     // Roles that have called awaitTurn at least once — they're alive in replay
     private static final Set<Integer> activeRoles = ConcurrentHashMap.newKeySet();
     private static final Set<Integer> startedRoles = ConcurrentHashMap.newKeySet();
+
+    private static Condition conditionFor(int roleId) {
+        return roleConditions.computeIfAbsent(roleId, k -> controlLock.newCondition());
+    }
+
+    /**
+     * Signal the condition for the role expected at the current idx so it can
+     * immediately take its turn, and broadcast any system-state change to threads
+     * that are polling the startedRoles transition.
+     *
+     * Must be called while holding controlLock.
+     */
+    private static void signalNext() {
+        long idx = currentIdx.get();
+        if (idx < totalEvents) {
+            int nextRole = (int) sortedEvents[(int) idx][1];
+            Condition c = roleConditions.get(nextRole);
+            if (c != null) c.signal();
+        }
+        anyChange.signalAll();
+    }
 
     public static void init(MappedByteBuffer traceBuffer, long count) {
         // Read all non-empty records from the buffer.
@@ -45,12 +77,14 @@ public class ReplayCoordinator {
             int objCount = traceBuffer.getInt(pos + 24);
             int data1 = traceBuffer.getInt(pos + 28);
             int data2 = traceBuffer.getInt(pos + 32);
+            int data3 = traceBuffer.getInt(pos + 36);
+            int data4 = traceBuffer.getInt(pos + 40);
 
             // Skip zero-filled slots (unused batch tails)
             if (seq == 0 && roleId == 0 && packedType == 0)
                 continue;
 
-            events.add(new long[] { seq, roleId, packedType, objSite, objCount, data1, data2, i });
+            events.add(new long[] { seq, roleId, packedType, objSite, objCount, data1, data2, data3, data4, i });
         }
 
         // Sort by global total-order sequence number.
@@ -64,7 +98,7 @@ public class ReplayCoordinator {
         // from event types (MONITOR_EXIT/ENTER pairs, THREAD_START, etc.) and object
         // identity (objSite/objCount) — no separate epoch storage is needed.
         events.sort((a, b) -> Long.compare(a[0], b[0]));
-        
+
         sortedEvents = events.toArray(new long[0][]);
         totalEvents = sortedEvents.length;
 
@@ -108,9 +142,12 @@ public class ReplayCoordinator {
     public static void checkIn(int roleId) {
         if (pendingRoles.remove(roleId)) {
             startedRoles.add(roleId);
-            synchronized (controlLock) {
+            controlLock.lock();
+            try {
                 System.out.println("[Replay] role=" + roleId + " started, waiting to be scheduled.");
-                controlLock.notifyAll();
+                signalNext();
+            } finally {
+                controlLock.unlock();
             }
         }
     }
@@ -121,8 +158,11 @@ public class ReplayCoordinator {
         startedRoles.remove(roleId);
         pendingRoles.remove(roleId);
         System.err.println("[Replay] role=" + roleId + " died (uncaught exception) — skipping its remaining events.");
-        synchronized (controlLock) {
-            controlLock.notifyAll();
+        controlLock.lock();
+        try {
+            signalNext();
+        } finally {
+            controlLock.unlock();
         }
     }
 
@@ -131,6 +171,9 @@ public class ReplayCoordinator {
             pendingRoles.remove(roleId);
             activeRoles.add(roleId);
             System.out.println("[Replay] role=" + roleId + " active.");
+            // Wake any thread blocked in the startedRoles wait below, and signal
+            // the new next-expected role in case it is now this one.
+            signalNext();
         }
     }
 
@@ -160,8 +203,10 @@ public class ReplayCoordinator {
      * the trace event — no gap where another thread can slip its write in first.
      */
     public static void awaitTurn(int roleId, int packedType, int objSite, int objCount, int data, Runnable onMatch) {
-        synchronized (controlLock) {
+        controlLock.lock();
+        try {
             activateRole(roleId);
+            Condition myTurn = conditionFor(roleId);
             while (true) {
                 long idx = currentIdx.get();
                 if (idx >= totalEvents)
@@ -178,14 +223,15 @@ public class ReplayCoordinator {
                     // Truly missing — never started, deadlock
                     System.err.println("[Replay DEADLOCK] Role=" + expectedRole + " never started.");
                     currentIdx.incrementAndGet();
-                    controlLock.notifyAll();
+                    signalNext();
                     continue;
                 }
 
                 if (startedRoles.contains(expectedRole)) {
-                    // Thread exists but hasn't been scheduled yet — wait patiently
-                    // MUST release lock so the thread can call awaitTurn when scheduled
-                    try { controlLock.wait(10); }
+                    // Thread exists but hasn't been scheduled yet — wait for it to
+                    // call awaitTurn (which triggers activateRole and signals anyChange).
+                    // Keep a short timeout as a safety net against lost signals.
+                    try { anyChange.await(10, TimeUnit.MILLISECONDS); }
                     catch (InterruptedException e) { Thread.currentThread().interrupt(); return; }
                     continue;
                 }
@@ -195,7 +241,7 @@ public class ReplayCoordinator {
                 if (!activeRoles.contains(expectedRole)) {
                     System.err.println("[Replay] role=" + expectedRole + " is dead, skipping event at idx=" + idx);
                     currentIdx.incrementAndGet();
-                    controlLock.notifyAll();
+                    signalNext();
                     continue;
                 }
 
@@ -208,25 +254,42 @@ public class ReplayCoordinator {
                         catch (Exception e) { e.printStackTrace(); }
                     }
                     currentIdx.incrementAndGet();
-                    controlLock.notifyAll();
+                    signalNext();
                     return;
                 }
 
                 System.err.println(String.format("[WAIT]  idx=%-4d expects role=%d type=%d  got role=%d type=%d",
                         idx, expectedRole, expectedType & 0xFF, roleId, packedType & 0xFF));
 
+                // Park until currentIdx advances to this role's turn.
                 try {
-                    controlLock.wait(100);
+                    myTurn.await();
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     return;
                 }
             }
+        } finally {
+            controlLock.unlock();
         }
     }
 
     public static int awaitTurnInt(int roleId, int packedType, int objSite, int objCount) {
-        synchronized (controlLock) {
+        return awaitTurnInt(roleId, packedType, objSite, objCount, null);
+    }
+
+    /**
+     * Like awaitTurnInt, but executes {@code onMatch} within controlLock before
+     * advancing currentIdx.  {@code onMatch} receives data1 (the post-operation
+     * value stored during capture) so that RMW replay can write the correct
+     * post-op value back to the atomic cell without racing against the next
+     * thread's write.  Returns data2 (the captured return value).
+     */
+    public static int awaitTurnInt(int roleId, int packedType, int objSite, int objCount,
+                                   java.util.function.IntConsumer onMatch) {
+        controlLock.lock();
+        try {
+            Condition myTurn = conditionFor(roleId);
             while (true) {
                 long idx = currentIdx.get();
                 if (idx >= totalEvents)
@@ -236,23 +299,32 @@ public class ReplayCoordinator {
                 if (roleId == (int) expected[1] && packedType == (int) expected[2]
                         && (int) expected[3] == objSite && (int) expected[4] == objCount) {
                     lastMatchedSeq.set(expected[0]);
-                    int returnValue = (int) expected[6];
+                    int postOpValue = (int) expected[5]; // data1
+                    int returnValue = (int) expected[6]; // data2
+                    if (onMatch != null) {
+                        try { onMatch.accept(postOpValue); }
+                        catch (Exception e) { e.printStackTrace(); }
+                    }
                     currentIdx.incrementAndGet();
-                    controlLock.notifyAll();
+                    signalNext();
                     return returnValue;
                 }
                 try {
-                    controlLock.wait(100);
+                    myTurn.await();
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     return 0;
                 }
             }
+        } finally {
+            controlLock.unlock();
         }
     }
 
     public static long awaitTurnLong(int roleId, int packedType, int objSite, int objCount) {
-        synchronized (controlLock) {
+        controlLock.lock();
+        try {
+            Condition myTurn = conditionFor(roleId);
             while (true) {
                 long idx = currentIdx.get();
                 if (idx >= totalEvents)
@@ -266,21 +338,25 @@ public class ReplayCoordinator {
                     long low = expected[6] & 0xFFFFFFFFL;
                     long returnValue = high | low;
                     currentIdx.incrementAndGet();
-                    controlLock.notifyAll();
+                    signalNext();
                     return returnValue;
                 }
                 try {
-                    controlLock.wait(100);
+                    myTurn.await();
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     return 0L;
                 }
             }
+        } finally {
+            controlLock.unlock();
         }
     }
 
     public static Object awaitTurnObj(int roleId, int packedType, int objSite, int objCount) {
-        synchronized (controlLock) {
+        controlLock.lock();
+        try {
+            Condition myTurn = conditionFor(roleId);
             while (true) {
                 long idx = currentIdx.get();
                 if (idx >= totalEvents)
@@ -294,16 +370,18 @@ public class ReplayCoordinator {
                     int valueCount = (int) expected[6];
                     Object returnValue = IdentityMapper.resolveByBirthId(valueSiteId, valueCount);
                     currentIdx.incrementAndGet();
-                    controlLock.notifyAll();
+                    signalNext();
                     return returnValue;
                 }
                 try {
-                    controlLock.wait(100);
+                    myTurn.await();
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     return null;
                 }
             }
+        } finally {
+            controlLock.unlock();
         }
     }
 

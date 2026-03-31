@@ -575,14 +575,20 @@ public class SyncTransformer implements ClassFileTransformer {
                         return;
                     } else {
 
-                        // 2. Restore the stack exactly as it was and execute the original call
+                        // 2. Acquire captureOrderLock before the actual atomic call so
+                        //    the lock is already held when the operation executes.
+                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass,
+                                "beginAtomicCapture", "()V", false);
+
+                        // 3. Restore the stack and execute the original atomic call
+                        //    (lock held across this call).
                         mv.visitVarInsn(Opcodes.ALOAD, receiverSlot);
                         for (int i = 0; i < argTypes.length; i++) {
                             mv.visitVarInsn(argTypes[i].getOpcode(Opcodes.ILOAD), argSlots[i]);
                         }
                         super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
 
-                        // 3. Log the event — choose method based on return type / value type
+                        // 4. End the capture: assigns seq, writes trace record, releases lock.
                         if (returnTypeChar == 'V') {
                             int valueArgIdx = argTypes.length - 1;
                             Type valueType = argTypes[valueArgIdx];
@@ -596,7 +602,7 @@ public class SyncTransformer implements ClassFileTransformer {
                             }
                             mv.visitLdcInsn(atomicEventType);
                             mv.visitLdcInsn(siteId);
-                            emitAtomicLogCall(valueType);
+                            emitAtomicEndCaptureCall(valueType);
                         } else {
                             if (returnTypeChar == 'J' || returnTypeChar == 'D') {
                                 mv.visitInsn(Opcodes.DUP2);
@@ -611,7 +617,7 @@ public class SyncTransformer implements ClassFileTransformer {
                             }
                             mv.visitLdcInsn(atomicEventType);
                             mv.visitLdcInsn(siteId);
-                            emitAtomicLogCall(returnTypeChar);
+                            emitAtomicEndCaptureCall(returnTypeChar);
                         }
                         return;
                     }
@@ -638,29 +644,30 @@ public class SyncTransformer implements ClassFileTransformer {
             mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, monitorMethod, monitorDescriptor, false);
         }
 
-        private void emitAtomicLogCall(Type valueType) {
+        /** Capture mode: ends the atomic bracket — seq assigned, trace written, lock released. */
+        private void emitAtomicEndCaptureCall(Type valueType) {
             int sort = valueType.getSort();
             if (sort == Type.LONG) {
-                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logAtomicLong",
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "endAtomicCaptureLong",
                         "(JLjava/lang/Object;III)V", false);
             } else if (sort == Type.OBJECT || sort == Type.ARRAY) {
-                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logAtomicObj",
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "endAtomicCaptureObj",
                         "(Ljava/lang/Object;Ljava/lang/Object;III)V", false);
             } else {
-                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logAtomicInt",
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "endAtomicCaptureInt",
                         "(ILjava/lang/Object;III)V", false);
             }
         }
 
-        private void emitAtomicLogCall(char returnTypeChar) {
+        private void emitAtomicEndCaptureCall(char returnTypeChar) {
             if (returnTypeChar == 'J' || returnTypeChar == 'D') {
-                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logAtomicLong",
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "endAtomicCaptureLong",
                         "(JLjava/lang/Object;III)V", false);
             } else if (returnTypeChar == 'L' || returnTypeChar == '[') {
-                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logAtomicObj",
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "endAtomicCaptureObj",
                         "(Ljava/lang/Object;Ljava/lang/Object;III)V", false);
             } else {
-                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logAtomicInt",
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "endAtomicCaptureInt",
                         "(ILjava/lang/Object;III)V", false);
             }
         }

@@ -807,10 +807,10 @@ public class ReplayMonitor {
                     ? () -> ((java.util.concurrent.atomic.AtomicIntegerArray) receiver).set(index, writtenValue)
                     : () -> ((java.util.concurrent.atomic.AtomicInteger) receiver).set(writtenValue));
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format("[CHECK-ATOMIC] seq=%d role=%d  %-12s %s = %d  (write)",
+            System.out.println(String.format("[CHECK-ATOMIC] seq=%d role=%d  %-12s %s[%d] = %d  (write)",
                     seq, roleId, getEventName(eventType),
                     receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
-                    writtenValue));
+                    index, writtenValue));
         } finally {
             isInside.set(false);
         }
@@ -842,10 +842,10 @@ public class ReplayMonitor {
                     ? () -> ((java.util.concurrent.atomic.AtomicLongArray) receiver).set(index, writtenValue)
                     : () -> ((java.util.concurrent.atomic.AtomicLong) receiver).set(writtenValue));
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format("[CHECK-ATOMIC] seq=%d role=%d  %-12s %s = %dL  (write)",
+            System.out.println(String.format("[CHECK-ATOMIC] seq=%d role=%d  %-12s %s[%d] = %dL  (write)",
                     seq, roleId, getEventName(eventType),
                     receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
-                    writtenValue));
+                    index, writtenValue));
         } finally {
             isInside.set(false);
         }
@@ -879,9 +879,10 @@ public class ReplayMonitor {
                     ? () -> ((java.util.concurrent.atomic.AtomicReferenceArray<Object>) receiver).set(index, writtenValue)
                     : () -> ((java.util.concurrent.atomic.AtomicReference<Object>) receiver).set(writtenValue));
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format("[CHECK-ATOMIC] seq=%d role=%d  %-12s %s = %s  (write)",
+            System.out.println(String.format("[CHECK-ATOMIC] seq=%d role=%d  %-12s %s[%d] = %s  (write)",
                     seq, roleId, getEventName(eventType),
                     receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
+                    index,
                     writtenValue != null ? writtenValue.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(writtenValue)) : "null"));
         } finally {
             isInside.set(false);
@@ -896,7 +897,7 @@ public class ReplayMonitor {
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
 
             BirthId receiverBirth = IdentityMapper.getBirthId(receiver, null, currentSiteId);
-            boolean isArray = (index >= 0);
+            final boolean isArray = (index >= 0);
             int packedType, objSite, objCount;
             if (isArray) {
                 packedType = (eventType & 0xFF) | (BinarySchema.Flags.IS_ARRAY_ATOMIC << 8) | ((receiverBirth.siteId & 0xFFFF) << 16);
@@ -907,12 +908,23 @@ public class ReplayMonitor {
                 objSite = receiverBirth.siteId;
                 objCount = receiverBirth.count;
             }
-            int val = ReplayCoordinator.awaitTurnInt(roleId, packedType, objSite, objCount);
+            // For RMW, write the captured post-op value back to the atomic within the
+            // coordination lock (onMatch), so no subsequent write from another thread
+            // can interleave between the ordering step and the actual state update.
+            java.util.function.IntConsumer writeBack = (eventType == BinarySchema.Event.ATOMIC_RMW)
+                    ? (postOpValue -> {
+                           if (isArray)
+                               ((java.util.concurrent.atomic.AtomicIntegerArray) receiver).set(index, postOpValue);
+                           else
+                               ((java.util.concurrent.atomic.AtomicInteger) receiver).set(postOpValue);
+                       })
+                    : null;
+            int val = ReplayCoordinator.awaitTurnInt(roleId, packedType, objSite, objCount, writeBack);
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format("[CHECK-ATOMIC] seq=%d role=%d  %-12s %s = %d  (read→replay)",
+            System.out.println(String.format("[CHECK-ATOMIC] seq=%d role=%d  %-12s %s[%d] = %d  (read→replay)",
                     seq, roleId, getEventName(eventType),
                     receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
-                    val));
+                    index, val));
             return val;
         } finally {
             isInside.set(false);
@@ -940,10 +952,10 @@ public class ReplayMonitor {
             }
             long val = ReplayCoordinator.awaitTurnLong(roleId, packedType, objSite, objCount);
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format("[CHECK-ATOMIC] seq=%d role=%d  %-12s %s = %dL  (read→replay)",
+            System.out.println(String.format("[CHECK-ATOMIC] seq=%d role=%d  %-12s %s[%d] = %dL  (read→replay)",
                     seq, roleId, getEventName(eventType),
                     receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
-                    val));
+                    index, val));
             return val;
         } finally {
             isInside.set(false);
@@ -971,9 +983,10 @@ public class ReplayMonitor {
             }
             Object val = ReplayCoordinator.awaitTurnObj(roleId, packedType, objSite, objCount);
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format("[CHECK-ATOMIC] seq=%d role=%d  %-12s %s = %s  (read→replay)",
+            System.out.println(String.format("[CHECK-ATOMIC] seq=%d role=%d  %-12s %s[%d] = %s  (read→replay)",
                     seq, roleId, getEventName(eventType),
                     receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
+                    index,
                     val != null ? val.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(val)) : "null"));
             return val;
         } finally {

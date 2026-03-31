@@ -7,7 +7,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 
 public class BinarySchema {
-    public static final int RECORD_SIZE = 40;
+    public static final int RECORD_SIZE = 48;
 
     // LongAdder uses per-thread striped counters internally — near-zero contention
     // compared to AtomicLong.incrementAndGet() under high concurrency.
@@ -97,7 +97,8 @@ public class BinarySchema {
         return slot;
     }
 
-    public static void write(long seq, long roleId, int packedType, int objSite, int objCount, int data1, int data2) {
+
+    public static void write(long seq, long roleId, int packedType, int objSite, int objCount, int data1, int data2, int data3, int data4) {
         long slot = allocateSlot();
         if (buffer == null || slot >= maxAllowedEvents)
             return;
@@ -115,10 +116,15 @@ public class BinarySchema {
         buffer.putInt(pos + 24, objCount);
         buffer.putInt(pos + 28, data1);
         buffer.putInt(pos + 32, data2);
+        buffer.putInt(pos + 36, data3);
+        buffer.putInt(pos + 40, data4);
     }
 
     public static void write(long seq, long roleId, int packedType, int objSite, int objCount, int data) {
         write(seq, roleId, packedType, objSite, objCount, 0, data);
+    }
+    public static void write(long seq, long roleId, int packedType, int objSite, int objCount, int data1, int data2) {
+        write(seq, roleId, packedType, objSite, objCount, data1, data2, 0, 0);
     }
 
     // How many events were actually written

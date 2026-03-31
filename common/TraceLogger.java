@@ -136,13 +136,15 @@ public class TraceLogger {
 
     /**
      * Atomic logger for int-sized values (int, boolean, byte, short, char).
-     * 
-     * @param intValue the written value (void set) or return value (get/RMW)
-     * @param receiver the atomic object instance (AtomicInteger,
-     *                 AtomicIntegerArray, etc.)
-     * @param index    array element index, or -1 for scalar atomics
+     *
+     * @param returnValue  the return value of the operation (or written value for void set)
+     * @param postOpValue  the value stored in the atomic cell after the operation;
+     *                     equals returnValue for READ/WRITE, may differ for RMW
+     *                     (e.g. getAndIncrement returns old, postOp = old+1)
+     * @param receiver     the atomic object instance
+     * @param index        array element index, or -1 for scalar atomics
      */
-    public static void logAtomicInt(int intValue, Object receiver, int index, int eventType, int currentSiteId) {
+    public static void logAtomicInt(int returnValue, int postOpValue, Object receiver, int index, int eventType, int currentSiteId) {
         long tid = Thread.currentThread().threadId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         if (roleId == -1) return;
@@ -158,19 +160,20 @@ public class TraceLogger {
         if (isArray) {
             System.out.println(String.format(
                     "[ATOMIC] seq=%d role=%d  %-12s %s[%d] = %d",
-                    seq, roleId, eventName, receiverStr, index, intValue));
+                    seq, roleId, eventName, receiverStr, index, returnValue));
         } else {
             System.out.println(String.format(
                     "[ATOMIC] seq=%d role=%d  %-12s %s = %d",
-                    seq, roleId, eventName, receiverStr, intValue));
+                    seq, roleId, eventName, receiverStr, returnValue));
         }
 
+        // data1 = postOpValue (write-back value for RMW replay), data2 = returnValue
         if (isArray) {
             int packedType = packAtomicArrayType(eventType, birthId.siteId);
-            BinarySchema.write(seq, (long) roleId, packedType, birthId.count, index, intValue);
+            BinarySchema.write(seq, (long) roleId, packedType, birthId.count, index, postOpValue, returnValue);
         } else {
             int packedType = BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
-            BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, intValue);
+            BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, postOpValue, returnValue);
         }
     }
 
@@ -179,7 +182,7 @@ public class TraceLogger {
      * Array atomics: stores index + low 32 bits of long value.
      * Scalar atomics: stores full receiver BirthId + low 32 bits of long value.
      */
-    public static void logAtomicLong(long longValue, Object receiver, int index, int eventType, int currentSiteId) {
+    public static void logAtomicLong(long longValue, long postOpValue, Object receiver, int index, int eventType, int currentSiteId) {
         long tid = Thread.currentThread().threadId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         if (roleId == -1) return;
@@ -205,11 +208,11 @@ public class TraceLogger {
         if (isArray) {
             int packedType = packAtomicArrayType(eventType, birthId.siteId);
             BinarySchema.write(seq, (long) roleId, packedType, birthId.count, index, (int) (longValue >> 32),
-                    (int) longValue);
+                    (int) longValue, (int) (postOpValue >> 32), (int) postOpValue);
         } else {
             int packedType = BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
             BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, (int) (longValue >> 32),
-                    (int) longValue);
+                    (int) longValue, (int) (postOpValue >> 32), (int) postOpValue);
         }
     }
 

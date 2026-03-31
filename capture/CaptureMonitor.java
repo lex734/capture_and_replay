@@ -4,15 +4,22 @@ import common.TraceLogger;
 import common.BinarySchema;
 import common.IdentityMapper;
 import common.IdentityMapper.BirthId;
+import java.util.concurrent.locks.ReentrantLock;
 
 public class CaptureMonitor {
   private static final ThreadLocal<Boolean> isInside = ThreadLocal.withInitial(() -> false);
 
-  // Global lock that serialises field accesses with their sequence-number
-  // assignment.  Holding this lock across both nextSeq() and the actual
-  // field access (via reflection) guarantees that the seq recorded in the
-  // binary trace faithfully reflects the real execution order.
-  private static final Object captureLock = new Object();
+  // Single global ReentrantLock that serialises ALL observable operations
+  // (field reads/writes and atomic ops) with their sequence-number assignment.
+  //
+  // ReentrantLock (rather than a plain monitor) is required for atomic ops:
+  // beginAtomicCapture() acquires the lock, the original atomic method call
+  // executes in instrumented bytecode while the lock is held, then
+  // endAtomicCapture*() assigns seq + writes the trace record + releases.
+  // A synchronized block cannot span method boundaries.
+  //
+  // Field ops use the same lock so fields and atomics share one total order.
+  static final ReentrantLock captureOrderLock = new ReentrantLock();
 
   public static void logSync(int eventType, Object lock, int siteId) {
     if (isInside.get()) return;
@@ -26,7 +33,7 @@ public class CaptureMonitor {
     try {
       TraceLogger.logSync(eventType, lock, siteId);
     } finally {
-        isInside.set(false);
+      isInside.set(false);
     }
   }
 
@@ -40,21 +47,21 @@ public class CaptureMonitor {
     }
   }
 
-  public static void logAtomicInt(int intValue, Object receiver, int index, int eventType, int siteId) {
+  public static void logAtomicInt(int intValue, int postOpValue, Object receiver, int index, int eventType, int siteId) {
     if (isInside.get()) return;
     isInside.set(true);
     try {
-      TraceLogger.logAtomicInt(intValue, receiver, index, eventType, siteId);
+      TraceLogger.logAtomicInt(intValue, postOpValue, receiver, index, eventType, siteId);
     } finally {
       isInside.set(false);
     }
   }
 
-  public static void logAtomicLong(long longValue, Object receiver, int index, int eventType, int siteId) {
+  public static void logAtomicLong(long longValue, long postOpValue, Object receiver, int index, int eventType, int siteId) {
     if (isInside.get()) return;
     isInside.set(true);
     try {
-      TraceLogger.logAtomicLong(longValue, receiver, index, eventType, siteId);
+      TraceLogger.logAtomicLong(longValue, postOpValue, receiver, index, eventType, siteId);
     } finally {
       isInside.set(false);
     }
@@ -91,10 +98,71 @@ public class CaptureMonitor {
     }
   }
 
+  // ---- Atomic capture bracketing -----------------------------------------------
+  // beginAtomicCapture() acquires captureOrderLock.  The original atomic
+  // method call then executes in the instrumented bytecode while the lock is
+  // held.  endAtomicCapture*() assigns the seq, writes the trace record, and
+  // releases the lock — all atomically with the operation that just completed.
+
+  public static void beginAtomicCapture() {
+    captureOrderLock.lock();
+  }
+
+  public static void endAtomicCaptureInt(int returnValue, Object receiver, int index, int eventType, int siteId) {
+    try {
+      isInside.set(true);
+      try {
+        // For RMW ops the return value may differ from the post-operation cell value
+        // (e.g. getAndIncrement returns old; cell holds old+1).  Read the cell now,
+        // while captureOrderLock is still held, so no other thread can change it.
+        int postOpValue = returnValue;
+        if (eventType == common.BinarySchema.Event.ATOMIC_RMW) {
+          if (index >= 0) {
+            postOpValue = ((java.util.concurrent.atomic.AtomicIntegerArray) receiver).get(index);
+          } else {
+            postOpValue = ((java.util.concurrent.atomic.AtomicInteger) receiver).get();
+          }
+        }
+        TraceLogger.logAtomicInt(returnValue, postOpValue, receiver, index, eventType, siteId);
+      } finally { isInside.set(false); }
+    } finally {
+      captureOrderLock.unlock();
+    }
+  }
+
+  public static void endAtomicCaptureLong(long returnValue, Object receiver, int index, int eventType, int siteId) {
+    try {
+      isInside.set(true);
+      try { 
+        long postOpValue = returnValue;
+        if (eventType == common.BinarySchema.Event.ATOMIC_RMW) {
+          if (index >= 0) {
+            postOpValue = ((java.util.concurrent.atomic.AtomicLongArray) receiver).get(index);
+          } else {
+            postOpValue = ((java.util.concurrent.atomic.AtomicLong) receiver).get();
+          }
+        }
+        TraceLogger.logAtomicLong(returnValue, postOpValue, receiver, index, eventType, siteId); }
+      finally { isInside.set(false); }
+    } finally {
+      captureOrderLock.unlock();
+    }
+  }
+
+  public static void endAtomicCaptureObj(Object value, Object receiver, int index, int eventType, int siteId) {
+    try {
+      isInside.set(true);
+      try { TraceLogger.logAtomicObj(value, receiver, index, eventType, siteId); }
+      finally { isInside.set(false); }
+    } finally {
+      captureOrderLock.unlock();
+    }
+  }
+
   // ---- Typed field-read methods -----------------------------------------------
-  // These replace the GETFIELD/GETSTATIC bytecode entirely: they hold captureLock
-  // across both the actual read (via reflection) and the seq assignment, so the
-  // recorded seq faithfully reflects when the read occurred relative to writes.
+  // These replace the GETFIELD/GETSTATIC bytecode entirely: captureOrderLock is
+  // held across both the actual read (via reflection) and the seq assignment so
+  // the recorded seq faithfully reflects when the read occurred.
 
   public static int logFieldReadInt(Object owner, int currentSiteId,
                                     boolean isVolatile, boolean isStatic,
@@ -118,7 +186,8 @@ public class CaptureMonitor {
       int packedType = BinarySchema.packType(BinarySchema.Event.FIELD_READ, flags);
 
       int[] result = new int[1];
-      synchronized (captureLock) {
+      captureOrderLock.lock();
+      try {
         try {
           java.lang.reflect.Field f = findField(ownerName, fieldName);
           Class<?> t = f.getType();
@@ -133,6 +202,8 @@ public class CaptureMonitor {
         System.out.println(String.format(
             "[FIELD]  seq=%d role=%d  READ%s %s.%s = %d  fieldId=%d",
             seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, result[0], fieldId));
+      } finally {
+        captureOrderLock.unlock();
       }
       return result[0];
     } finally {
@@ -162,7 +233,8 @@ public class CaptureMonitor {
       int packedType = BinarySchema.packType(BinarySchema.Event.FIELD_READ, flags);
 
       float[] result = new float[1];
-      synchronized (captureLock) {
+      captureOrderLock.lock();
+      try {
         try { result[0] = findField(ownerName, fieldName).getFloat(owner); }
         catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
         long seq = TraceLogger.nextSeq();
@@ -170,6 +242,8 @@ public class CaptureMonitor {
         System.out.println(String.format(
             "[FIELD]  seq=%d role=%d  READ%s %s.%s = %f  fieldId=%d",
             seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, result[0], fieldId));
+      } finally {
+        captureOrderLock.unlock();
       }
       return result[0];
     } finally {
@@ -199,7 +273,8 @@ public class CaptureMonitor {
       int packedType = BinarySchema.packType(BinarySchema.Event.FIELD_READ, flags);
 
       long[] result = new long[1];
-      synchronized (captureLock) {
+      captureOrderLock.lock();
+      try {
         try { result[0] = findField(ownerName, fieldName).getLong(owner); }
         catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
         long seq = TraceLogger.nextSeq();
@@ -207,6 +282,8 @@ public class CaptureMonitor {
         System.out.println(String.format(
             "[FIELD]  seq=%d role=%d  READ%s %s.%s = %dL  fieldId=%d",
             seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, result[0], fieldId));
+      } finally {
+        captureOrderLock.unlock();
       }
       return result[0];
     } finally {
@@ -236,7 +313,8 @@ public class CaptureMonitor {
       int packedType = BinarySchema.packType(BinarySchema.Event.FIELD_READ, flags);
 
       double[] result = new double[1];
-      synchronized (captureLock) {
+      captureOrderLock.lock();
+      try {
         try { result[0] = findField(ownerName, fieldName).getDouble(owner); }
         catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
         long seq = TraceLogger.nextSeq();
@@ -244,6 +322,8 @@ public class CaptureMonitor {
         System.out.println(String.format(
             "[FIELD]  seq=%d role=%d  READ%s %s.%s = %f  fieldId=%d",
             seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, result[0], fieldId));
+      } finally {
+        captureOrderLock.unlock();
       }
       return result[0];
     } finally {
@@ -273,7 +353,8 @@ public class CaptureMonitor {
       int packedType = BinarySchema.packType(BinarySchema.Event.FIELD_READ, flags);
 
       Object[] result = new Object[1];
-      synchronized (captureLock) {
+      captureOrderLock.lock();
+      try {
         try { result[0] = findField(ownerName, fieldName).get(owner); }
         catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
         long seq = TraceLogger.nextSeq();
@@ -283,6 +364,8 @@ public class CaptureMonitor {
             seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName,
             result[0] != null ? result[0].getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(result[0])) : "null",
             fieldId));
+      } finally {
+        captureOrderLock.unlock();
       }
       return result[0];
     } finally {
@@ -291,7 +374,7 @@ public class CaptureMonitor {
   }
 
   // ---- Typed field-write methods -----------------------------------------------
-  // Mirror of the read methods: captureLock held across actual write + seq assign.
+  // Mirror of the read methods: captureOrderLock held across actual write + seq.
 
   public static void logFieldWriteInt(int value, Object owner, int currentSiteId,
                                       boolean isVolatile, boolean isStatic,
@@ -308,7 +391,8 @@ public class CaptureMonitor {
                      | (isStatic   ? BinarySchema.Flags.IS_STATIC   : 0);
       int packedType = BinarySchema.packType(BinarySchema.Event.FIELD_WRITE, flags);
 
-      synchronized (captureLock) {
+      captureOrderLock.lock();
+      try {
         try {
           java.lang.reflect.Field f = findField(ownerName, fieldName);
           Class<?> t = f.getType();
@@ -323,6 +407,8 @@ public class CaptureMonitor {
         System.out.println(String.format(
             "[FIELD]  seq=%d role=%d  WRITE%s %s.%s = %d  fieldId=%d",
             seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, value, fieldId));
+      } finally {
+        captureOrderLock.unlock();
       }
     } finally {
       isInside.set(false);
@@ -344,7 +430,8 @@ public class CaptureMonitor {
                      | (isStatic   ? BinarySchema.Flags.IS_STATIC   : 0);
       int packedType = BinarySchema.packType(BinarySchema.Event.FIELD_WRITE, flags);
 
-      synchronized (captureLock) {
+      captureOrderLock.lock();
+      try {
         try { findField(ownerName, fieldName).setFloat(owner, value); }
         catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
         long seq = TraceLogger.nextSeq();
@@ -352,6 +439,8 @@ public class CaptureMonitor {
         System.out.println(String.format(
             "[FIELD]  seq=%d role=%d  WRITE%s %s.%s = %f  fieldId=%d",
             seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, value, fieldId));
+      } finally {
+        captureOrderLock.unlock();
       }
     } finally {
       isInside.set(false);
@@ -373,7 +462,8 @@ public class CaptureMonitor {
                      | (isStatic   ? BinarySchema.Flags.IS_STATIC   : 0);
       int packedType = BinarySchema.packType(BinarySchema.Event.FIELD_WRITE, flags);
 
-      synchronized (captureLock) {
+      captureOrderLock.lock();
+      try {
         try { findField(ownerName, fieldName).setLong(owner, value); }
         catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
         long seq = TraceLogger.nextSeq();
@@ -381,6 +471,8 @@ public class CaptureMonitor {
         System.out.println(String.format(
             "[FIELD]  seq=%d role=%d  WRITE%s %s.%s = %dL  fieldId=%d",
             seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, value, fieldId));
+      } finally {
+        captureOrderLock.unlock();
       }
     } finally {
       isInside.set(false);
@@ -402,7 +494,8 @@ public class CaptureMonitor {
                      | (isStatic   ? BinarySchema.Flags.IS_STATIC   : 0);
       int packedType = BinarySchema.packType(BinarySchema.Event.FIELD_WRITE, flags);
 
-      synchronized (captureLock) {
+      captureOrderLock.lock();
+      try {
         try { findField(ownerName, fieldName).setDouble(owner, value); }
         catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
         long seq = TraceLogger.nextSeq();
@@ -410,6 +503,8 @@ public class CaptureMonitor {
         System.out.println(String.format(
             "[FIELD]  seq=%d role=%d  WRITE%s %s.%s = %f  fieldId=%d",
             seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, value, fieldId));
+      } finally {
+        captureOrderLock.unlock();
       }
     } finally {
       isInside.set(false);
@@ -431,7 +526,8 @@ public class CaptureMonitor {
                      | (isStatic   ? BinarySchema.Flags.IS_STATIC   : 0);
       int packedType = BinarySchema.packType(BinarySchema.Event.FIELD_WRITE, flags);
 
-      synchronized (captureLock) {
+      captureOrderLock.lock();
+      try {
         try { findField(ownerName, fieldName).set(owner, value); }
         catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
         long seq = TraceLogger.nextSeq();
@@ -441,6 +537,8 @@ public class CaptureMonitor {
             seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName,
             value != null ? value.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(value)) : "null",
             fieldId));
+      } finally {
+        captureOrderLock.unlock();
       }
     } finally {
       isInside.set(false);

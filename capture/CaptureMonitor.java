@@ -105,7 +105,7 @@ public class CaptureMonitor {
     }
     isInside.set(true);
     try {
-      long tid = Thread.currentThread().getId();
+      long tid = Thread.currentThread().threadId();
       int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
       if (roleId == -1) {
         try { return findField(ownerName, fieldName).getInt(owner); }
@@ -149,7 +149,7 @@ public class CaptureMonitor {
     }
     isInside.set(true);
     try {
-      long tid = Thread.currentThread().getId();
+      long tid = Thread.currentThread().threadId();
       int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
       if (roleId == -1) {
         try { return findField(ownerName, fieldName).getFloat(owner); }
@@ -186,7 +186,7 @@ public class CaptureMonitor {
     }
     isInside.set(true);
     try {
-      long tid = Thread.currentThread().getId();
+      long tid = Thread.currentThread().threadId();
       int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
       if (roleId == -1) {
         try { return findField(ownerName, fieldName).getLong(owner); }
@@ -223,7 +223,7 @@ public class CaptureMonitor {
     }
     isInside.set(true);
     try {
-      long tid = Thread.currentThread().getId();
+      long tid = Thread.currentThread().threadId();
       int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
       if (roleId == -1) {
         try { return findField(ownerName, fieldName).getDouble(owner); }
@@ -260,7 +260,7 @@ public class CaptureMonitor {
     }
     isInside.set(true);
     try {
-      long tid = Thread.currentThread().getId();
+      long tid = Thread.currentThread().threadId();
       int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
       if (roleId == -1) {
         try { return findField(ownerName, fieldName).get(owner); }
@@ -299,7 +299,7 @@ public class CaptureMonitor {
     if (isInside.get()) return;
     isInside.set(true);
     try {
-      long tid = Thread.currentThread().getId();
+      long tid = Thread.currentThread().threadId();
       int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
       if (roleId == -1) return;
       BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
@@ -335,7 +335,7 @@ public class CaptureMonitor {
     if (isInside.get()) return;
     isInside.set(true);
     try {
-      long tid = Thread.currentThread().getId();
+      long tid = Thread.currentThread().threadId();
       int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
       if (roleId == -1) return;
       BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
@@ -364,7 +364,7 @@ public class CaptureMonitor {
     if (isInside.get()) return;
     isInside.set(true);
     try {
-      long tid = Thread.currentThread().getId();
+      long tid = Thread.currentThread().threadId();
       int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
       if (roleId == -1) return;
       BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
@@ -393,7 +393,7 @@ public class CaptureMonitor {
     if (isInside.get()) return;
     isInside.set(true);
     try {
-      long tid = Thread.currentThread().getId();
+      long tid = Thread.currentThread().threadId();
       int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
       if (roleId == -1) return;
       BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
@@ -422,7 +422,7 @@ public class CaptureMonitor {
     if (isInside.get()) return;
     isInside.set(true);
     try {
-      long tid = Thread.currentThread().getId();
+      long tid = Thread.currentThread().threadId();
       int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
       if (roleId == -1) return;
       BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);

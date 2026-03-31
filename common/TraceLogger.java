@@ -18,7 +18,7 @@ public class TraceLogger {
 
     // for synchronization events such as MONITOR_ENTER, MONITOR_EXIT
     public static void logSync(int eventType, Object lock, int currentSiteId) {
-        long tid = Thread.currentThread().getId();
+        long tid = Thread.currentThread().threadId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         if (roleId == -1) return;
         BirthId birthId = IdentityMapper.getBirthId(lock, null, currentSiteId);
@@ -28,7 +28,7 @@ public class TraceLogger {
         // in data1. This lets the replay coordinator enforce causality: the child's
         // events must be ordered AFTER the parent's THREAD_START, not before.
         if (eventType == BinarySchema.Event.THREAD_START && lock instanceof Thread) {
-            long childTid = ((Thread) lock).getId();
+            long childTid = ((Thread) lock).threadId();
             int childRoleId = IdentityMapper.getRoleIdBySite(childTid, currentSiteId);
             long seq = nextSeq();
             System.out.println(String.format(
@@ -55,7 +55,7 @@ public class TraceLogger {
 
     public static void logField(int eventType, Object owner, int currentSiteId, boolean isVolatile, boolean isStatic,
             String fieldName, String ownerName) {
-        long tid = Thread.currentThread().getId();
+        long tid = Thread.currentThread().threadId();
 
         // 2. Get the role (Who is doing this)
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
@@ -93,7 +93,7 @@ public class TraceLogger {
 
     // for array access events
     public static void logArray(int eventType, Object array, int index, int currentSiteId) {
-        long tid = Thread.currentThread().getId();
+        long tid = Thread.currentThread().threadId();
 
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         if (roleId == -1) return;
@@ -143,7 +143,7 @@ public class TraceLogger {
      * @param index    array element index, or -1 for scalar atomics
      */
     public static void logAtomicInt(int intValue, Object receiver, int index, int eventType, int currentSiteId) {
-        long tid = Thread.currentThread().getId();
+        long tid = Thread.currentThread().threadId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         if (roleId == -1) return;
 
@@ -180,7 +180,7 @@ public class TraceLogger {
      * Scalar atomics: stores full receiver BirthId + low 32 bits of long value.
      */
     public static void logAtomicLong(long longValue, Object receiver, int index, int eventType, int currentSiteId) {
-        long tid = Thread.currentThread().getId();
+        long tid = Thread.currentThread().threadId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         if (roleId == -1) return;
 
@@ -219,7 +219,7 @@ public class TraceLogger {
      * Scalar atomics: stores receiver BirthId + value's BirthId.siteId.
      */
     public static void logAtomicObj(Object objValue, Object receiver, int index, int eventType, int currentSiteId) {
-        long tid = Thread.currentThread().getId();
+        long tid = Thread.currentThread().threadId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         if (roleId == -1) return;
 
@@ -257,7 +257,7 @@ public class TraceLogger {
     }
 
     public static void logException(Object exception, int siteId) {
-        long tid = Thread.currentThread().getId();
+        long tid = Thread.currentThread().threadId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
         if (roleId == -1) return;
 

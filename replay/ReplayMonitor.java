@@ -31,7 +31,7 @@ public class ReplayMonitor {
             && eventType != BinarySchema.Event.CLASS_INIT_END) return;
         isInside.set(true);
         try {
-            long tid = Thread.currentThread().getId();
+            long tid = Thread.currentThread().threadId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) return;
 
@@ -58,7 +58,7 @@ public class ReplayMonitor {
         if (isInside.get()) return;
         isInside.set(true);
         try {
-            long tid = Thread.currentThread().getId();
+            long tid = Thread.currentThread().threadId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) return;
 
@@ -89,7 +89,7 @@ public class ReplayMonitor {
         if (isInside.get() || array == null) return;
         isInside.set(true);
         try {
-            long tid = Thread.currentThread().getId();
+            long tid = Thread.currentThread().threadId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) return;
 
@@ -123,7 +123,7 @@ public class ReplayMonitor {
         }
         isInside.set(true);
         try {
-            long tid = Thread.currentThread().getId();
+            long tid = Thread.currentThread().threadId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) {
                 try { return findField(ownerName, fieldName).getInt(owner); }
@@ -167,7 +167,7 @@ public class ReplayMonitor {
         }
         isInside.set(true);
         try {
-            long tid = Thread.currentThread().getId();
+            long tid = Thread.currentThread().threadId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) {
                 try { return findField(ownerName, fieldName).getFloat(owner); }
@@ -204,7 +204,7 @@ public class ReplayMonitor {
         }
         isInside.set(true);
         try {
-            long tid = Thread.currentThread().getId();
+            long tid = Thread.currentThread().threadId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) {
                 try { return findField(ownerName, fieldName).getLong(owner); }
@@ -241,7 +241,7 @@ public class ReplayMonitor {
         }
         isInside.set(true);
         try {
-            long tid = Thread.currentThread().getId();
+            long tid = Thread.currentThread().threadId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) {
                 try { return findField(ownerName, fieldName).getDouble(owner); }
@@ -278,7 +278,7 @@ public class ReplayMonitor {
         }
         isInside.set(true);
         try {
-            long tid = Thread.currentThread().getId();
+            long tid = Thread.currentThread().threadId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) {
                 try { return findField(ownerName, fieldName).get(owner); }
@@ -323,7 +323,7 @@ public class ReplayMonitor {
         }
         isInside.set(true);
         try {
-            long tid = Thread.currentThread().getId();
+            long tid = Thread.currentThread().threadId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) {
                 Class<?> comp = array.getClass().getComponentType();
@@ -363,7 +363,7 @@ public class ReplayMonitor {
         if (isInside.get() || array == null) return array != null ? ((float[]) array)[index] : 0f;
         isInside.set(true);
         try {
-            long tid = Thread.currentThread().getId();
+            long tid = Thread.currentThread().threadId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) return ((float[]) array)[index];
 
@@ -389,7 +389,7 @@ public class ReplayMonitor {
         if (isInside.get() || array == null) return array != null ? ((long[]) array)[index] : 0L;
         isInside.set(true);
         try {
-            long tid = Thread.currentThread().getId();
+            long tid = Thread.currentThread().threadId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) return ((long[]) array)[index];
 
@@ -415,7 +415,7 @@ public class ReplayMonitor {
         if (isInside.get() || array == null) return array != null ? ((double[]) array)[index] : 0.0;
         isInside.set(true);
         try {
-            long tid = Thread.currentThread().getId();
+            long tid = Thread.currentThread().threadId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) return ((double[]) array)[index];
 
@@ -441,7 +441,7 @@ public class ReplayMonitor {
         if (isInside.get() || array == null) return array != null ? ((Object[]) array)[index] : null;
         isInside.set(true);
         try {
-            long tid = Thread.currentThread().getId();
+            long tid = Thread.currentThread().threadId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) return ((Object[]) array)[index];
 
@@ -473,7 +473,7 @@ public class ReplayMonitor {
         if (isInside.get()) return;
         isInside.set(true);
         try {
-            long tid = Thread.currentThread().getId();
+            long tid = Thread.currentThread().threadId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) return;
 
@@ -509,7 +509,7 @@ public class ReplayMonitor {
         if (isInside.get()) return;
         isInside.set(true);
         try {
-            long tid = Thread.currentThread().getId();
+            long tid = Thread.currentThread().threadId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) return;
 
@@ -539,7 +539,7 @@ public class ReplayMonitor {
         if (isInside.get()) return;
         isInside.set(true);
         try {
-            long tid = Thread.currentThread().getId();
+            long tid = Thread.currentThread().threadId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) return;
 
@@ -569,7 +569,7 @@ public class ReplayMonitor {
         if (isInside.get()) return;
         isInside.set(true);
         try {
-            long tid = Thread.currentThread().getId();
+            long tid = Thread.currentThread().threadId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) return;
 
@@ -599,7 +599,7 @@ public class ReplayMonitor {
         if (isInside.get()) return;
         isInside.set(true);
         try {
-            long tid = Thread.currentThread().getId();
+            long tid = Thread.currentThread().threadId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) return;
 
@@ -631,7 +631,7 @@ public class ReplayMonitor {
         if (isInside.get() || array == null) return;
         isInside.set(true);
         try {
-            long tid = Thread.currentThread().getId();
+            long tid = Thread.currentThread().threadId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) return;
 
@@ -661,7 +661,7 @@ public class ReplayMonitor {
         if (isInside.get() || array == null) return;
         isInside.set(true);
         try {
-            long tid = Thread.currentThread().getId();
+            long tid = Thread.currentThread().threadId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) return;
 
@@ -685,7 +685,7 @@ public class ReplayMonitor {
         if (isInside.get() || array == null) return;
         isInside.set(true);
         try {
-            long tid = Thread.currentThread().getId();
+            long tid = Thread.currentThread().threadId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) return;
 
@@ -709,7 +709,7 @@ public class ReplayMonitor {
         if (isInside.get() || array == null) return;
         isInside.set(true);
         try {
-            long tid = Thread.currentThread().getId();
+            long tid = Thread.currentThread().threadId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) return;
 
@@ -734,7 +734,7 @@ public class ReplayMonitor {
         if (isInside.get() || array == null) return;
         isInside.set(true);
         try {
-            long tid = Thread.currentThread().getId();
+            long tid = Thread.currentThread().threadId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) return;
 
@@ -780,7 +780,7 @@ public class ReplayMonitor {
         if (isInside.get()) return;
         isInside.set(true);
         try {
-            long tid = Thread.currentThread().getId();
+            long tid = Thread.currentThread().threadId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) return;
 
@@ -820,7 +820,7 @@ public class ReplayMonitor {
         if (isInside.get()) return;
         isInside.set(true);
         try {
-            long tid = Thread.currentThread().getId();
+            long tid = Thread.currentThread().threadId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) return;
 
@@ -856,7 +856,7 @@ public class ReplayMonitor {
         if (isInside.get()) return;
         isInside.set(true);
         try {
-            long tid = Thread.currentThread().getId();
+            long tid = Thread.currentThread().threadId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) return;
 
@@ -892,7 +892,7 @@ public class ReplayMonitor {
         if (isInside.get()) return 0;
         isInside.set(true);
         try {
-            long tid = Thread.currentThread().getId();
+            long tid = Thread.currentThread().threadId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
 
             BirthId receiverBirth = IdentityMapper.getBirthId(receiver, null, currentSiteId);
@@ -923,7 +923,7 @@ public class ReplayMonitor {
         if (isInside.get()) return 0L;
         isInside.set(true);
         try {
-            long tid = Thread.currentThread().getId();
+            long tid = Thread.currentThread().threadId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
 
             BirthId receiverBirth = IdentityMapper.getBirthId(receiver, null, currentSiteId);
@@ -954,7 +954,7 @@ public class ReplayMonitor {
         if (isInside.get()) return null;
         isInside.set(true);
         try {
-            long tid = Thread.currentThread().getId();
+            long tid = Thread.currentThread().threadId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
 
             BirthId receiverBirth = IdentityMapper.getBirthId(receiver, null, currentSiteId);
@@ -986,7 +986,7 @@ public class ReplayMonitor {
         if (exception == null) return;
         isInside.set(true);
         try {
-            long tid = Thread.currentThread().getId();
+            long tid = Thread.currentThread().threadId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
             if (roleId == -1) return;
 
@@ -1009,7 +1009,7 @@ public class ReplayMonitor {
         try {
             // Assign this thread's roleId now, before it runs a single instruction.
             // Uses the next expected role from the trace at the current idx.
-            long tid = thread.getId();
+            long tid = thread.threadId();
             int nextRole = ReplayCoordinator.peekNextPendingRole();
             if (nextRole == -1) return;
 

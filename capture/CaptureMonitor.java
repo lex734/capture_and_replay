@@ -2,9 +2,17 @@ package capture;
 
 import common.TraceLogger;
 import common.BinarySchema;
+import common.IdentityMapper;
+import common.IdentityMapper.BirthId;
 
 public class CaptureMonitor {
   private static final ThreadLocal<Boolean> isInside = ThreadLocal.withInitial(() -> false);
+
+  // Global lock that serialises field accesses with their sequence-number
+  // assignment.  Holding this lock across both nextSeq() and the actual
+  // field access (via reflection) guarantees that the seq recorded in the
+  // binary trace faithfully reflects the real execution order.
+  private static final Object captureLock = new Object();
 
   public static void logSync(int eventType, Object lock, int siteId) {
     if (isInside.get()) return;
@@ -81,5 +89,377 @@ public class CaptureMonitor {
     } finally {
       isInside.set(false);
     }
+  }
+
+  // ---- Typed field-read methods -----------------------------------------------
+  // These replace the GETFIELD/GETSTATIC bytecode entirely: they hold captureLock
+  // across both the actual read (via reflection) and the seq assignment, so the
+  // recorded seq faithfully reflects when the read occurred relative to writes.
+
+  public static int logFieldReadInt(Object owner, int currentSiteId,
+                                    boolean isVolatile, boolean isStatic,
+                                    String fieldName, String ownerName) {
+    if (isInside.get()) {
+      try { return findField(ownerName, fieldName).getInt(owner); }
+      catch (ReflectiveOperationException e) { return 0; }
+    }
+    isInside.set(true);
+    try {
+      long tid = Thread.currentThread().getId();
+      int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+      if (roleId == -1) {
+        try { return findField(ownerName, fieldName).getInt(owner); }
+        catch (ReflectiveOperationException e) { return 0; }
+      }
+      BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
+      int fieldId   = IdentityMapper.getFieldId(birthId, fieldName, ownerName);
+      int flags     = (isVolatile ? BinarySchema.Flags.IS_VOLATILE : 0)
+                    | (isStatic   ? BinarySchema.Flags.IS_STATIC   : 0);
+      int packedType = BinarySchema.packType(BinarySchema.Event.FIELD_READ, flags);
+
+      int[] result = new int[1];
+      synchronized (captureLock) {
+        try {
+          java.lang.reflect.Field f = findField(ownerName, fieldName);
+          Class<?> t = f.getType();
+          if      (t == int.class)     result[0] = f.getInt(owner);
+          else if (t == boolean.class) result[0] = f.getBoolean(owner) ? 1 : 0;
+          else if (t == byte.class)    result[0] = f.getByte(owner);
+          else if (t == short.class)   result[0] = f.getShort(owner);
+          else if (t == char.class)    result[0] = f.getChar(owner);
+        } catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
+        long seq = TraceLogger.nextSeq();
+        BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, fieldId);
+        System.out.println(String.format(
+            "[FIELD]  seq=%d role=%d  READ%s %s.%s = %d  fieldId=%d",
+            seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, result[0], fieldId));
+      }
+      return result[0];
+    } finally {
+      isInside.set(false);
+    }
+  }
+
+  public static float logFieldReadFloat(Object owner, int currentSiteId,
+                                        boolean isVolatile, boolean isStatic,
+                                        String fieldName, String ownerName) {
+    if (isInside.get()) {
+      try { return findField(ownerName, fieldName).getFloat(owner); }
+      catch (ReflectiveOperationException e) { return 0f; }
+    }
+    isInside.set(true);
+    try {
+      long tid = Thread.currentThread().getId();
+      int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+      if (roleId == -1) {
+        try { return findField(ownerName, fieldName).getFloat(owner); }
+        catch (ReflectiveOperationException e) { return 0f; }
+      }
+      BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
+      int fieldId    = IdentityMapper.getFieldId(birthId, fieldName, ownerName);
+      int flags      = (isVolatile ? BinarySchema.Flags.IS_VOLATILE : 0)
+                     | (isStatic   ? BinarySchema.Flags.IS_STATIC   : 0);
+      int packedType = BinarySchema.packType(BinarySchema.Event.FIELD_READ, flags);
+
+      float[] result = new float[1];
+      synchronized (captureLock) {
+        try { result[0] = findField(ownerName, fieldName).getFloat(owner); }
+        catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
+        long seq = TraceLogger.nextSeq();
+        BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, fieldId);
+        System.out.println(String.format(
+            "[FIELD]  seq=%d role=%d  READ%s %s.%s = %f  fieldId=%d",
+            seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, result[0], fieldId));
+      }
+      return result[0];
+    } finally {
+      isInside.set(false);
+    }
+  }
+
+  public static long logFieldReadLong(Object owner, int currentSiteId,
+                                      boolean isVolatile, boolean isStatic,
+                                      String fieldName, String ownerName) {
+    if (isInside.get()) {
+      try { return findField(ownerName, fieldName).getLong(owner); }
+      catch (ReflectiveOperationException e) { return 0L; }
+    }
+    isInside.set(true);
+    try {
+      long tid = Thread.currentThread().getId();
+      int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+      if (roleId == -1) {
+        try { return findField(ownerName, fieldName).getLong(owner); }
+        catch (ReflectiveOperationException e) { return 0L; }
+      }
+      BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
+      int fieldId    = IdentityMapper.getFieldId(birthId, fieldName, ownerName);
+      int flags      = (isVolatile ? BinarySchema.Flags.IS_VOLATILE : 0)
+                     | (isStatic   ? BinarySchema.Flags.IS_STATIC   : 0);
+      int packedType = BinarySchema.packType(BinarySchema.Event.FIELD_READ, flags);
+
+      long[] result = new long[1];
+      synchronized (captureLock) {
+        try { result[0] = findField(ownerName, fieldName).getLong(owner); }
+        catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
+        long seq = TraceLogger.nextSeq();
+        BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, fieldId);
+        System.out.println(String.format(
+            "[FIELD]  seq=%d role=%d  READ%s %s.%s = %dL  fieldId=%d",
+            seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, result[0], fieldId));
+      }
+      return result[0];
+    } finally {
+      isInside.set(false);
+    }
+  }
+
+  public static double logFieldReadDouble(Object owner, int currentSiteId,
+                                          boolean isVolatile, boolean isStatic,
+                                          String fieldName, String ownerName) {
+    if (isInside.get()) {
+      try { return findField(ownerName, fieldName).getDouble(owner); }
+      catch (ReflectiveOperationException e) { return 0.0; }
+    }
+    isInside.set(true);
+    try {
+      long tid = Thread.currentThread().getId();
+      int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+      if (roleId == -1) {
+        try { return findField(ownerName, fieldName).getDouble(owner); }
+        catch (ReflectiveOperationException e) { return 0.0; }
+      }
+      BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
+      int fieldId    = IdentityMapper.getFieldId(birthId, fieldName, ownerName);
+      int flags      = (isVolatile ? BinarySchema.Flags.IS_VOLATILE : 0)
+                     | (isStatic   ? BinarySchema.Flags.IS_STATIC   : 0);
+      int packedType = BinarySchema.packType(BinarySchema.Event.FIELD_READ, flags);
+
+      double[] result = new double[1];
+      synchronized (captureLock) {
+        try { result[0] = findField(ownerName, fieldName).getDouble(owner); }
+        catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
+        long seq = TraceLogger.nextSeq();
+        BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, fieldId);
+        System.out.println(String.format(
+            "[FIELD]  seq=%d role=%d  READ%s %s.%s = %f  fieldId=%d",
+            seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, result[0], fieldId));
+      }
+      return result[0];
+    } finally {
+      isInside.set(false);
+    }
+  }
+
+  public static Object logFieldReadObj(Object owner, int currentSiteId,
+                                       boolean isVolatile, boolean isStatic,
+                                       String fieldName, String ownerName) {
+    if (isInside.get()) {
+      try { return findField(ownerName, fieldName).get(owner); }
+      catch (ReflectiveOperationException e) { return null; }
+    }
+    isInside.set(true);
+    try {
+      long tid = Thread.currentThread().getId();
+      int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+      if (roleId == -1) {
+        try { return findField(ownerName, fieldName).get(owner); }
+        catch (ReflectiveOperationException e) { return null; }
+      }
+      BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
+      int fieldId    = IdentityMapper.getFieldId(birthId, fieldName, ownerName);
+      int flags      = (isVolatile ? BinarySchema.Flags.IS_VOLATILE : 0)
+                     | (isStatic   ? BinarySchema.Flags.IS_STATIC   : 0);
+      int packedType = BinarySchema.packType(BinarySchema.Event.FIELD_READ, flags);
+
+      Object[] result = new Object[1];
+      synchronized (captureLock) {
+        try { result[0] = findField(ownerName, fieldName).get(owner); }
+        catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
+        long seq = TraceLogger.nextSeq();
+        BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, fieldId);
+        System.out.println(String.format(
+            "[FIELD]  seq=%d role=%d  READ%s %s.%s = %s  fieldId=%d",
+            seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName,
+            result[0] != null ? result[0].getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(result[0])) : "null",
+            fieldId));
+      }
+      return result[0];
+    } finally {
+      isInside.set(false);
+    }
+  }
+
+  // ---- Typed field-write methods -----------------------------------------------
+  // Mirror of the read methods: captureLock held across actual write + seq assign.
+
+  public static void logFieldWriteInt(int value, Object owner, int currentSiteId,
+                                      boolean isVolatile, boolean isStatic,
+                                      String fieldName, String ownerName) {
+    if (isInside.get()) return;
+    isInside.set(true);
+    try {
+      long tid = Thread.currentThread().getId();
+      int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+      if (roleId == -1) return;
+      BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
+      int fieldId    = IdentityMapper.getFieldId(birthId, fieldName, ownerName);
+      int flags      = (isVolatile ? BinarySchema.Flags.IS_VOLATILE : 0)
+                     | (isStatic   ? BinarySchema.Flags.IS_STATIC   : 0);
+      int packedType = BinarySchema.packType(BinarySchema.Event.FIELD_WRITE, flags);
+
+      synchronized (captureLock) {
+        try {
+          java.lang.reflect.Field f = findField(ownerName, fieldName);
+          Class<?> t = f.getType();
+          if      (t == int.class)     f.setInt(owner, value);
+          else if (t == boolean.class) f.setBoolean(owner, value != 0);
+          else if (t == byte.class)    f.setByte(owner, (byte) value);
+          else if (t == short.class)   f.setShort(owner, (short) value);
+          else if (t == char.class)    f.setChar(owner, (char) value);
+        } catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
+        long seq = TraceLogger.nextSeq();
+        BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, fieldId);
+        System.out.println(String.format(
+            "[FIELD]  seq=%d role=%d  WRITE%s %s.%s = %d  fieldId=%d",
+            seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, value, fieldId));
+      }
+    } finally {
+      isInside.set(false);
+    }
+  }
+
+  public static void logFieldWriteFloat(float value, Object owner, int currentSiteId,
+                                        boolean isVolatile, boolean isStatic,
+                                        String fieldName, String ownerName) {
+    if (isInside.get()) return;
+    isInside.set(true);
+    try {
+      long tid = Thread.currentThread().getId();
+      int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+      if (roleId == -1) return;
+      BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
+      int fieldId    = IdentityMapper.getFieldId(birthId, fieldName, ownerName);
+      int flags      = (isVolatile ? BinarySchema.Flags.IS_VOLATILE : 0)
+                     | (isStatic   ? BinarySchema.Flags.IS_STATIC   : 0);
+      int packedType = BinarySchema.packType(BinarySchema.Event.FIELD_WRITE, flags);
+
+      synchronized (captureLock) {
+        try { findField(ownerName, fieldName).setFloat(owner, value); }
+        catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
+        long seq = TraceLogger.nextSeq();
+        BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, fieldId);
+        System.out.println(String.format(
+            "[FIELD]  seq=%d role=%d  WRITE%s %s.%s = %f  fieldId=%d",
+            seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, value, fieldId));
+      }
+    } finally {
+      isInside.set(false);
+    }
+  }
+
+  public static void logFieldWriteLong(long value, Object owner, int currentSiteId,
+                                       boolean isVolatile, boolean isStatic,
+                                       String fieldName, String ownerName) {
+    if (isInside.get()) return;
+    isInside.set(true);
+    try {
+      long tid = Thread.currentThread().getId();
+      int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+      if (roleId == -1) return;
+      BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
+      int fieldId    = IdentityMapper.getFieldId(birthId, fieldName, ownerName);
+      int flags      = (isVolatile ? BinarySchema.Flags.IS_VOLATILE : 0)
+                     | (isStatic   ? BinarySchema.Flags.IS_STATIC   : 0);
+      int packedType = BinarySchema.packType(BinarySchema.Event.FIELD_WRITE, flags);
+
+      synchronized (captureLock) {
+        try { findField(ownerName, fieldName).setLong(owner, value); }
+        catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
+        long seq = TraceLogger.nextSeq();
+        BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, fieldId);
+        System.out.println(String.format(
+            "[FIELD]  seq=%d role=%d  WRITE%s %s.%s = %dL  fieldId=%d",
+            seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, value, fieldId));
+      }
+    } finally {
+      isInside.set(false);
+    }
+  }
+
+  public static void logFieldWriteDouble(double value, Object owner, int currentSiteId,
+                                         boolean isVolatile, boolean isStatic,
+                                         String fieldName, String ownerName) {
+    if (isInside.get()) return;
+    isInside.set(true);
+    try {
+      long tid = Thread.currentThread().getId();
+      int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+      if (roleId == -1) return;
+      BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
+      int fieldId    = IdentityMapper.getFieldId(birthId, fieldName, ownerName);
+      int flags      = (isVolatile ? BinarySchema.Flags.IS_VOLATILE : 0)
+                     | (isStatic   ? BinarySchema.Flags.IS_STATIC   : 0);
+      int packedType = BinarySchema.packType(BinarySchema.Event.FIELD_WRITE, flags);
+
+      synchronized (captureLock) {
+        try { findField(ownerName, fieldName).setDouble(owner, value); }
+        catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
+        long seq = TraceLogger.nextSeq();
+        BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, fieldId);
+        System.out.println(String.format(
+            "[FIELD]  seq=%d role=%d  WRITE%s %s.%s = %f  fieldId=%d",
+            seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, value, fieldId));
+      }
+    } finally {
+      isInside.set(false);
+    }
+  }
+
+  public static void logFieldWriteObj(Object value, Object owner, int currentSiteId,
+                                      boolean isVolatile, boolean isStatic,
+                                      String fieldName, String ownerName) {
+    if (isInside.get()) return;
+    isInside.set(true);
+    try {
+      long tid = Thread.currentThread().getId();
+      int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+      if (roleId == -1) return;
+      BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
+      int fieldId    = IdentityMapper.getFieldId(birthId, fieldName, ownerName);
+      int flags      = (isVolatile ? BinarySchema.Flags.IS_VOLATILE : 0)
+                     | (isStatic   ? BinarySchema.Flags.IS_STATIC   : 0);
+      int packedType = BinarySchema.packType(BinarySchema.Event.FIELD_WRITE, flags);
+
+      synchronized (captureLock) {
+        try { findField(ownerName, fieldName).set(owner, value); }
+        catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
+        long seq = TraceLogger.nextSeq();
+        BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, fieldId);
+        System.out.println(String.format(
+            "[FIELD]  seq=%d role=%d  WRITE%s %s.%s = %s  fieldId=%d",
+            seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName,
+            value != null ? value.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(value)) : "null",
+            fieldId));
+      }
+    } finally {
+      isInside.set(false);
+    }
+  }
+
+  // Reflection helper: walks the class hierarchy to find a field.
+  private static java.lang.reflect.Field findField(String ownerName, String fieldName)
+      throws ReflectiveOperationException {
+    Class<?> cls = Class.forName(ownerName.replace('/', '.'));
+    while (cls != null) {
+      try {
+        java.lang.reflect.Field f = cls.getDeclaredField(fieldName);
+        f.setAccessible(true);
+        return f;
+      } catch (NoSuchFieldException e) {
+        cls = cls.getSuperclass();
+      }
+    }
+    throw new NoSuchFieldException(ownerName + "." + fieldName);
   }
 }

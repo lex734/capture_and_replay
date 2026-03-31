@@ -12,13 +12,12 @@ public class TraceLogger {
     // replay, not just final outcomes.
     private static final AtomicLong globalSeq = new AtomicLong(0);
 
-    private static long nextSeq() {
+    public static long nextSeq() {
         return globalSeq.incrementAndGet();
     }
 
     // for synchronization events such as MONITOR_ENTER, MONITOR_EXIT
     public static void logSync(int eventType, Object lock, int currentSiteId) {
-        long seq = nextSeq();
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         if (roleId == -1) return;
@@ -31,6 +30,7 @@ public class TraceLogger {
         if (eventType == BinarySchema.Event.THREAD_START && lock instanceof Thread) {
             long childTid = ((Thread) lock).getId();
             int childRoleId = IdentityMapper.getRoleIdBySite(childTid, currentSiteId);
+            long seq = nextSeq();
             System.out.println(String.format(
                     "[SYNC]   seq=%d role=%d  %-24s lock=%s  site=%d  childRole=%d",
                     seq, roleId, eventName,
@@ -41,6 +41,7 @@ public class TraceLogger {
             return;
         }
 
+        long seq = nextSeq();
         System.out.println(String.format(
                 "[SYNC]   seq=%d role=%d  %-24s lock=%s  site=%d",
                 seq, roleId, eventName,
@@ -54,7 +55,6 @@ public class TraceLogger {
 
     public static void logField(int eventType, Object owner, int currentSiteId, boolean isVolatile, boolean isStatic,
             String fieldName, String ownerName) {
-        long seq = nextSeq();
         long tid = Thread.currentThread().getId();
 
         // 2. Get the role (Who is doing this)
@@ -72,10 +72,13 @@ public class TraceLogger {
         // 5. Pack flags and event type
         int flags = (isVolatile ? BinarySchema.Flags.IS_VOLATILE : 0) |
                 (isStatic ? BinarySchema.Flags.IS_STATIC : 0);
-        // System.out.println(String.format("isVolatile: %b", isVolatile));
 
         int packedType = BinarySchema.packType(eventType, flags);
 
+        // 6. Assign seq as late as possible — after all computation, just before
+        //    writing to the trace — to minimise the gap between the sequence number
+        //    and the actual field access that follows logField returning.
+        long seq = nextSeq();
         String eventName = (eventType == BinarySchema.Event.FIELD_READ) ? "READ" : "WRITE";
         System.out.println(String.format(
                 "[FIELD]  seq=%d role=%d  %-5s%s %s.%s  fieldId=%d",
@@ -83,14 +86,13 @@ public class TraceLogger {
                 isVolatile ? "(volatile)" : "",
                 ownerName, fieldName, fieldId));
 
-        // 6. Write to Binary Log
+        // 7. Write to Binary Log
         // Data field contains the fieldId (the unique coordinate for this variable)
         BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, fieldId);
     }
 
     // for array access events
     public static void logArray(int eventType, Object array, int index, int currentSiteId) {
-        long seq = nextSeq();
         long tid = Thread.currentThread().getId();
 
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
@@ -98,6 +100,7 @@ public class TraceLogger {
 
         BirthId birthId = IdentityMapper.getBirthId(array, null, currentSiteId);
 
+        long seq = nextSeq();
         String eventName = (eventType == BinarySchema.Event.ARRAY_READ) ? "ARRAY_READ" : "ARRAY_WRITE";
         System.out.println(String.format(
                 "[ARRAY]  seq=%d role=%d  %-12s %s[%d]  site=%d",
@@ -140,7 +143,6 @@ public class TraceLogger {
      * @param index    array element index, or -1 for scalar atomics
      */
     public static void logAtomicInt(int intValue, Object receiver, int index, int eventType, int currentSiteId) {
-        long seq = nextSeq();
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         if (roleId == -1) return;
@@ -148,6 +150,7 @@ public class TraceLogger {
         BirthId birthId = IdentityMapper.getBirthId(receiver, null, currentSiteId);
         boolean isArray = (index >= 0);
 
+        long seq = nextSeq();
         String eventName = getEventName(eventType);
         String receiverStr = receiver != null
                 ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver))
@@ -177,7 +180,6 @@ public class TraceLogger {
      * Scalar atomics: stores full receiver BirthId + low 32 bits of long value.
      */
     public static void logAtomicLong(long longValue, Object receiver, int index, int eventType, int currentSiteId) {
-        long seq = nextSeq();
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         if (roleId == -1) return;
@@ -185,6 +187,7 @@ public class TraceLogger {
         BirthId birthId = IdentityMapper.getBirthId(receiver, null, currentSiteId);
         boolean isArray = (index >= 0);
 
+        long seq = nextSeq();
         String eventName = getEventName(eventType);
         String receiverStr = receiver != null
                 ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver))
@@ -216,7 +219,6 @@ public class TraceLogger {
      * Scalar atomics: stores receiver BirthId + value's BirthId.siteId.
      */
     public static void logAtomicObj(Object objValue, Object receiver, int index, int eventType, int currentSiteId) {
-        long seq = nextSeq();
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         if (roleId == -1) return;
@@ -225,6 +227,7 @@ public class TraceLogger {
         BirthId valueBirth = IdentityMapper.getBirthId(objValue, null, currentSiteId);
         boolean isArray = (index >= 0);
 
+        long seq = nextSeq();
         String eventName = getEventName(eventType);
         String receiverStr = receiver != null
                 ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver))
@@ -254,12 +257,12 @@ public class TraceLogger {
     }
 
     public static void logException(Object exception, int siteId) {
-        long seq = nextSeq();
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
         if (roleId == -1) return;
 
         BirthId birthId = IdentityMapper.getBirthId(exception, null, siteId);
+        long seq = nextSeq();
         String className = exception.getClass().getName();
         System.out.println(String.format(
                 "[THROW]  seq=%d role=%d  %s  site=%d",

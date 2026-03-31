@@ -203,7 +203,10 @@ public class ReplayCoordinator {
                 if (roleId == expectedRole && packedType == expectedType
                         && (int) expected[3] == objSite && (int) expected[4] == objCount) {
                     lastMatchedSeq.set(expected[0]);
-                    if (onMatch != null) onMatch.run();
+                    if (onMatch != null) {
+                        try { onMatch.run(); }
+                        catch (Exception e) { e.printStackTrace(); }
+                    }
                     currentIdx.incrementAndGet();
                     controlLock.notifyAll();
                     return;

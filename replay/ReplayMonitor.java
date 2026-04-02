@@ -214,126 +214,34 @@ public class ReplayMonitor {
     }
 
     // ---- Atomic operations ----
-    // Scalar: stored (birthId.siteId, birthId.count, intValue) → awaitTurn arg1=birthId.siteId, arg2=intValue... 
-    // BUT wait — for int, stored fields 3,4,5 are: birthId.siteId, birthId.count, intValue
-    // awaitTurn only takes 2 value args, so it can only check intValue in arg2
-    public static void checkAtomicInt(int writtenValue, Object receiver, int index, int eventType, int currentSiteId) {
-        if (isInside.get()) return;
-        isInside.set(true);
-        try {
-            long tid = Thread.currentThread().getId();
-            int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-            if (roleId == -1) return;
 
-            BirthId receiverBirth = IdentityMapper.getBirthId(receiver, null, currentSiteId);
-            boolean isArray = (index >= 0);
-            int packedType, objSite, objCount;
-            if (isArray) {
-                packedType = (eventType & 0xFF) | (BinarySchema.Flags.IS_ARRAY_ATOMIC << 8) | ((receiverBirth.siteId & 0xFFFF) << 16);
-                objSite = receiverBirth.count;
-                objCount = index;
-            } else {
-                packedType = BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
-                objSite = receiverBirth.siteId;
-                objCount = receiverBirth.count;
-            }
-            ReplayCoordinator.awaitTurn(roleId, packedType, objSite, objCount, writtenValue);
-            long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format("[CHECK-ATOMIC] epoch=%d seq=%d role=%d  %-12s %s = %d  (write)",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
-                    receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
-                    writtenValue));
-        } finally {
-            isInside.set(false);
+    private static int buildAtomicPackedType(int eventType, BirthId receiverBirth, int index) {
+        if (index >= 0) {
+            return (eventType & 0xFF) | (BinarySchema.Flags.IS_ARRAY_ATOMIC << 8)
+                    | ((receiverBirth.siteId & 0xFFFF) << 16);
         }
+        return BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
     }
 
-    public static void checkAtomicLong(long writtenValue, Object receiver, int index, int eventType, int currentSiteId) {
-        if (isInside.get()) return;
-        isInside.set(true);
-        try {
-            long tid = Thread.currentThread().getId();
-            int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-            if (roleId == -1) return;
+    private static int atomicObjSite(BirthId b, int index) { return index >= 0 ? b.count   : b.siteId; }
+    private static int atomicObjCount(BirthId b, int index) { return index >= 0 ? index     : b.count;  }
 
-            BirthId receiverBirth = IdentityMapper.getBirthId(receiver, null, currentSiteId);
-            boolean isArray = (index >= 0);
-            int packedType, objSite, objCount;
-            if (isArray) {
-                packedType = (eventType & 0xFF) | (BinarySchema.Flags.IS_ARRAY_ATOMIC << 8) | ((receiverBirth.siteId & 0xFFFF) << 16);
-                objSite = receiverBirth.count;
-                objCount = index;
-            } else {
-                packedType = BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
-                objSite = receiverBirth.siteId;
-                objCount = receiverBirth.count;
-            }
-            ReplayCoordinator.awaitTurn(roleId, packedType, objSite, objCount, (int) writtenValue);
-            long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format("[CHECK-ATOMIC] epoch=%d seq=%d role=%d  %-12s %s = %dL  (write)",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
-                    receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
-                    writtenValue));
-        } finally {
-            isInside.set(false);
-        }
-    }
+    // ---- CAS injection ----
+    // CAS outcome is non-deterministic across schedules; inject the captured result
+    // and advance the epoch without reporting divergence.
 
-    public static void checkAtomicObj(Object writtenValue, Object receiver, int index, int eventType, int currentSiteId) {
-        if (isInside.get()) return;
-        isInside.set(true);
-        try {
-            long tid = Thread.currentThread().getId();
-            int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-            if (roleId == -1) return;
-
-            BirthId receiverBirth = IdentityMapper.getBirthId(receiver, null, currentSiteId);
-            boolean isArray = (index >= 0);
-            int packedType, objSite, objCount;
-            if (isArray) {
-                packedType = (eventType & 0xFF) | (BinarySchema.Flags.IS_ARRAY_ATOMIC << 8) | ((receiverBirth.siteId & 0xFFFF) << 16);
-                objSite = receiverBirth.count;
-                objCount = index;
-            } else {
-                packedType = BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
-                objSite = receiverBirth.siteId;
-                objCount = receiverBirth.count;
-            }
-            BirthId valueBirth = IdentityMapper.getBirthId(writtenValue, null, currentSiteId);
-            ReplayCoordinator.awaitTurn(roleId, packedType, objSite, objCount, valueBirth.siteId);
-            long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format("[CHECK-ATOMIC] epoch=%d seq=%d role=%d  %-12s %s = %s  (write)",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
-                    receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
-                    writtenValue != null ? writtenValue.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(writtenValue)) : "null"));
-        } finally {
-            isInside.set(false);
-        }
-    }
-
-    public static int checkAtomicInt(Object receiver, int index, int eventType, int currentSiteId) {
+    public static int injectAtomicCasInt(Object receiver, int index, int eventType, int currentSiteId) {
         if (isInside.get()) return 0;
         isInside.set(true);
         try {
             long tid = Thread.currentThread().getId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-
-            BirthId receiverBirth = IdentityMapper.getBirthId(receiver, null, currentSiteId);
-            boolean isArray = (index >= 0);
-            int packedType, objSite, objCount;
-            if (isArray) {
-                packedType = (eventType & 0xFF) | (BinarySchema.Flags.IS_ARRAY_ATOMIC << 8) | ((receiverBirth.siteId & 0xFFFF) << 16);
-                objSite = receiverBirth.count;
-                objCount = index;
-            } else {
-                packedType = BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
-                objSite = receiverBirth.siteId;
-                objCount = receiverBirth.count;
-            }
-            // TODO: pass actual atomic.get() result once atomics execute the original call
-            int val = ReplayCoordinator.awaitTurnInt(roleId, packedType, objSite, objCount, 0);
+            if (roleId == -1) return 0;
+            BirthId b = IdentityMapper.getBirthId(receiver, null, currentSiteId);
+            int val = ReplayCoordinator.awaitTurnCasInt(roleId,
+                    buildAtomicPackedType(eventType, b, index), atomicObjSite(b, index), atomicObjCount(b, index));
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format("[CHECK-ATOMIC] epoch=%d seq=%d role=%d  %-12s %s = %d  (read→replay)",
+            System.out.println(String.format("[INJECT-CAS]  epoch=%d seq=%d role=%d  %-12s %s → %d",
                     seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
                     receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
                     val));
@@ -343,28 +251,18 @@ public class ReplayMonitor {
         }
     }
 
-    public static long checkAtomicLong(Object receiver, int index, int eventType, int currentSiteId) {
+    public static long injectAtomicCasLong(Object receiver, int index, int eventType, int currentSiteId) {
         if (isInside.get()) return 0L;
         isInside.set(true);
         try {
             long tid = Thread.currentThread().getId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-
-            BirthId receiverBirth = IdentityMapper.getBirthId(receiver, null, currentSiteId);
-            boolean isArray = (index >= 0);
-            int packedType, objSite, objCount;
-            if (isArray) {
-                packedType = (eventType & 0xFF) | (BinarySchema.Flags.IS_ARRAY_ATOMIC << 8) | ((receiverBirth.siteId & 0xFFFF) << 16);
-                objSite = receiverBirth.count;
-                objCount = index;
-            } else {
-                packedType = BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
-                objSite = receiverBirth.siteId;
-                objCount = receiverBirth.count;
-            }
-            long val = ReplayCoordinator.awaitTurnLong(roleId, packedType, objSite, objCount, 0L);
+            if (roleId == -1) return 0L;
+            BirthId b = IdentityMapper.getBirthId(receiver, null, currentSiteId);
+            long val = ReplayCoordinator.awaitTurnCasLong(roleId,
+                    buildAtomicPackedType(eventType, b, index), atomicObjSite(b, index), atomicObjCount(b, index));
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format("[CHECK-ATOMIC] epoch=%d seq=%d role=%d  %-12s %s = %dL  (read→replay)",
+            System.out.println(String.format("[INJECT-CAS]  epoch=%d seq=%d role=%d  %-12s %s → %dL",
                     seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
                     receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
                     val));
@@ -374,28 +272,88 @@ public class ReplayMonitor {
         }
     }
 
-    public static Object checkAtomicObj(Object receiver, int index, int eventType, int currentSiteId) {
+    public static Object injectAtomicCasObj(Object receiver, int index, int eventType, int currentSiteId) {
         if (isInside.get()) return null;
         isInside.set(true);
         try {
             long tid = Thread.currentThread().getId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-
-            BirthId receiverBirth = IdentityMapper.getBirthId(receiver, null, currentSiteId);
-            boolean isArray = (index >= 0);
-            int packedType, objSite, objCount;
-            if (isArray) {
-                packedType = (eventType & 0xFF) | (BinarySchema.Flags.IS_ARRAY_ATOMIC << 8) | ((receiverBirth.siteId & 0xFFFF) << 16);
-                objSite = receiverBirth.count;
-                objCount = index;
-            } else {
-                packedType = BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
-                objSite = receiverBirth.siteId;
-                objCount = receiverBirth.count;
-            }
-            Object val = ReplayCoordinator.awaitTurnObj(roleId, packedType, objSite, objCount, null);
+            if (roleId == -1) return null;
+            BirthId b = IdentityMapper.getBirthId(receiver, null, currentSiteId);
+            Object val = ReplayCoordinator.awaitTurnCasObj(roleId,
+                    buildAtomicPackedType(eventType, b, index), atomicObjSite(b, index), atomicObjCount(b, index));
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format("[CHECK-ATOMIC] epoch=%d seq=%d role=%d  %-12s %s = %s  (read→replay)",
+            System.out.println(String.format("[INJECT-CAS]  epoch=%d seq=%d role=%d  %-12s %s → %s",
+                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
+                    receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
+                    val != null ? val.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(val)) : "null"));
+            return val;
+        } finally {
+            isInside.set(false);
+        }
+    }
+
+    // ---- RMW divergence check ----
+    // The atomic operation has already executed; natural value is always returned.
+    // Divergence is logged but not injected (can't undo the completed operation).
+
+    public static int checkAtomicRmwInt(int naturalValue, Object receiver, int index, int eventType, int currentSiteId) {
+        if (isInside.get()) return naturalValue;
+        isInside.set(true);
+        try {
+            long tid = Thread.currentThread().getId();
+            int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+            if (roleId == -1) return naturalValue;
+            BirthId b = IdentityMapper.getBirthId(receiver, null, currentSiteId);
+            int val = ReplayCoordinator.awaitTurnRmwInt(roleId,
+                    buildAtomicPackedType(eventType, b, index), atomicObjSite(b, index), atomicObjCount(b, index),
+                    naturalValue);
+            long seq = ReplayCoordinator.getLastMatchedSeq();
+            System.out.println(String.format("[CHECK-RMW]   epoch=%d seq=%d role=%d  %-12s %s = %d",
+                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
+                    receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
+                    val));
+            return val;
+        } finally {
+            isInside.set(false);
+        }
+    }
+
+    public static long checkAtomicRmwLong(long naturalValue, Object receiver, int index, int eventType, int currentSiteId) {
+        if (isInside.get()) return naturalValue;
+        isInside.set(true);
+        try {
+            long tid = Thread.currentThread().getId();
+            int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+            if (roleId == -1) return naturalValue;
+            BirthId b = IdentityMapper.getBirthId(receiver, null, currentSiteId);
+            long val = ReplayCoordinator.awaitTurnRmwLong(roleId,
+                    buildAtomicPackedType(eventType, b, index), atomicObjSite(b, index), atomicObjCount(b, index),
+                    naturalValue);
+            long seq = ReplayCoordinator.getLastMatchedSeq();
+            System.out.println(String.format("[CHECK-RMW]   epoch=%d seq=%d role=%d  %-12s %s = %dL",
+                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
+                    receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
+                    val));
+            return val;
+        } finally {
+            isInside.set(false);
+        }
+    }
+
+    public static Object checkAtomicRmwObj(Object naturalValue, Object receiver, int index, int eventType, int currentSiteId) {
+        if (isInside.get()) return naturalValue;
+        isInside.set(true);
+        try {
+            long tid = Thread.currentThread().getId();
+            int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+            if (roleId == -1) return naturalValue;
+            BirthId b = IdentityMapper.getBirthId(receiver, null, currentSiteId);
+            Object val = ReplayCoordinator.awaitTurnRmwObj(roleId,
+                    buildAtomicPackedType(eventType, b, index), atomicObjSite(b, index), atomicObjCount(b, index),
+                    naturalValue);
+            long seq = ReplayCoordinator.getLastMatchedSeq();
+            System.out.println(String.format("[CHECK-RMW]   epoch=%d seq=%d role=%d  %-12s %s = %s",
                     seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
                     receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
                     val != null ? val.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(val)) : "null"));
@@ -465,6 +423,7 @@ public class ReplayMonitor {
             case BinarySchema.Event.ATOMIC_READ:          return "ATOMIC_READ";
             case BinarySchema.Event.ATOMIC_WRITE:         return "ATOMIC_WRITE";
             case BinarySchema.Event.ATOMIC_RMW:           return "ATOMIC_RMW";
+            case BinarySchema.Event.ATOMIC_CAS:           return "ATOMIC_CAS";
             case BinarySchema.Event.CLASS_INIT_BEGIN:     return "CLASS_INIT_BEGIN";
             case BinarySchema.Event.CLASS_INIT_END:       return "CLASS_INIT_END";
             case BinarySchema.Event.EXCEPTION_THROW:      return "EXCEPTION_THROW";

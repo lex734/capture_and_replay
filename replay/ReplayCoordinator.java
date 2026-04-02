@@ -366,6 +366,68 @@ public class ReplayCoordinator {
         }
     }
 
+    // ---- CAS injection methods ----
+    // Return the captured value directly; any value difference is expected (CAS is
+    // non-deterministic) so no divergence log is emitted.
+
+    public static int awaitTurnCasInt(int roleId, int packedType, int objSite, int objCount) {
+        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount);
+        if (ev == null) return 0;
+        return (int) ev[6];
+    }
+
+    public static long awaitTurnCasLong(int roleId, int packedType, int objSite, int objCount) {
+        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount);
+        if (ev == null) return 0L;
+        return ((long) ev[5] << 32) | (ev[6] & 0xFFFFFFFFL);
+    }
+
+    public static Object awaitTurnCasObj(int roleId, int packedType, int objSite, int objCount) {
+        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount);
+        if (ev == null) return null;
+        return IdentityMapper.resolveByBirthId((int) ev[5], (int) ev[6]);
+    }
+
+    // ---- RMW divergence-check methods ----
+    // The atomic operation has already executed; natural value is returned regardless
+    // of divergence so the program continues on its actual execution path.
+
+    public static int awaitTurnRmwInt(int roleId, int packedType, int objSite, int objCount, int naturalValue) {
+        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount);
+        if (ev == null) return naturalValue;
+        int traceValue = (int) ev[6];
+        if (naturalValue != traceValue) {
+            System.err.println(String.format(
+                    "[VALUE-DIVERGENCE] awaitTurnRmwInt role=%d: natural=%d trace=%d (RMW — natural value kept)",
+                    roleId, naturalValue, traceValue));
+        }
+        return naturalValue;
+    }
+
+    public static long awaitTurnRmwLong(int roleId, int packedType, int objSite, int objCount, long naturalValue) {
+        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount);
+        if (ev == null) return naturalValue;
+        long traceValue = ((long) ev[5] << 32) | (ev[6] & 0xFFFFFFFFL);
+        if (naturalValue != traceValue) {
+            System.err.println(String.format(
+                    "[VALUE-DIVERGENCE] awaitTurnRmwLong role=%d: natural=%d trace=%d (RMW — natural value kept)",
+                    roleId, naturalValue, traceValue));
+        }
+        return naturalValue;
+    }
+
+    public static Object awaitTurnRmwObj(int roleId, int packedType, int objSite, int objCount, Object naturalValue) {
+        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount);
+        if (ev == null) return naturalValue;
+        Object traceValue = IdentityMapper.resolveByBirthId((int) ev[5], (int) ev[6]);
+        if (naturalValue != traceValue) {
+            System.err.println(String.format(
+                    "[VALUE-DIVERGENCE] awaitTurnRmwObj role=%d: natural=%s trace=%s (RMW — natural value kept)",
+                    roleId, naturalValue, traceValue));
+        }
+        return naturalValue;
+    }
+
     // ---- Value-returning field turn methods ----
     // Same wait-loop structure as awaitTurnInt/Long/Obj but include the pending/
     // started-role deadlock detection that plain awaitTurn provides, since field
@@ -525,6 +587,7 @@ public class ReplayCoordinator {
                 || eventType == BinarySchema.Event.CLASS_INIT_END
                 || eventType == BinarySchema.Event.ATOMIC_WRITE
                 || eventType == BinarySchema.Event.ATOMIC_RMW
+                || eventType == BinarySchema.Event.ATOMIC_CAS
                 || (eventType == BinarySchema.Event.FIELD_WRITE && isVolatile);
     }
 

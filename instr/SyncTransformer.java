@@ -530,22 +530,17 @@ public class SyncTransformer implements ClassFileTransformer {
                     mv.visitVarInsn(Opcodes.ASTORE, receiverSlot);
 
                     if (isReplay) {
-                        if (returnTypeChar == 'V') {
-                            int valueArgIdx = argTypes.length - 1;
-                            Type valueType = argTypes[valueArgIdx];
-
-                            mv.visitVarInsn(valueType.getOpcode(Opcodes.ILOAD), argSlots[valueArgIdx]);
+                        if (atomicEventType == 20 || atomicEventType == 21) {
+                            // ATOMIC_READ / ATOMIC_WRITE: causal order guarantees correctness,
+                            // execute naturally without interception
                             mv.visitVarInsn(Opcodes.ALOAD, receiverSlot);
-
-                            if (isArrayAtomic) {
-                                mv.visitVarInsn(Opcodes.ILOAD, argSlots[0]);
-                            } else {
-                                mv.visitLdcInsn(-1);
+                            for (int i = 0; i < argTypes.length; i++) {
+                                mv.visitVarInsn(argTypes[i].getOpcode(Opcodes.ILOAD), argSlots[i]);
                             }
-                            mv.visitLdcInsn(atomicEventType);
-                            mv.visitLdcInsn(siteId);
-                            emitAtomicCheckCall(valueType);
-                        } else {
+                            super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
+                        } else if (atomicEventType == 26) {
+                            // ATOMIC_CAS: outcome is non-deterministic across schedules — inject
+                            // captured result without executing; divergence is NOT a bug
                             mv.visitVarInsn(Opcodes.ALOAD, receiverSlot);
                             if (isArrayAtomic && argTypes.length > 0) {
                                 mv.visitVarInsn(Opcodes.ILOAD, argSlots[0]);
@@ -554,7 +549,29 @@ public class SyncTransformer implements ClassFileTransformer {
                             }
                             mv.visitLdcInsn(atomicEventType);
                             mv.visitLdcInsn(siteId);
-                            emitAtomicCheckCall(returnTypeChar);
+                            emitAtomicInjectCall(returnTypeChar);
+                        } else {
+                            // ATOMIC_RMW: execute naturally then check for divergence
+                            mv.visitVarInsn(Opcodes.ALOAD, receiverSlot);
+                            for (int i = 0; i < argTypes.length; i++) {
+                                mv.visitVarInsn(argTypes[i].getOpcode(Opcodes.ILOAD), argSlots[i]);
+                            }
+                            super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
+                            if (returnTypeChar != 'V') {
+                                Type retType = Type.getReturnType(descriptor);
+                                int retLocal = newLocal(retType);
+                                mv.visitVarInsn(retType.getOpcode(Opcodes.ISTORE), retLocal);
+                                mv.visitVarInsn(retType.getOpcode(Opcodes.ILOAD), retLocal);
+                                mv.visitVarInsn(Opcodes.ALOAD, receiverSlot);
+                                if (isArrayAtomic && argTypes.length > 0) {
+                                    mv.visitVarInsn(Opcodes.ILOAD, argSlots[0]);
+                                } else {
+                                    mv.visitLdcInsn(-1);
+                                }
+                                mv.visitLdcInsn(atomicEventType);
+                                mv.visitLdcInsn(siteId);
+                                emitAtomicRmwCheckCall(returnTypeChar);
+                            }
                         }
                         return;
                     } else {
@@ -676,6 +693,34 @@ public class SyncTransformer implements ClassFileTransformer {
             }
         }
 
+        // CAS: inject captured result without divergence check
+        private void emitAtomicInjectCall(char returnTypeChar) {
+            if (returnTypeChar == 'J' || returnTypeChar == 'D') {
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "injectAtomicCasLong",
+                        "(Ljava/lang/Object;III)J", false);
+            } else if (returnTypeChar == 'L' || returnTypeChar == '[') {
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "injectAtomicCasObj",
+                        "(Ljava/lang/Object;III)Ljava/lang/Object;", false);
+            } else {
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "injectAtomicCasInt",
+                        "(Ljava/lang/Object;III)I", false);
+            }
+        }
+
+        // RMW: execute + divergence check; (naturalValue, receiver, index, eventType, siteId) → naturalValue
+        private void emitAtomicRmwCheckCall(char returnTypeChar) {
+            if (returnTypeChar == 'J' || returnTypeChar == 'D') {
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkAtomicRmwLong",
+                        "(JLjava/lang/Object;III)J", false);
+            } else if (returnTypeChar == 'L' || returnTypeChar == '[') {
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkAtomicRmwObj",
+                        "(Ljava/lang/Object;Ljava/lang/Object;III)Ljava/lang/Object;", false);
+            } else {
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkAtomicRmwInt",
+                        "(ILjava/lang/Object;III)I", false);
+            }
+        }
+
         private boolean isBlockingCall(String owner, String name) {
             return (owner.equals("java/lang/Thread") && (name.equals("join") || name.equals("sleep"))) ||
                     (owner.equals("java/lang/Object") && name.equals("wait")) ||
@@ -698,7 +743,12 @@ public class SyncTransformer implements ClassFileTransformer {
                     name.equals("getAcquire") || name.equals("getReference") || name.equals("getStamp") ||
                     name.equals("isMarked"))
                 return 20; // ATOMIC_READ
-            // Everything else is read-modify-write
+            // CAS operations: outcome is non-deterministic by design (different schedules
+            // may produce different success/failure) — inject captured value during replay
+            if (name.startsWith("compareAndSet") || name.startsWith("compareAndExchange") ||
+                    name.startsWith("weakCompareAndSet"))
+                return 26; // ATOMIC_CAS
+            // Unconditional RMW (getAndAdd, getAndIncrement, getAndSet, updateAndGet, etc.)
             return 22; // ATOMIC_RMW
         }
 
@@ -805,6 +855,13 @@ public class SyncTransformer implements ClassFileTransformer {
                         mv.visitVarInsn(valStoreOp, resultLocal);
                         mv.visitVarInsn(Opcodes.ALOAD, ownerLocal);
                         mv.visitVarInsn(valLoadOp, resultLocal);
+                    }
+                    // checkFieldObj returns java/lang/Object; cast to concrete type before write.
+                    if (typeSuffix.equals("Obj") && !descriptor.equals("Ljava/lang/Object;")) {
+                        String castType = descriptor.startsWith("[")
+                                ? descriptor
+                                : descriptor.substring(1, descriptor.length() - 1);
+                        mv.visitTypeInsn(Opcodes.CHECKCAST, castType);
                     }
                     super.visitFieldInsn(opcode, owner, name, descriptor);
                     return;

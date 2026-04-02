@@ -52,6 +52,7 @@ public class BinarySchema {
         public static final int CLASS_INIT_BEGIN = 23;
         public static final int CLASS_INIT_END = 24;
         public static final int EXCEPTION_THROW = 25;
+        public static final int ATOMIC_CAS = 26;
     }
 
     public static class Flags {

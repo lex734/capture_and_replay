@@ -7,6 +7,7 @@ public class Main {
     static LinkedList<Integer> list = new LinkedList<>();
 
     public static void main(String[] args) throws Exception {
+        System.gc();
         for (int i = 1; i <= 5; i++) {
             list.add(i);
         }

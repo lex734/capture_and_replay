@@ -279,27 +279,58 @@ public class SyncTransformer implements ClassFileTransformer {
                 int siteId = SyncTransformer.registerSiteId(className + "." + methodName + "#" + instructionId++);
 
                 if (isReplay) {
+                    /**
+                     * REPLAY: execute the array access naturally to get the real element
+                     * value, then call checkArrayT(naturalValue, ...) for divergence
+                     * detection.  Writes do the same: pass the natural write-value, get
+                     * back the approved value (natural or trace), and store that.
+                     */
+                    Type elemType = isLongOp ? Type.LONG_TYPE
+                                  : isObjOp  ? Type.getType(Object.class)
+                                  : Type.INT_TYPE;
+                    int valStoreOp = isLongOp ? Opcodes.LSTORE : isObjOp ? Opcodes.ASTORE : Opcodes.ISTORE;
+                    int valLoadOp  = isLongOp ? Opcodes.LLOAD  : isObjOp ? Opcodes.ALOAD  : Opcodes.ILOAD;
+                    int idxLocal   = newLocal(Type.INT_TYPE);
+                    int arrLocal   = newLocal(Type.getType(Object.class));
+                    int valLocal   = newLocal(elemType);
+                    // New checkArray descriptor: (naturalValue, eventType, array, index, siteId)
+                    String checkDesc = "(" + valDesc + "ILjava/lang/Object;II)" + valDesc;
+
                     if (isLoad) {
                         // Stack: [array, index]
-                        // Push eventType then slide it under [array, index] so the call
-                        // sees (eventType, array, index, siteId) and consumes all four,
-                        // leaving just [returned_value] on the stack.
+                        mv.visitVarInsn(Opcodes.ISTORE, idxLocal);
+                        mv.visitVarInsn(Opcodes.ASTORE, arrLocal);
+                        mv.visitVarInsn(Opcodes.ALOAD,  arrLocal);
+                        mv.visitVarInsn(Opcodes.ILOAD,  idxLocal);
+                        super.visitInsn(opcode); // actual XALOAD → [naturalValue]
+                        mv.visitVarInsn(valStoreOp, valLocal);
+
+                        mv.visitVarInsn(valLoadOp, valLocal);
                         mv.visitLdcInsn(eventType);
-                        mv.visitInsn(Opcodes.DUP_X2);   // [eventType, array, index, eventType]
-                        mv.visitInsn(Opcodes.POP);       // [eventType, array, index]
+                        mv.visitVarInsn(Opcodes.ALOAD, arrLocal);
+                        mv.visitVarInsn(Opcodes.ILOAD, idxLocal);
                         mv.visitLdcInsn(siteId);
-                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkArray" + typeSuffix, "(ILjava/lang/Object;II)" + valDesc, false);
+                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkArray" + typeSuffix, checkDesc, false);
+                        // Stack: [result]
                     } else {
                         // Stack: [array, index, value]
-                        // Pop value; DUP2 keeps [array, index] for the actual store instruction.
-                        if (isLongOp) mv.visitInsn(Opcodes.POP2); else mv.visitInsn(Opcodes.POP);
-                        mv.visitInsn(Opcodes.DUP2);
+                        mv.visitVarInsn(valStoreOp, valLocal);
+                        mv.visitVarInsn(Opcodes.ISTORE, idxLocal);
+                        mv.visitVarInsn(Opcodes.ASTORE, arrLocal);
+
+                        mv.visitVarInsn(valLoadOp, valLocal);
                         mv.visitLdcInsn(eventType);
-                        mv.visitInsn(Opcodes.DUP_X2);
-                        mv.visitInsn(Opcodes.POP);
+                        mv.visitVarInsn(Opcodes.ALOAD, arrLocal);
+                        mv.visitVarInsn(Opcodes.ILOAD, idxLocal);
                         mv.visitLdcInsn(siteId);
-                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkArray" + typeSuffix, "(ILjava/lang/Object;II)" + valDesc, false);
-                        super.visitInsn(opcode);
+                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkArray" + typeSuffix, checkDesc, false);
+                        // Stack: [approvedValue]
+                        int resultLocal = newLocal(elemType);
+                        mv.visitVarInsn(valStoreOp, resultLocal);
+                        mv.visitVarInsn(Opcodes.ALOAD, arrLocal);
+                        mv.visitVarInsn(Opcodes.ILOAD, idxLocal);
+                        mv.visitVarInsn(valLoadOp, resultLocal);
+                        super.visitInsn(opcode); // actual XASTORE
                     }
                     return;
 
@@ -691,47 +722,102 @@ public class SyncTransformer implements ClassFileTransformer {
             int siteId = SyncTransformer.registerSiteId(className + "." + methodName + "#" + instructionId++);
 
             if (isReplay) {
-                /** REPLAY: checkFieldT(...) returns the value to be used **/
-                if (!isStatic) {
-                    if (opcode == Opcodes.PUTFIELD) {
-                        if (isWide) mv.visitInsn(Opcodes.POP2); else mv.visitInsn(Opcodes.POP);
-                        // DUP owner so checkField can take one copy as its param
-                        // and the original copy remains for the actual PUTFIELD below.
-                        mv.visitInsn(Opcodes.DUP);
+                /**
+                 * REPLAY: execute the field access naturally to get the real current value,
+                 * then call checkFieldT(naturalValue, ...) which compares it against the
+                 * trace.  If they match, the natural value is returned unchanged (no
+                 * injection).  If they diverge, the trace value is returned and injected.
+                 *
+                 * Writes: the computed value is NOT discarded; it is passed to checkField
+                 * so divergence can be detected, and the approved value (natural or trace)
+                 * is what gets written to the field.
+                 */
+                // Determine correct local-variable types for this field descriptor.
+                Type fieldType = Type.getType(descriptor);
+                int valStoreOp = fieldType.getOpcode(Opcodes.ISTORE);
+                int valLoadOp  = fieldType.getOpcode(Opcodes.ILOAD);
+                int valLocal   = newLocal(fieldType);
+
+                // New checkField descriptor: (naturalValue, eventType, owner, siteId, vol, stat, name, ownerName)
+                String checkDesc = "(" + retDesc + "ILjava/lang/Object;IZZLjava/lang/String;Ljava/lang/String;)" + retDesc;
+
+                if (opcode == Opcodes.GETFIELD || opcode == Opcodes.GETSTATIC) {
+                    // --- READ ---
+                    int ownerLocal = -1;
+                    if (!isStatic) {
+                        // Stack: [owner]
+                        ownerLocal = newLocal(Type.getType(Object.class));
+                        mv.visitVarInsn(Opcodes.ASTORE, ownerLocal); // save owner
+                        mv.visitVarInsn(Opcodes.ALOAD,  ownerLocal); // restore for GETFIELD
                     }
-                    // Stack: [owner] for GETFIELD, [owner, owner] for PUTFIELD
+                    // Emit actual read → [naturalValue]
+                    super.visitFieldInsn(opcode, owner, name, descriptor);
+                    mv.visitVarInsn(valStoreOp, valLocal); // save natural value
+
+                    // Build call: checkFieldXxx(naturalValue, eventType, owner, siteId, ...)
+                    mv.visitVarInsn(valLoadOp, valLocal);
+                    mv.visitLdcInsn(eventType);
+                    if (!isStatic) {
+                        mv.visitVarInsn(Opcodes.ALOAD, ownerLocal);
+                    } else {
+                        mv.visitInsn(Opcodes.ACONST_NULL);
+                    }
+                    mv.visitLdcInsn(siteId);
+                    mv.visitInsn(isVolatile ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
+                    mv.visitInsn(isStatic   ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
+                    mv.visitLdcInsn(name);
+                    mv.visitLdcInsn(owner);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkField" + typeSuffix,
+                            checkDesc, false);
+                    // Stack: [result] — natural value, or trace value if divergent.
+
                 } else {
-                    if (opcode == Opcodes.PUTSTATIC) {
-                        if (isWide) mv.visitInsn(Opcodes.POP2); else mv.visitInsn(Opcodes.POP);
+                    // --- WRITE (PUTFIELD / PUTSTATIC) ---
+                    // Stack: [owner, value] for PUTFIELD, [value] for PUTSTATIC
+                    mv.visitVarInsn(valStoreOp, valLocal); // save natural write-value
+
+                    int ownerLocal = -1;
+                    if (!isStatic) {
+                        ownerLocal = newLocal(Type.getType(Object.class));
+                        mv.visitVarInsn(Opcodes.ASTORE, ownerLocal); // save owner
                     }
-                    mv.visitInsn(Opcodes.ACONST_NULL); // owner is null for static
+
+                    // Call checkFieldXxx(naturalValue, eventType, owner, siteId, ...)
+                    mv.visitVarInsn(valLoadOp, valLocal);
+                    mv.visitLdcInsn(eventType);
+                    if (!isStatic) {
+                        mv.visitVarInsn(Opcodes.ALOAD, ownerLocal);
+                    } else {
+                        mv.visitInsn(Opcodes.ACONST_NULL);
+                    }
+                    mv.visitLdcInsn(siteId);
+                    mv.visitInsn(isVolatile ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
+                    mv.visitInsn(isStatic   ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
+                    mv.visitLdcInsn(name);
+                    mv.visitLdcInsn(owner);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkField" + typeSuffix,
+                            checkDesc, false);
+                    // Stack: [approvedValue] — write this to the field.
+
+                    if (!isStatic) {
+                        // Need [owner, approvedValue] for PUTFIELD.
+                        int resultLocal = newLocal(fieldType);
+                        mv.visitVarInsn(valStoreOp, resultLocal);
+                        mv.visitVarInsn(Opcodes.ALOAD, ownerLocal);
+                        mv.visitVarInsn(valLoadOp, resultLocal);
+                    }
+                    super.visitFieldInsn(opcode, owner, name, descriptor);
+                    return;
                 }
 
-                // Args: (int type, Object owner, int siteId, boolean vol, boolean stat, String name, String ownerName)
-                mv.visitLdcInsn(eventType);
-                mv.visitInsn(Opcodes.SWAP); // [type, owner]
-                mv.visitLdcInsn(siteId);
-                mv.visitInsn(isVolatile ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
-                mv.visitInsn(isStatic ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
-                mv.visitLdcInsn(name);
-                mv.visitLdcInsn(owner);
-
-                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkField" + typeSuffix,
-                        "(ILjava/lang/Object;IZZLjava/lang/String;Ljava/lang/String;)" + retDesc, false);
-
-                // checkFieldObj returns java/lang/Object; the JVM verifier requires the
-                // actual field type on the stack before any invokevirtual / putfield use.
+                // For reads: checkFieldObj returns java/lang/Object; cast to the concrete type.
                 if (typeSuffix.equals("Obj") && !descriptor.equals("Ljava/lang/Object;")) {
                     String castType = descriptor.startsWith("[")
                             ? descriptor
                             : descriptor.substring(1, descriptor.length() - 1);
                     mv.visitTypeInsn(Opcodes.CHECKCAST, castType);
                 }
-
-                if (opcode == Opcodes.PUTFIELD || opcode == Opcodes.PUTSTATIC) {
-                    super.visitFieldInsn(opcode, owner, name, descriptor);
-                }
-                return; 
+                return;
 
             } else {
                 /** LOGGING: logFieldT(value, ...) called BEFORE stores, AFTER loads **/

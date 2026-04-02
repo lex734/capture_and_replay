@@ -145,6 +145,20 @@ public class IdentityMapper {
     public static Object resolveByBirthId(int valueSiteId, int valueCount) {
         return idToObj.get(new BirthId(valueSiteId, valueCount));
     }
+
+    /**
+     * Registers a live replay object under a birth ID taken directly from the trace.
+     * Used when the trace references an object (e.g. System.out) that was never
+     * passed through registerAllocation or getBirthId during this replay run.
+     */
+    public static void registerByBirthId(int siteId, int count, Object obj) {
+        if (obj == null) return;
+        BirthId id = new BirthId(siteId, count);
+        synchronized (objToId) {
+            idToObj.putIfAbsent(id, obj);
+            objToId.putIfAbsent(obj, id);
+        }
+    }
     /** Looks up the roleId for a thread that has already been assigned one, or -1. */
     public static int getRoleId(long tid) {
         Integer preAssigned = preAssignedRoles.get(tid);

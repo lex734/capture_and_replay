@@ -178,16 +178,16 @@ public class ReplayCoordinator {
                 long eEpoch = eSeq >>> 32;
                 int eType = (int) expected[2];
 
-                // --- THE ACTIVE EPOCH GUARD ---
+                // --- EPOCH GUARD ---
+                // Only release events may advance releasedEpoch (they are the synchronisation
+                // boundary). Non-release events (MONITOR_ENTER, field reads, etc.) just wait
+                // until the release event that opened this epoch has been processed.
                 if (eEpoch > releasedEpoch.get()) {
-                    // Check if anyone actually "active" is still in a previous epoch
-                    if (!isAnyRoleBehind(eEpoch)) {
-                        // We are the leader or the only one left. Advance the timeline.
+                    if (isReleaseEvent(eType) && !isAnyRoleBehind(eEpoch)) {
+                        // This release event is the epoch leader — open the new epoch.
                         System.out.println("[Replay] Role " + roleId + " advancing Epoch to " + eEpoch + " for type " + (eType & 0xFF));
                         releasedEpoch.set(eEpoch);
-                        // Now that releasedEpoch == eEpoch, the loop continues to the match logic
                     } else {
-                        // A physical dependency exists. We MUST wait for the laggard.
                         try {
                             controlLock.wait(100);
                             continue;
@@ -212,105 +212,156 @@ public class ReplayCoordinator {
                     return;
                 }
 
-                // --- DIVERGENCE ---
+                // --- DIVERGENCE: consume, log, inject trace value, and continue ---
+                myQueue.poll();
                 System.err.println(String.format("[DIVERGENCE] Role %d at Epoch %d. Trace wants Type %d, Code did Type %d",
                                 roleId, eEpoch, eType & 0xFF, packedType & 0xFF));
-                throw new RuntimeException("Replay Divergence");
+                new RuntimeException("[DIVERGENCE] stack trace").printStackTrace(System.err);
+                lastMatchedSeq.set(eSeq);
+                if (isReleaseEvent(eType)) releasedEpoch.set(eEpoch);
+                controlLock.notifyAll();
+                return;
             }
         }
     }
 
-    public static int awaitTurnInt(int roleId, int packedType, int objSite, int objCount) {
+    public static int awaitTurnInt(int roleId, int packedType, int objSite, int objCount, int naturalValue) {
         activateRole(roleId);
         LinkedList<long[]> myQueue = roleQueues.get(roleId);
-        if (myQueue == null) return 0;
+        if (myQueue == null) return naturalValue;
 
         synchronized (controlLock) {
             while (true) {
                 long[] expected = myQueue.peek();
-                if (expected == null) return 0;
+                if (expected == null) return naturalValue;
 
                 long eSeq = expected[0];
                 long eEpoch = eSeq >>> 32;
+                int eType = (int) expected[2];
 
+                // Atomic reads are non-release: wait for the epoch but never advance it.
                 if (eEpoch > releasedEpoch.get()) {
-                    try { controlLock.wait(100); continue; } 
-                    catch (InterruptedException e) { return 0; }
+                    try { controlLock.wait(100); continue; }
+                    catch (InterruptedException e) { return naturalValue; }
                 }
 
                 if (packedType == (int) expected[2] && objSite == (int) expected[3] && objCount == (int) expected[4]) {
                     myQueue.poll();
-                    int returnValue = (int) expected[6]; // data2
-                    
+                    int traceValue = (int) expected[6];
                     lastMatchedSeq.set(eSeq);
                     if (isReleaseEvent(packedType)) releasedEpoch.set(eEpoch);
-                    
                     controlLock.notifyAll();
-                    return returnValue;
+                    if (naturalValue != traceValue) {
+                        System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnInt role=%d: natural=%d trace=%d",
+                                roleId, naturalValue, traceValue));
+                        return traceValue;
+                    }
+                    return naturalValue;
                 }
-                throw new RuntimeException("Divergence in awaitTurnInt for Role " + roleId);
+                // Type-level divergence: consume, log, inject trace value.
+                myQueue.poll();
+                System.err.println(String.format("[DIVERGENCE] awaitTurnInt Role %d at Epoch %d. Trace wants Type %d, Code did Type %d",
+                                roleId, eEpoch, eType & 0xFF, packedType & 0xFF));
+                new RuntimeException("[DIVERGENCE] stack trace").printStackTrace(System.err);
+                int divergedValue = (int) expected[6];
+                lastMatchedSeq.set(eSeq);
+                if (isReleaseEvent(eType)) releasedEpoch.set(eEpoch);
+                controlLock.notifyAll();
+                return divergedValue;
             }
         }
     }
 
-    public static long awaitTurnLong(int roleId, int packedType, int objSite, int objCount) {
+    public static long awaitTurnLong(int roleId, int packedType, int objSite, int objCount, long naturalValue) {
         activateRole(roleId);
         LinkedList<long[]> myQueue = roleQueues.get(roleId);
-        if (myQueue == null) return 0L;
+        if (myQueue == null) return naturalValue;
 
         synchronized (controlLock) {
             while (true) {
                 long[] expected = myQueue.peek();
-                if (expected == null) return 0L;
+                if (expected == null) return naturalValue;
 
-                if ((expected[0] >>> 32) > releasedEpoch.get()) {
-                    try { controlLock.wait(100); continue; } catch (Exception e) { return 0L; }
+                long eSeq = expected[0];
+                long eEpoch = eSeq >>> 32;
+                int eType = (int) expected[2];
+
+                if (eEpoch > releasedEpoch.get()) {
+                    try { controlLock.wait(100); continue; }
+                    catch (InterruptedException e) { return naturalValue; }
                 }
 
-                if (packedType == (int) expected[2] && objSite == (int) expected[3] && objCount == (int) expected[4]) {
+                if (packedType == eType && objSite == (int) expected[3] && objCount == (int) expected[4]) {
                     myQueue.poll();
-                    long high = (long) expected[5] << 32; // data1
-                    long low = expected[6] & 0xFFFFFFFFL; // data2
-                    long returnValue = high | low;
-
-                    lastMatchedSeq.set(expected[0]);
-                    if (isReleaseEvent(packedType)) releasedEpoch.set(expected[0] >>> 32);
-                    
+                    long traceValue = ((long) expected[5] << 32) | (expected[6] & 0xFFFFFFFFL);
+                    lastMatchedSeq.set(eSeq);
+                    if (isReleaseEvent(packedType)) releasedEpoch.set(eEpoch);
                     controlLock.notifyAll();
-                    return returnValue;
+                    if (naturalValue != traceValue) {
+                        System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnLong role=%d: natural=%d trace=%d",
+                                roleId, naturalValue, traceValue));
+                        return traceValue;
+                    }
+                    return naturalValue;
                 }
-                throw new RuntimeException("Divergence in awaitTurnLong for Role " + roleId);
+                myQueue.poll();
+                System.err.println(String.format("[DIVERGENCE] awaitTurnLong Role %d at Epoch %d. Trace wants Type %d, Code did Type %d",
+                                roleId, eEpoch, eType & 0xFF, packedType & 0xFF));
+                new RuntimeException("[DIVERGENCE] stack trace").printStackTrace(System.err);
+                long divergedValue = ((long) expected[5] << 32) | (expected[6] & 0xFFFFFFFFL);
+                lastMatchedSeq.set(eSeq);
+                if (isReleaseEvent(eType)) releasedEpoch.set(eEpoch);
+                controlLock.notifyAll();
+                return divergedValue;
             }
         }
     }
 
-    public static Object awaitTurnObj(int roleId, int packedType, int objSite, int objCount) {
+    public static Object awaitTurnObj(int roleId, int packedType, int objSite, int objCount, Object naturalValue) {
         activateRole(roleId);
         LinkedList<long[]> myQueue = roleQueues.get(roleId);
-        if (myQueue == null) return null;
+        if (myQueue == null) return naturalValue;
 
         synchronized (controlLock) {
             while (true) {
                 long[] expected = myQueue.peek();
-                if (expected == null) return null;
+                if (expected == null) return naturalValue;
 
-                if ((expected[0] >>> 32) > releasedEpoch.get()) {
-                    try { controlLock.wait(100); continue; } catch (Exception e) { return null; }
+                long eSeq = expected[0];
+                long eEpoch = eSeq >>> 32;
+                int eType = (int) expected[2];
+
+                if (eEpoch > releasedEpoch.get()) {
+                    try { controlLock.wait(100); continue; }
+                    catch (InterruptedException e) { return naturalValue; }
                 }
 
-                if (packedType == (int) expected[2] && objSite == (int) expected[3] && objCount == (int) expected[4]) {
+                if (packedType == eType && objSite == (int) expected[3] && objCount == (int) expected[4]) {
                     myQueue.poll();
-                    int valueSiteId = (int) expected[5];
-                    int valueCount = (int) expected[6];
-                    Object returnValue = IdentityMapper.resolveByBirthId(valueSiteId, valueCount);
-
-                    lastMatchedSeq.set(expected[0]);
-                    if (isReleaseEvent(packedType)) releasedEpoch.set(expected[0] >>> 32);
-                    
+                    Object traceValue = IdentityMapper.resolveByBirthId((int) expected[5], (int) expected[6]);
+                    lastMatchedSeq.set(eSeq);
+                    if (isReleaseEvent(packedType)) releasedEpoch.set(eEpoch);
                     controlLock.notifyAll();
-                    return returnValue;
+                    if (traceValue == null && naturalValue != null) {
+                        IdentityMapper.registerByBirthId((int) expected[5], (int) expected[6], naturalValue);
+                        return naturalValue;
+                    }
+                    if (naturalValue != traceValue) {
+                        System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnObj role=%d: natural=%s trace=%s",
+                                roleId, naturalValue, traceValue));
+                        return traceValue;
+                    }
+                    return naturalValue;
                 }
-                throw new RuntimeException("Divergence in awaitTurnObj for Role " + roleId);
+                myQueue.poll();
+                System.err.println(String.format("[DIVERGENCE] awaitTurnObj Role %d at Epoch %d. Trace wants Type %d, Code did Type %d",
+                                roleId, eEpoch, eType & 0xFF, packedType & 0xFF));
+                new RuntimeException("[DIVERGENCE] stack trace").printStackTrace(System.err);
+                Object divergedValue = IdentityMapper.resolveByBirthId((int) expected[5], (int) expected[6]);
+                lastMatchedSeq.set(eSeq);
+                if (isReleaseEvent(eType)) releasedEpoch.set(eEpoch);
+                controlLock.notifyAll();
+                return divergedValue;
             }
         }
     }
@@ -330,17 +381,17 @@ public class ReplayCoordinator {
                 long[] expected = myQueue.peek();
                 long eSeq = expected[0];
                 long eEpoch = eSeq >>> 32;
+                int eType = (int) expected[2];
 
-                // --- THE CORRECTED GUARD ---
+                // --- EPOCH GUARD ---
+                // Only release events may advance releasedEpoch. Field/array reads and
+                // writes follow thread-local sequence without cross-thread epoch blocking;
+                // they wait here only until the release event that opened this epoch fires.
                 if (eEpoch > releasedEpoch.get()) {
-                    // If I'm the only one active, or no other active role is still in a lower epoch,
-                    // I am allowed to 'Open' this new epoch.
-                    if (!isAnyRoleBehind(eEpoch)) {
+                    if (isReleaseEvent(eType) && !isAnyRoleBehind(eEpoch)) {
                         System.out.println("[Replay] Role " + roleId + " advancing global epoch to " + eEpoch);
                         releasedEpoch.set(eEpoch);
-                        // No 'continue' needed, just fall through to the match logic
                     } else {
-                        // Someone else is still working on Epoch 0. I MUST wait for them.
                         try {
                             controlLock.wait(100);
                             continue;
@@ -362,27 +413,57 @@ public class ReplayCoordinator {
                     return expected;
                 }
 
-                // DIVERGENCE CHECK...
-                throw new RuntimeException("Divergence at Role " + roleId);
+                // --- DIVERGENCE: consume, log, inject trace value, and continue ---
+                myQueue.poll();
+                System.err.println(String.format("[DIVERGENCE] doAwaitTurnValued Role %d at Epoch %d. Trace wants Type %d, Code did Type %d",
+                                roleId, eEpoch, (int) expected[2] & 0xFF, packedType & 0xFF));
+                new RuntimeException("[DIVERGENCE] stack trace").printStackTrace(System.err);
+                lastMatchedSeq.set(eSeq);
+                if (isReleaseEvent((int) expected[2])) releasedEpoch.set(eEpoch);
+                controlLock.notifyAll();
+                return expected;
             }
         }
     }
 
-    public static int awaitTurnFieldInt(int roleId, int packedType, int objSite, int objCount) {
+    public static int awaitTurnFieldInt(int roleId, int packedType, int objSite, int objCount, int naturalValue) {
         long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount);
-        return (ev == null) ? 0 : (int) ev[6]; // data2
+        if (ev == null) return naturalValue;
+        int traceValue = (int) ev[6];
+        if (naturalValue != traceValue) {
+            System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnFieldInt role=%d: natural=%d trace=%d",
+                    roleId, naturalValue, traceValue));
+            return traceValue;
+        }
+        return naturalValue;
     }
 
-    public static long awaitTurnFieldLong(int roleId, int packedType, int objSite, int objCount) {
+    public static long awaitTurnFieldLong(int roleId, int packedType, int objSite, int objCount, long naturalValue) {
         long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount);
-        if (ev == null) return 0L;
-        return ((long) ev[5] << 32) | (ev[6] & 0xFFFFFFFFL); // data1<<32 | data2
+        if (ev == null) return naturalValue;
+        long traceValue = ((long) ev[5] << 32) | (ev[6] & 0xFFFFFFFFL);
+        if (naturalValue != traceValue) {
+            System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnFieldLong role=%d: natural=%d trace=%d",
+                    roleId, naturalValue, traceValue));
+            return traceValue;
+        }
+        return naturalValue;
     }
 
-    public static Object awaitTurnFieldObj(int roleId, int packedType, int objSite, int objCount) {
+    public static Object awaitTurnFieldObj(int roleId, int packedType, int objSite, int objCount, Object naturalValue) {
         long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount);
-        if (ev == null) return null;
-        return IdentityMapper.resolveByBirthId((int) ev[5], (int) ev[6]); // data1=siteId, data2=count
+        if (ev == null) return naturalValue;
+        Object traceValue = IdentityMapper.resolveByBirthId((int) ev[5], (int) ev[6]);
+        if (traceValue == null && naturalValue != null) {
+            IdentityMapper.registerByBirthId((int) ev[5], (int) ev[6], naturalValue);
+            return naturalValue;
+        }
+        if (naturalValue != traceValue) {
+            System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnFieldObj role=%d: natural=%s trace=%s",
+                    roleId, naturalValue, traceValue));
+            return traceValue;
+        }
+        return naturalValue;
     }
 
     // ---- Value-returning array turn methods ----
@@ -390,25 +471,50 @@ public class ReplayCoordinator {
     //   packedType upper 16 bits = birthId.siteId
     //   objSite = birthId.count,  objCount = index
 
-    public static int awaitTurnArrayInt(int roleId, int packedType, int objSite, int objCount) {
+    public static int awaitTurnArrayInt(int roleId, int packedType, int objSite, int objCount, int naturalValue) {
         long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount);
-        return (ev == null) ? 0 : (int) ev[6];
+        if (ev == null) return naturalValue;
+        int traceValue = (int) ev[6];
+        if (naturalValue != traceValue) {
+            System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnArrayInt role=%d: natural=%d trace=%d",
+                    roleId, naturalValue, traceValue));
+            return traceValue;
+        }
+        return naturalValue;
     }
 
-    public static long awaitTurnArrayLong(int roleId, int packedType, int objSite, int objCount) {
+    public static long awaitTurnArrayLong(int roleId, int packedType, int objSite, int objCount, long naturalValue) {
         long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount);
-        if (ev == null) return 0L;
-        return ((long) ev[5] << 32) | (ev[6] & 0xFFFFFFFFL);
+        if (ev == null) return naturalValue;
+        long traceValue = ((long) ev[5] << 32) | (ev[6] & 0xFFFFFFFFL);
+        if (naturalValue != traceValue) {
+            System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnArrayLong role=%d: natural=%d trace=%d",
+                    roleId, naturalValue, traceValue));
+            return traceValue;
+        }
+        return naturalValue;
     }
 
-    public static Object awaitTurnArrayObj(int roleId, int packedType, int objSite, int objCount) {
+    public static Object awaitTurnArrayObj(int roleId, int packedType, int objSite, int objCount, Object naturalValue) {
         long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount);
-        if (ev == null) return null;
-        return IdentityMapper.resolveByBirthId((int) ev[5], (int) ev[6]);
+        if (ev == null) return naturalValue;
+        Object traceValue = IdentityMapper.resolveByBirthId((int) ev[5], (int) ev[6]);
+        if (traceValue == null && naturalValue != null) {
+            IdentityMapper.registerByBirthId((int) ev[5], (int) ev[6], naturalValue);
+            return naturalValue;
+        }
+        if (naturalValue != traceValue) {
+            System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnArrayObj role=%d: natural=%s trace=%s",
+                    roleId, naturalValue, traceValue));
+            return traceValue;
+        }
+        return naturalValue;
     }
 
     private static boolean isReleaseEvent(int packedType) {
         int eventType = packedType & 0xFF;
+        int flags = (packedType >> 8) & 0xFF;
+        boolean isVolatile = (flags & common.BinarySchema.Flags.IS_VOLATILE) != 0;
         return eventType == BinarySchema.Event.MONITOR_EXIT
                 || eventType == BinarySchema.Event.THREAD_START
                 || eventType == BinarySchema.Event.THREAD_NOTIFY
@@ -418,7 +524,8 @@ public class ReplayCoordinator {
                 || eventType == BinarySchema.Event.THREAD_WAKEUP
                 || eventType == BinarySchema.Event.CLASS_INIT_END
                 || eventType == BinarySchema.Event.ATOMIC_WRITE
-                || eventType == BinarySchema.Event.ATOMIC_RMW;
+                || eventType == BinarySchema.Event.ATOMIC_RMW
+                || (eventType == BinarySchema.Event.FIELD_WRITE && isVolatile);
     }
 
     private static boolean isAnyRoleBehind(long targetEpoch) {

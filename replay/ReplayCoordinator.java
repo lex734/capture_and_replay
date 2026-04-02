@@ -123,6 +123,17 @@ public class ReplayCoordinator {
         }
     }
 
+    /** Called by the UncaughtExceptionHandler when a replay thread dies early. */
+    public static void reportThreadDead(int roleId) {
+        activeRoles.remove(roleId);
+        startedRoles.remove(roleId);
+        pendingRoles.remove(roleId);
+        System.err.println("[Replay] role=" + roleId + " died (uncaught exception) — skipping its remaining events.");
+        synchronized (controlLock) {
+            controlLock.notifyAll();
+        }
+    }
+
     private static void activateRole(int roleId) {
         if (activeRoles.contains(roleId))
             return;

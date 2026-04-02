@@ -85,6 +85,28 @@ public class CaptureMonitor {
     }
   }
 
+  public static void logException(Object exception, int siteId) {
+    if (isInside.get()) return;
+    if (exception == null) return;
+    isInside.set(true);
+    try {
+      TraceLogger.logException(exception, siteId);
+    } finally {
+      isInside.set(false);
+    }
+  }
+
+  public static void logException(Object exception, int siteId) {
+    if (isInside.get()) return;
+    if (exception == null) return;
+    isInside.set(true);
+    try {
+      TraceLogger.logException(exception, siteId);
+    } finally {
+      isInside.set(false);
+    }
+  }
+
   public static void logArrayInt(int value, int eventType, Object array, int index, int siteId) {
     if (isInside.get() || array == null) return;
     isInside.set(true);

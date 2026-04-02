@@ -1,0 +1,20 @@
+[ReplayAgent] Initializing Enforcer...
+[IdentityMapper] All maps cleared for new trace.
+[ReplayCoordinator] Loaded and sorted 6 events.
+[ReplayCoordinator] Expecting roles: [1, 2, 3]
+[Replay] main thread registered as role=1
+[ReplayAgent] Loaded 1000000 events. Instrumentation active.
+[Replay] role=2 started, waiting to be scheduled.
+[PreRegister] role=2
+[CHECK-SYNC]  epoch=1 seq=1 role=1  THREAD_START             lock=Thread@2957fcb0  site=4
+[Replay] role=3 started, waiting to be scheduled.
+[PreRegister] role=3
+[Replay] role=2 active.
+[CHECK-SYNC]  epoch=2 seq=2 role=1  THREAD_START             lock=Thread@694f9431  site=5
+[CHECK-SYNC]  epoch=2 seq=1 role=2  THREAD_SLEEP             lock=null  site=10
+[Replay] role=3 active.
+[CHECK-FIELD] epoch=2 seq=1 role=3  READ  java/lang/System.out  fieldId=1
+Crashing Thread: About to divide by zero...
+[CHECK-SYNC]  epoch=3 seq=2 role=2  THREAD_WAKEUP            lock=null  site=11
+[CHECK-FIELD] epoch=3 seq=3 role=2  READ  java/lang/System.out  fieldId=1
+Safe Thread: I'm still running fine!

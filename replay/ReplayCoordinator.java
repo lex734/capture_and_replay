@@ -354,6 +354,18 @@ public class ReplayCoordinator {
     }
 
     public static Object awaitTurnObj(int roleId, int packedType, int objSite, int objCount) {
+        return awaitTurnObj(roleId, packedType, objSite, objCount, null);
+    }
+
+    /**
+     * Like awaitTurnObj, but executes {@code onMatch} within controlLock before
+     * advancing currentIdx. {@code onMatch} receives the post-op object resolved
+     * from data3/data4 so that RMW replay can write the correct post-op value back
+     * to the atomic cell without racing against the next thread's write.
+     * Returns the captured return value resolved from data1/data2.
+     */
+    public static Object awaitTurnObj(int roleId, int packedType, int objSite, int objCount,
+                                      java.util.function.Consumer<Object> onMatch) {
         controlLock.lock();
         try {
             Condition myTurn = conditionFor(roleId);
@@ -366,9 +378,16 @@ public class ReplayCoordinator {
                 if (roleId == (int) expected[1] && packedType == (int) expected[2]
                         && (int) expected[3] == objSite && (int) expected[4] == objCount) {
                     lastMatchedSeq.set(expected[0]);
-                    int valueSiteId = (int) expected[5];
-                    int valueCount = (int) expected[6];
+                    int valueSiteId = (int) expected[5]; // data1 = return value siteId
+                    int valueCount  = (int) expected[6]; // data2 = return value count
                     Object returnValue = IdentityMapper.resolveByBirthId(valueSiteId, valueCount);
+                    if (onMatch != null) {
+                        int postOpSiteId = (int) expected[7]; // data3
+                        int postOpCount  = (int) expected[8]; // data4
+                        Object postOpValue = IdentityMapper.resolveByBirthId(postOpSiteId, postOpCount);
+                        try { onMatch.accept(postOpValue); }
+                        catch (Exception e) { e.printStackTrace(); }
+                    }
                     currentIdx.incrementAndGet();
                     signalNext();
                     return returnValue;

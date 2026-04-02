@@ -981,7 +981,14 @@ public class ReplayMonitor {
                 objSite = receiverBirth.siteId;
                 objCount = receiverBirth.count;
             }
-            Object val = ReplayCoordinator.awaitTurnObj(roleId, packedType, objSite, objCount);
+            // For GET: await ordering then read directly from the atomic.
+            // IdentityMapper can't resolve untracked objects (string literals, etc.),
+            // but total-order guarantees all prior writes have already run, so
+            // receiver.get() returns exactly the captured value.
+            ReplayCoordinator.awaitTurnObj(roleId, packedType, objSite, objCount, null);
+            Object val = (index >= 0)
+                    ? ((java.util.concurrent.atomic.AtomicReferenceArray<?>) receiver).get(index)
+                    : ((java.util.concurrent.atomic.AtomicReference<?>) receiver).get();
             long seq = ReplayCoordinator.getLastMatchedSeq();
             System.out.println(String.format("[CHECK-ATOMIC] seq=%d role=%d  %-12s %s[%d] = %s  (read→replay)",
                     seq, roleId, getEventName(eventType),

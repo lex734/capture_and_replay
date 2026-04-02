@@ -6,6 +6,7 @@ import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
+// Uniquely identify objects that are on the heap across runs
 public class IdentityMapper {
     // --- ID Spaces ---
     // 0 is reserved for GLOBAL/STATIC scope

@@ -67,11 +67,11 @@ public class CaptureMonitor {
     }
   }
 
-  public static void logAtomicObj(Object objValue, Object receiver, int index, int eventType, int siteId) {
+  public static void logAtomicObj(Object objValue, Object postOpValue, Object receiver, int index, int eventType, int siteId) {
     if (isInside.get()) return;
     isInside.set(true);
     try {
-      TraceLogger.logAtomicObj(objValue, receiver, index, eventType, siteId);
+      TraceLogger.logAtomicObj(objValue, postOpValue, receiver, index, eventType, siteId);
     } finally {
       isInside.set(false);
     }
@@ -149,11 +149,20 @@ public class CaptureMonitor {
     }
   }
 
-  public static void endAtomicCaptureObj(Object value, Object receiver, int index, int eventType, int siteId) {
+  public static void endAtomicCaptureObj(Object returnValue, Object receiver, int index, int eventType, int siteId) {
     try {
       isInside.set(true);
-      try { TraceLogger.logAtomicObj(value, receiver, index, eventType, siteId); }
-      finally { isInside.set(false); }
+      try { 
+        Object postOpValue = returnValue;
+        if (eventType == common.BinarySchema.Event.ATOMIC_RMW) {
+          if (index >= 0) {
+            postOpValue = ((java.util.concurrent.atomic.AtomicReferenceArray<?>) receiver).get(index);
+          } else {
+            postOpValue = ((java.util.concurrent.atomic.AtomicReference<?>) receiver).get();
+          }
+        }
+        TraceLogger.logAtomicObj(returnValue, postOpValue, receiver, index, eventType, siteId);
+      } finally { isInside.set(false); }
     } finally {
       captureOrderLock.unlock();
     }

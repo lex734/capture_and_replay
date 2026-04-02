@@ -221,13 +221,14 @@ public class TraceLogger {
      * Array atomics: stores index + value's BirthId.siteId.
      * Scalar atomics: stores receiver BirthId + value's BirthId.siteId.
      */
-    public static void logAtomicObj(Object objValue, Object receiver, int index, int eventType, int currentSiteId) {
+    public static void logAtomicObj(Object objValue, Object postOpValue, Object receiver, int index, int eventType, int currentSiteId) {
         long tid = Thread.currentThread().threadId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         if (roleId == -1) return;
 
         BirthId receiverBirth = IdentityMapper.getBirthId(receiver, null, currentSiteId);
         BirthId valueBirth = IdentityMapper.getBirthId(objValue, null, currentSiteId);
+        BirthId postOpValueBirth = IdentityMapper.getBirthId(postOpValue, null, currentSiteId);
         boolean isArray = (index >= 0);
 
         long seq = nextSeq();
@@ -251,11 +252,11 @@ public class TraceLogger {
         if (isArray) {
             int packedType = packAtomicArrayType(eventType, receiverBirth.siteId);
             BinarySchema.write(seq, (long) roleId, packedType, receiverBirth.count, index, valueBirth.siteId,
-                    valueBirth.count);
+                    valueBirth.count, postOpValueBirth.siteId, postOpValueBirth.count);
         } else {
             int packedType = BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
             BinarySchema.write(seq, (long) roleId, packedType, receiverBirth.siteId, receiverBirth.count,
-                    valueBirth.siteId, valueBirth.count);
+                    valueBirth.siteId, valueBirth.count, postOpValueBirth.siteId, postOpValueBirth.count);
         }
     }
 

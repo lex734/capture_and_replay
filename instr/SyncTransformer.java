@@ -678,6 +678,7 @@ public class SyncTransformer implements ClassFileTransformer {
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkAtomicLong",
                         "(JLjava/lang/Object;III)V", false);
             } else if (sort == Type.OBJECT || sort == Type.ARRAY) {
+                // unpack the BirthId from the trace to the actual object reference for the check call
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkAtomicObj",
                         "(Ljava/lang/Object;Ljava/lang/Object;III)V", false);
             } else {

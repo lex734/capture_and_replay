@@ -1,6 +1,9 @@
+common/IdentityMapper$BirthId$Heap.class
+common/IdentityMapper.class
 common/BinarySchema.class
 common/TraceLogger.class
+common/IdentityMapper$BirthId$PoolString.class
+common/IdentityTest.class
 common/BinarySchema$Flags.class
 common/BinarySchema$Event.class
 common/IdentityMapper$BirthId.class
-common/IdentityMapper.class

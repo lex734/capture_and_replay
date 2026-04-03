@@ -38,6 +38,6 @@ public class Main {
         t2.join();
 
         System.out.println("[App] Done.");
-        System.out.println("Final value of x: " + x.get());
+        System.out.println("Final value of x: " + x);
     }
 }

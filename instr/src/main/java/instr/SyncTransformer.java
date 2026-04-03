@@ -221,6 +221,43 @@ public class SyncTransformer implements ClassFileTransformer {
                     "(Ljava/lang/Object;I)V", false);
         }
 
+        @Override
+        public void visitLdcInsn(Object value) {
+            super.visitLdcInsn(value);
+            if (value instanceof String) {
+                // String literals are JVM-interned: one canonical object per unique value.
+                // Use the string content as the site key so the same literal gets the
+                // same BirthId.PoolString across capture and replay regardless of class-load order.
+                // Heap strings constructed via `new String(...)` are a distinct bytecode
+                // path (NEW + INVOKESPECIAL) and are handled by visitTypeInsn /
+                // visitMethodInsn with a position-based BirthId.Heap, not here.
+                String siteKey = "ldc:string:" + value;
+                int siteId = SyncTransformer.registerSiteId(siteKey);
+                mv.visitInsn(Opcodes.DUP);
+                mv.visitLdcInsn(siteId);
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, "common/IdentityMapper", "registerPoolString",
+                        "(Ljava/lang/String;I)V", false);
+            }
+        }
+
+        @Override
+        public void visitInvokeDynamicInsn(String name, String descriptor, Handle bsm, Object... bsmArgs) {
+            super.visitInvokeDynamicInsn(name, descriptor, bsm, bsmArgs);
+            // Register lambda/method-reference instances created by LambdaMetafactory.
+            // Stateless lambdas are JVM-cached singletons; registerAllocation is idempotent
+            // so repeated calls for the same object are safe.
+            // Capturing lambdas create a new instance per call; the site counter tracks
+            // each instance just like regular NEW allocations.
+            if (bsm.getOwner().equals("java/lang/invoke/LambdaMetafactory")) {
+                String allocSite = className + "." + methodName + "#lambda_" + instructionId++;
+                int siteId = SyncTransformer.registerSiteId(allocSite);
+                mv.visitInsn(Opcodes.DUP);
+                mv.visitLdcInsn(siteId);
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, "common/IdentityMapper", "registerAllocation",
+                        "(Ljava/lang/Object;I)V", false);
+            }
+        }
+
         private static boolean isAtomicArrayClass(String owner) {
             return owner.equals("java/util/concurrent/atomic/AtomicIntegerArray")
                     || owner.equals("java/util/concurrent/atomic/AtomicLongArray")

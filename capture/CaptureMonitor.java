@@ -116,7 +116,8 @@ public class CaptureMonitor {
         // (e.g. getAndIncrement returns old; cell holds old+1).  Read the cell now,
         // while captureOrderLock is still held, so no other thread can change it.
         int postOpValue = returnValue;
-        if (eventType == common.BinarySchema.Event.ATOMIC_RMW) {
+        if (eventType == common.BinarySchema.Event.ATOMIC_RMW
+                || eventType == common.BinarySchema.Event.ATOMIC_CAS) {
           if (index >= 0) {
             postOpValue = ((java.util.concurrent.atomic.AtomicIntegerArray) receiver).get(index);
           } else {
@@ -135,7 +136,8 @@ public class CaptureMonitor {
       isInside.set(true);
       try { 
         long postOpValue = returnValue;
-        if (eventType == common.BinarySchema.Event.ATOMIC_RMW) {
+        if (eventType == common.BinarySchema.Event.ATOMIC_RMW
+                || eventType == common.BinarySchema.Event.ATOMIC_CAS) {
           if (index >= 0) {
             postOpValue = ((java.util.concurrent.atomic.AtomicLongArray) receiver).get(index);
           } else {
@@ -154,7 +156,8 @@ public class CaptureMonitor {
       isInside.set(true);
       try { 
         Object postOpValue = returnValue;
-        if (eventType == common.BinarySchema.Event.ATOMIC_RMW) {
+        if (eventType == common.BinarySchema.Event.ATOMIC_RMW
+                || eventType == common.BinarySchema.Event.ATOMIC_CAS) {
           if (index >= 0) {
             postOpValue = ((java.util.concurrent.atomic.AtomicReferenceArray<?>) receiver).get(index);
           } else {

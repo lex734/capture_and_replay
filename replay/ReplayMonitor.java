@@ -773,10 +773,23 @@ public class ReplayMonitor {
     }
 
     // ---- Atomic operations ----
-    // Scalar: stored (birthId.siteId, birthId.count, intValue) → awaitTurn arg1=birthId.siteId, arg2=intValue... 
-    // BUT wait — for int, stored fields 3,4,5 are: birthId.siteId, birthId.count, intValue
-    // awaitTurn only takes 2 value args, so it can only check intValue in arg2
-    public static void checkAtomicInt(int writtenValue, Object receiver, int index, int eventType, int currentSiteId) {
+    //
+    // Non-CAS atomics (READ, WRITE, RMW): execute natively within controlLock.
+    // Total order guarantees that by the time a thread's turn arrives all prior
+    // atomic writes have already committed, so the native result is identical to
+    // the captured one — no value injection needed.
+    //
+    // CAS (ATOMIC_CAS): the boolean/witness return drives control flow, and
+    // object-identity differences between runs can cause a reference CAS to fail
+    // spuriously.  We therefore inject the captured result and force-set the
+    // post-op cell state, mirroring the existing RMW write-back mechanism.
+
+    /**
+     * Waits for this thread's turn in the total order and acquires controlLock,
+     * keeping it held so the caller's native atomic call runs atomically with the
+     * ordering step.  Must be paired with {@link #endAtomicReplay()}.
+     */
+    public static void beginAtomicReplay(Object receiver, int index, int eventType, int currentSiteId) {
         if (isInside.get()) return;
         isInside.set(true);
         try {
@@ -796,100 +809,26 @@ public class ReplayMonitor {
                 objSite = receiverBirth.siteId;
                 objCount = receiverBirth.count;
             }
-            // Pass the write as onMatch so it executes within controlLock before
-            // currentIdx advances — prevents another thread from processing its write
-            // event (possibly to the same index) before this write lands.
-            // ReplayMonitor is excluded from instrumentation, so the set() call goes
-            // directly to the JDK without being re-intercepted.
-            final boolean isArrayFinal = isArray;
-            ReplayCoordinator.awaitTurn(roleId, packedType, objSite, objCount, writtenValue,
-                isArrayFinal
-                    ? () -> ((java.util.concurrent.atomic.AtomicIntegerArray) receiver).set(index, writtenValue)
-                    : () -> ((java.util.concurrent.atomic.AtomicInteger) receiver).set(writtenValue));
-            long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format("[CHECK-ATOMIC] seq=%d role=%d  %-12s %s[%d] = %d  (write)",
-                    seq, roleId, getEventName(eventType),
-                    receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
-                    index, writtenValue));
+            ReplayCoordinator.beginAtomicReplay(roleId, packedType, objSite, objCount);
+            // controlLock is now held — endAtomicReplay() will advance + release
         } finally {
-            isInside.set(false);
+            isInside.set(false); // clear before returning so native call proceeds normally
         }
     }
 
-    public static void checkAtomicLong(long writtenValue, Object receiver, int index, int eventType, int currentSiteId) {
-        if (isInside.get()) return;
-        isInside.set(true);
-        try {
-            long tid = Thread.currentThread().threadId();
-            int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-            if (roleId == -1) return;
-
-            BirthId receiverBirth = IdentityMapper.getBirthId(receiver, null, currentSiteId);
-            boolean isArray = (index >= 0);
-            int packedType, objSite, objCount;
-            if (isArray) {
-                packedType = (eventType & 0xFF) | (BinarySchema.Flags.IS_ARRAY_ATOMIC << 8) | ((receiverBirth.siteId & 0xFFFF) << 16);
-                objSite = receiverBirth.count;
-                objCount = index;
-            } else {
-                packedType = BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
-                objSite = receiverBirth.siteId;
-                objCount = receiverBirth.count;
-            }
-            final boolean isArrayFinal = isArray;
-            ReplayCoordinator.awaitTurn(roleId, packedType, objSite, objCount, (int) writtenValue,
-                isArrayFinal
-                    ? () -> ((java.util.concurrent.atomic.AtomicLongArray) receiver).set(index, writtenValue)
-                    : () -> ((java.util.concurrent.atomic.AtomicLong) receiver).set(writtenValue));
-            long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format("[CHECK-ATOMIC] seq=%d role=%d  %-12s %s[%d] = %dL  (write)",
-                    seq, roleId, getEventName(eventType),
-                    receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
-                    index, writtenValue));
-        } finally {
-            isInside.set(false);
-        }
+    /**
+     * Advances the total-order index and releases controlLock.
+     * Must be called once after every successful beginAtomicReplay() call.
+     */
+    public static void endAtomicReplay() {
+        ReplayCoordinator.endAtomicReplay();
     }
 
-    @SuppressWarnings("unchecked")
-    public static void checkAtomicObj(Object writtenValue, Object receiver, int index, int eventType, int currentSiteId) {
-        if (isInside.get()) return;
-        isInside.set(true);
-        try {
-            long tid = Thread.currentThread().threadId();
-            int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-            if (roleId == -1) return;
+    // ---- CAS injection ----
+    // CAS operations need result injection: the captured boolean/witness is returned
+    // and the post-op cell state is force-set so subsequent reads see the correct value.
 
-            BirthId receiverBirth = IdentityMapper.getBirthId(receiver, null, currentSiteId);
-            boolean isArray = (index >= 0);
-            int packedType, objSite, objCount;
-            if (isArray) {
-                packedType = (eventType & 0xFF) | (BinarySchema.Flags.IS_ARRAY_ATOMIC << 8) | ((receiverBirth.siteId & 0xFFFF) << 16);
-                objSite = receiverBirth.count;
-                objCount = index;
-            } else {
-                packedType = BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
-                objSite = receiverBirth.siteId;
-                objCount = receiverBirth.count;
-            }
-            BirthId valueBirth = IdentityMapper.getBirthId(writtenValue, null, currentSiteId);
-            final boolean isArrayFinal = isArray;
-            ReplayCoordinator.awaitTurn(roleId, packedType, objSite, objCount, valueBirth.siteId,
-                isArrayFinal
-                    ? () -> ((java.util.concurrent.atomic.AtomicReferenceArray<Object>) receiver).set(index, writtenValue)
-                    : () -> ((java.util.concurrent.atomic.AtomicReference<Object>) receiver).set(writtenValue));
-            long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format("[CHECK-ATOMIC] seq=%d role=%d  %-12s %s[%d] = %s  (write)",
-                    seq, roleId, getEventName(eventType),
-                    receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
-                    index,
-                    writtenValue != null ? writtenValue.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(writtenValue)) : "null"));
-        } finally {
-            isInside.set(false);
-        }
-    }
-
-    public static int checkAtomicInt(Object receiver, int index, int eventType, int currentSiteId) {
+    public static int checkAtomicCasInt(Object receiver, int index, int currentSiteId) {
         if (isInside.get()) return 0;
         isInside.set(true);
         try {
@@ -900,29 +839,26 @@ public class ReplayMonitor {
             final boolean isArray = (index >= 0);
             int packedType, objSite, objCount;
             if (isArray) {
-                packedType = (eventType & 0xFF) | (BinarySchema.Flags.IS_ARRAY_ATOMIC << 8) | ((receiverBirth.siteId & 0xFFFF) << 16);
+                packedType = (BinarySchema.Event.ATOMIC_CAS & 0xFF) | (BinarySchema.Flags.IS_ARRAY_ATOMIC << 8) | ((receiverBirth.siteId & 0xFFFF) << 16);
                 objSite = receiverBirth.count;
                 objCount = index;
             } else {
-                packedType = BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
+                packedType = BinarySchema.packType(BinarySchema.Event.ATOMIC_CAS, BinarySchema.Flags.NONE);
                 objSite = receiverBirth.siteId;
                 objCount = receiverBirth.count;
             }
-            // For RMW, write the captured post-op value back to the atomic within the
-            // coordination lock (onMatch), so no subsequent write from another thread
-            // can interleave between the ordering step and the actual state update.
-            java.util.function.IntConsumer writeBack = (eventType == BinarySchema.Event.ATOMIC_RMW)
-                    ? (postOpValue -> {
-                           if (isArray)
-                               ((java.util.concurrent.atomic.AtomicIntegerArray) receiver).set(index, postOpValue);
-                           else
-                               ((java.util.concurrent.atomic.AtomicInteger) receiver).set(postOpValue);
-                       })
-                    : null;
+            // Force-set the post-op cell value within controlLock so no racing write
+            // can interleave between the ordering step and the state update.
+            java.util.function.IntConsumer writeBack = postOpValue -> {
+                if (isArray)
+                    ((java.util.concurrent.atomic.AtomicIntegerArray) receiver).set(index, postOpValue);
+                else
+                    ((java.util.concurrent.atomic.AtomicInteger) receiver).set(postOpValue);
+            };
             int val = ReplayCoordinator.awaitTurnInt(roleId, packedType, objSite, objCount, writeBack);
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format("[CHECK-ATOMIC] seq=%d role=%d  %-12s %s[%d] = %d  (read→replay)",
-                    seq, roleId, getEventName(eventType),
+            System.out.println(String.format("[CHECK-ATOMIC] seq=%d role=%d  ATOMIC_CAS     %s[%d] = %d  (inject)",
+                    seq, roleId,
                     receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
                     index, val));
             return val;
@@ -931,7 +867,7 @@ public class ReplayMonitor {
         }
     }
 
-    public static long checkAtomicLong(Object receiver, int index, int eventType, int currentSiteId) {
+    public static long checkAtomicCasLong(Object receiver, int index, int currentSiteId) {
         if (isInside.get()) return 0L;
         isInside.set(true);
         try {
@@ -939,21 +875,30 @@ public class ReplayMonitor {
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
 
             BirthId receiverBirth = IdentityMapper.getBirthId(receiver, null, currentSiteId);
-            boolean isArray = (index >= 0);
+            final boolean isArray = (index >= 0);
             int packedType, objSite, objCount;
             if (isArray) {
-                packedType = (eventType & 0xFF) | (BinarySchema.Flags.IS_ARRAY_ATOMIC << 8) | ((receiverBirth.siteId & 0xFFFF) << 16);
+                packedType = (BinarySchema.Event.ATOMIC_CAS & 0xFF) | (BinarySchema.Flags.IS_ARRAY_ATOMIC << 8) | ((receiverBirth.siteId & 0xFFFF) << 16);
                 objSite = receiverBirth.count;
                 objCount = index;
             } else {
-                packedType = BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
+                packedType = BinarySchema.packType(BinarySchema.Event.ATOMIC_CAS, BinarySchema.Flags.NONE);
                 objSite = receiverBirth.siteId;
                 objCount = receiverBirth.count;
             }
-            long val = ReplayCoordinator.awaitTurnLong(roleId, packedType, objSite, objCount);
+            // Force-set the post-op cell value (data3/data4) within controlLock,
+            // then return the captured return value (data1/data2).
+            final boolean isArrayFinal = isArray;
+            java.util.function.LongConsumer writeBack = postOpValue -> {
+                if (isArrayFinal)
+                    ((java.util.concurrent.atomic.AtomicLongArray) receiver).set(index, postOpValue);
+                else
+                    ((java.util.concurrent.atomic.AtomicLong) receiver).set(postOpValue);
+            };
+            long val = ReplayCoordinator.awaitTurnLong(roleId, packedType, objSite, objCount, writeBack);
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format("[CHECK-ATOMIC] seq=%d role=%d  %-12s %s[%d] = %dL  (read→replay)",
-                    seq, roleId, getEventName(eventType),
+            System.out.println(String.format("[CHECK-ATOMIC] seq=%d role=%d  ATOMIC_CAS     %s[%d] = %dL  (inject)",
+                    seq, roleId,
                     receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
                     index, val));
             return val;
@@ -962,7 +907,8 @@ public class ReplayMonitor {
         }
     }
 
-    public static Object checkAtomicObj(Object receiver, int index, int eventType, int currentSiteId) {
+    @SuppressWarnings("unchecked")
+    public static Object checkAtomicCasObj(Object receiver, int index, int currentSiteId) {
         if (isInside.get()) return null;
         isInside.set(true);
         try {
@@ -970,28 +916,28 @@ public class ReplayMonitor {
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
 
             BirthId receiverBirth = IdentityMapper.getBirthId(receiver, null, currentSiteId);
-            boolean isArray = (index >= 0);
+            final boolean isArray = (index >= 0);
             int packedType, objSite, objCount;
             if (isArray) {
-                packedType = (eventType & 0xFF) | (BinarySchema.Flags.IS_ARRAY_ATOMIC << 8) | ((receiverBirth.siteId & 0xFFFF) << 16);
+                packedType = (BinarySchema.Event.ATOMIC_CAS & 0xFF) | (BinarySchema.Flags.IS_ARRAY_ATOMIC << 8) | ((receiverBirth.siteId & 0xFFFF) << 16);
                 objSite = receiverBirth.count;
                 objCount = index;
             } else {
-                packedType = BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
+                packedType = BinarySchema.packType(BinarySchema.Event.ATOMIC_CAS, BinarySchema.Flags.NONE);
                 objSite = receiverBirth.siteId;
                 objCount = receiverBirth.count;
             }
-            // For GET: await ordering then read directly from the atomic.
-            // IdentityMapper can't resolve untracked objects (string literals, etc.),
-            // but total-order guarantees all prior writes have already run, so
-            // receiver.get() returns exactly the captured value.
-            ReplayCoordinator.awaitTurnObj(roleId, packedType, objSite, objCount, null);
-            Object val = (index >= 0)
-                    ? ((java.util.concurrent.atomic.AtomicReferenceArray<?>) receiver).get(index)
-                    : ((java.util.concurrent.atomic.AtomicReference<?>) receiver).get();
+            // Force-set post-op cell value within controlLock, return captured witness.
+            java.util.function.Consumer<Object> writeBack = postOpValue -> {
+                if (isArray)
+                    ((java.util.concurrent.atomic.AtomicReferenceArray<Object>) receiver).set(index, postOpValue);
+                else
+                    ((java.util.concurrent.atomic.AtomicReference<Object>) receiver).set(postOpValue);
+            };
+            Object val = ReplayCoordinator.awaitTurnObj(roleId, packedType, objSite, objCount, writeBack);
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format("[CHECK-ATOMIC] seq=%d role=%d  %-12s %s[%d] = %s  (read→replay)",
-                    seq, roleId, getEventName(eventType),
+            System.out.println(String.format("[CHECK-ATOMIC] seq=%d role=%d  ATOMIC_CAS     %s[%d] = %s  (inject)",
+                    seq, roleId,
                     receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
                     index,
                     val != null ? val.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(val)) : "null"));
@@ -1061,6 +1007,7 @@ public class ReplayMonitor {
             case BinarySchema.Event.ATOMIC_READ:          return "ATOMIC_READ";
             case BinarySchema.Event.ATOMIC_WRITE:         return "ATOMIC_WRITE";
             case BinarySchema.Event.ATOMIC_RMW:           return "ATOMIC_RMW";
+            case BinarySchema.Event.ATOMIC_CAS:           return "ATOMIC_CAS";
             case BinarySchema.Event.CLASS_INIT_BEGIN:     return "CLASS_INIT_BEGIN";
             case BinarySchema.Event.CLASS_INIT_END:       return "CLASS_INIT_END";
             case BinarySchema.Event.EXCEPTION_THROW:      return "EXCEPTION_THROW";

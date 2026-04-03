@@ -322,6 +322,17 @@ public class ReplayCoordinator {
     }
 
     public static long awaitTurnLong(int roleId, int packedType, int objSite, int objCount) {
+        return awaitTurnLong(roleId, packedType, objSite, objCount, null);
+    }
+
+    /**
+     * Like awaitTurnLong, but executes {@code onMatch} within controlLock before
+     * advancing currentIdx.  {@code onMatch} receives data3/data4 reassembled as
+     * the post-operation cell value so that CAS replay can write the correct
+     * post-op value back to the atomic cell.  Returns data1/data2 (return value).
+     */
+    public static long awaitTurnLong(int roleId, int packedType, int objSite, int objCount,
+                                     java.util.function.LongConsumer onMatch) {
         controlLock.lock();
         try {
             Condition myTurn = conditionFor(roleId);
@@ -334,9 +345,12 @@ public class ReplayCoordinator {
                 if (roleId == (int) expected[1] && packedType == (int) expected[2]
                         && (int) expected[3] == objSite && (int) expected[4] == objCount) {
                     lastMatchedSeq.set(expected[0]);
-                    long high = (long) expected[5] << 32;
-                    long low = expected[6] & 0xFFFFFFFFL;
-                    long returnValue = high | low;
+                    long returnValue = ((long) expected[5] << 32) | (expected[6] & 0xFFFFFFFFL);
+                    if (onMatch != null) {
+                        long postOpValue = ((long) expected[7] << 32) | (expected[8] & 0xFFFFFFFFL);
+                        try { onMatch.accept(postOpValue); }
+                        catch (Exception e) { e.printStackTrace(); }
+                    }
                     currentIdx.incrementAndGet();
                     signalNext();
                     return returnValue;
@@ -348,6 +362,77 @@ public class ReplayCoordinator {
                     return 0L;
                 }
             }
+        } finally {
+            controlLock.unlock();
+        }
+    }
+
+    /**
+     * Acquires controlLock and waits for this thread's turn, keeping the lock
+     * held so the caller can execute the native atomic call atomically with the
+     * ordering step.  Must be paired with a call to {@link #endAtomicReplay()}.
+     * <p>
+     * Mirrors the capture-side beginAtomicCapture/endAtomicCapture* pattern.
+     * The lock is intentionally NOT released on normal return; it is released
+     * inside endAtomicReplay().  On an unexpected exception the lock is released
+     * before propagating so the coordinator does not deadlock.
+     */
+    public static void beginAtomicReplay(int roleId, int packedType, int objSite, int objCount) {
+        controlLock.lock();
+        try {
+            activateRole(roleId);
+            Condition myTurn = conditionFor(roleId);
+            while (true) {
+                long idx = currentIdx.get();
+                if (idx >= totalEvents)
+                    return; // trace exhausted — proceed without ordering
+                long[] expected = sortedEvents[(int) idx];
+                int expectedRole = (int) expected[1];
+                int expectedType = (int) expected[2];
+
+                if (pendingRoles.contains(expectedRole)) {
+                    System.err.println("[Replay DEADLOCK] Role=" + expectedRole + " never started.");
+                    currentIdx.incrementAndGet();
+                    signalNext();
+                    continue;
+                }
+                if (startedRoles.contains(expectedRole)) {
+                    try { anyChange.await(10, TimeUnit.MILLISECONDS); }
+                    catch (InterruptedException e) { Thread.currentThread().interrupt(); return; }
+                    continue;
+                }
+                if (!activeRoles.contains(expectedRole)) {
+                    System.err.println("[Replay] role=" + expectedRole + " is dead, skipping event at idx=" + idx);
+                    currentIdx.incrementAndGet();
+                    signalNext();
+                    continue;
+                }
+                if (roleId == expectedRole && packedType == expectedType
+                        && (int) expected[3] == objSite && (int) expected[4] == objCount) {
+                    lastMatchedSeq.set(expected[0]);
+                    return; // matched — lock still held, endAtomicReplay() will advance + release
+                }
+                System.err.println(String.format("[WAIT]  idx=%-4d expects role=%d type=%d  got role=%d type=%d",
+                        idx, expectedRole, expectedType & 0xFF, roleId, packedType & 0xFF));
+                try { myTurn.await(); }
+                catch (InterruptedException e) { Thread.currentThread().interrupt(); return; }
+            }
+        } catch (RuntimeException | Error e) {
+            controlLock.unlock(); // release on unexpected exception to avoid deadlock
+            throw e;
+        }
+        // Lock is intentionally still held on normal return
+    }
+
+    /**
+     * Advances the total-order index and releases the controlLock acquired by
+     * {@link #beginAtomicReplay}.  Must be called exactly once per
+     * beginAtomicReplay() call.
+     */
+    public static void endAtomicReplay() {
+        try {
+            currentIdx.incrementAndGet();
+            signalNext();
         } finally {
             controlLock.unlock();
         }

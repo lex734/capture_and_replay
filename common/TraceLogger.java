@@ -316,6 +316,8 @@ public class TraceLogger {
                 return "ATOMIC_WRITE";
             case BinarySchema.Event.ATOMIC_RMW:
                 return "ATOMIC_RMW";
+            case BinarySchema.Event.ATOMIC_CAS:
+                return "ATOMIC_CAS";
             case BinarySchema.Event.CLASS_INIT_BEGIN:
                 return "CLASS_INIT_BEGIN";
             case BinarySchema.Event.CLASS_INIT_END:

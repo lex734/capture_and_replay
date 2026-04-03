@@ -546,22 +546,23 @@ public class SyncTransformer implements ClassFileTransformer {
                     mv.visitVarInsn(Opcodes.ASTORE, receiverSlot);
 
                     if (isReplay) {
-                        if (returnTypeChar == 'V') {
-                            int valueArgIdx = argTypes.length - 1;
-                            Type valueType = argTypes[valueArgIdx];
-
-                            mv.visitVarInsn(valueType.getOpcode(Opcodes.ILOAD), argSlots[valueArgIdx]);
+                        if (atomicEventType == common.BinarySchema.Event.ATOMIC_CAS) {
+                            // CAS: inject captured result + force-set post-op state.
+                            // The original call is suppressed entirely.
                             mv.visitVarInsn(Opcodes.ALOAD, receiverSlot);
-
-                            if (isArrayAtomic) {
+                            if (isArrayAtomic && argTypes.length > 0) {
                                 mv.visitVarInsn(Opcodes.ILOAD, argSlots[0]);
                             } else {
                                 mv.visitLdcInsn(-1);
                             }
-                            mv.visitLdcInsn(atomicEventType);
                             mv.visitLdcInsn(siteId);
-                            emitAtomicCheckCall(valueType);
+                            emitAtomicCasCheckCall(returnTypeChar);
                         } else {
+                            // Non-CAS: execute natively within controlLock.
+                            // Total order guarantees the result equals the captured value.
+
+                            // 1. beginAtomicReplay(receiver, index, eventType, siteId) —
+                            //    waits for turn and holds controlLock.
                             mv.visitVarInsn(Opcodes.ALOAD, receiverSlot);
                             if (isArrayAtomic && argTypes.length > 0) {
                                 mv.visitVarInsn(Opcodes.ILOAD, argSlots[0]);
@@ -570,7 +571,21 @@ public class SyncTransformer implements ClassFileTransformer {
                             }
                             mv.visitLdcInsn(atomicEventType);
                             mv.visitLdcInsn(siteId);
-                            emitAtomicCheckCall(returnTypeChar);
+                            mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass,
+                                    "beginAtomicReplay", "(Ljava/lang/Object;III)V", false);
+
+                            // 2. Execute the original atomic call (lock is held).
+                            mv.visitVarInsn(Opcodes.ALOAD, receiverSlot);
+                            for (int i = 0; i < argTypes.length; i++) {
+                                mv.visitVarInsn(argTypes[i].getOpcode(Opcodes.ILOAD), argSlots[i]);
+                            }
+                            super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
+
+                            // 3. endAtomicReplay() — advances currentIdx, signals, releases lock.
+                            //    For void calls the stack is empty; for value calls the return value
+                            //    sits below this void call and is left in place as the result.
+                            mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass,
+                                    "endAtomicReplay", "()V", false);
                         }
                         return;
                     } else {
@@ -672,31 +687,18 @@ public class SyncTransformer implements ClassFileTransformer {
             }
         }
 
-        private void emitAtomicCheckCall(Type valueType) {
-            int sort = valueType.getSort();
-            if (sort == Type.LONG) {
-                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkAtomicLong",
-                        "(JLjava/lang/Object;III)V", false);
-            } else if (sort == Type.OBJECT || sort == Type.ARRAY) {
-                // unpack the BirthId from the trace to the actual object reference for the check call
-                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkAtomicObj",
-                        "(Ljava/lang/Object;Ljava/lang/Object;III)V", false);
-            } else {
-                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkAtomicInt",
-                        "(ILjava/lang/Object;III)V", false);
-            }
-        }
-
-        private void emitAtomicCheckCall(char returnTypeChar) {
+        /** Replay mode, CAS path: injects captured result from trace. Stack before: [receiver, index, siteId]. */
+        private void emitAtomicCasCheckCall(char returnTypeChar) {
             if (returnTypeChar == 'J' || returnTypeChar == 'D') {
-                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkAtomicLong",
-                        "(Ljava/lang/Object;III)J", false);
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkAtomicCasLong",
+                        "(Ljava/lang/Object;II)J", false);
             } else if (returnTypeChar == 'L' || returnTypeChar == '[') {
-                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkAtomicObj",
-                        "(Ljava/lang/Object;III)Ljava/lang/Object;", false);
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkAtomicCasObj",
+                        "(Ljava/lang/Object;II)Ljava/lang/Object;", false);
             } else {
-                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkAtomicInt",
-                        "(Ljava/lang/Object;III)I", false);
+                // Covers 'Z' (compareAndSet → boolean), 'I' (compareAndExchange → int), etc.
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkAtomicCasInt",
+                        "(Ljava/lang/Object;II)I", false);
             }
         }
 
@@ -808,16 +810,21 @@ public class SyncTransformer implements ClassFileTransformer {
                     name.equals("intValue") || name.equals("longValue") || name.equals("floatValue") ||
                     name.equals("doubleValue") || name.equals("length") || name.equals("newUpdater"))
                 return -1;
+            // CAS — must be checked before general RMW: result is injected during replay
+            // because it determines control flow and reference identity can differ across runs.
+            if (name.startsWith("compareAndSet") || name.startsWith("compareAndExchange") ||
+                    name.startsWith("weakCompareAndSet") || name.startsWith("weakCompareAndExchange"))
+                return common.BinarySchema.Event.ATOMIC_CAS; // 26
             // Writes
             if (name.startsWith("set") || name.equals("lazySet"))
-                return 21; // ATOMIC_WRITE
+                return common.BinarySchema.Event.ATOMIC_WRITE; // 21
             // Reads (get without "And")
             if (name.equals("get") || name.equals("getPlain") || name.equals("getOpaque") ||
                     name.equals("getAcquire") || name.equals("getReference") || name.equals("getStamp") ||
                     name.equals("isMarked"))
-                return 20; // ATOMIC_READ
+                return common.BinarySchema.Event.ATOMIC_READ; // 20
             // Everything else is read-modify-write
-            return 22; // ATOMIC_RMW
+            return common.BinarySchema.Event.ATOMIC_RMW; // 22
         }
 
         // Parse return type from descriptor: "(III)Z" → 'Z', "()V" → 'V',

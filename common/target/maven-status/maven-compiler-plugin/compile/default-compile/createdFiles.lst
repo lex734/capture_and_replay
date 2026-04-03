@@ -1,0 +1,6 @@
+common/BinarySchema.class
+common/TraceLogger.class
+common/BinarySchema$Flags.class
+common/BinarySchema$Event.class
+common/IdentityMapper$BirthId.class
+common/IdentityMapper.class

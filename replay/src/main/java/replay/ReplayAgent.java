@@ -22,6 +22,7 @@ public class ReplayAgent {
 
             // 2. Load the Trace File
             File traceFile = new File("trace.bin");
+            System.out.println("[ReplayAgent] Reading trace from: " + traceFile.getAbsolutePath());
             if (!traceFile.exists()) {
                 System.err.println("[ReplayAgent] ERROR: trace.bin not found!");
                 return;

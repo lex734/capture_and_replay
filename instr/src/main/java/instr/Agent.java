@@ -13,6 +13,7 @@ public class Agent {
       // common is shaded into this agent jar, which is already on the system
       // classpath via -javaagent, so no separate appendToSystemClassLoaderSearch needed.
       // 1. Setup the binary trace file (1 million events for now)
+      System.out.println("[Agent] Writing trace to: " + new java.io.File("trace.bin").getAbsolutePath());
       BinarySchema.init("trace.bin", 1_000_000);
       // 3. Register bytecode surgeon (The Transformer)
       inst.addTransformer(new SyncTransformer(), true);

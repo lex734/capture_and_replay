@@ -92,7 +92,21 @@ public class CaptureMonitor {
     if (isInside.get() || array == null) return;
     isInside.set(true);
     try {
-      TraceLogger.logArray(eventType, array, index, siteId);
+      long tid = Thread.currentThread().threadId();
+      int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
+      if (roleId == -1) {
+        return;
+      }
+
+      // Acquire the global capture-order lock so that TraceLogger.nextSeq()
+      // (called inside TraceLogger.logArray) executes while we hold the lock.
+      // This serialises array accesses with other observable operations.
+      captureOrderLock.lock();
+      try {
+        TraceLogger.logArray(eventType, array, index, siteId);
+      } finally {
+        captureOrderLock.unlock();
+      }
     } finally {
       isInside.set(false);
     }

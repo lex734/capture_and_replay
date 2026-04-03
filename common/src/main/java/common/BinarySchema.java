@@ -69,7 +69,8 @@ public class BinarySchema {
         maxAllowedEvents = maxEvents;
         long totalSize = maxEvents * RECORD_SIZE;
         try (RandomAccessFile file = new RandomAccessFile(fileName, "rw")) {
-            file.setLength(totalSize);
+            file.setLength(0);         // truncate: clears all stale slot data from previous runs
+            file.setLength(totalSize); // re-extend: POSIX guarantees new bytes are zeroed
             buffer = file.getChannel().map(FileChannel.MapMode.READ_WRITE, 0, totalSize);
         }
         // Ensure dirty mapped pages are flushed to disk even if the JVM exits
@@ -125,7 +126,10 @@ public class BinarySchema {
     }
 
     public static void write(long seq, long roleId, int packedType, int objSite, int objCount, int data) {
-        write(seq, roleId, packedType, objSite, objCount, 0, data);
+        // Store single-payload events in data1 (expected[5]) and leave data2=0.
+        // This makes single-value payloads unambiguous and consistent with
+        // multi-word atomic records that use data1/data2.
+        write(seq, roleId, packedType, objSite, objCount, data, 0);
     }
     public static void write(long seq, long roleId, int packedType, int objSite, int objCount, int data1, int data2) {
         write(seq, roleId, packedType, objSite, objCount, data1, data2, 0, 0);

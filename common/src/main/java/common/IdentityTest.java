@@ -1,6 +1,7 @@
 package common;
 import common.IdentityMapper;
 
+// Run using mvn compile -pl common exec:java from root
 public class IdentityTest {
     public static void main(String[] args) {
         String s1 = "Gemini";

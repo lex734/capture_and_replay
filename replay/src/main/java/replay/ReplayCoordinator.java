@@ -62,6 +62,13 @@ public class ReplayCoordinator {
     }
 
     public static void init(MappedByteBuffer traceBuffer, long count) {
+        // Reset all coordinator state so repeated calls (e.g. same JVM) start clean.
+        currentIdx.set(0);
+        roleConditions.clear();
+        pendingRoles.clear();
+        activeRoles.clear();
+        startedRoles.clear();
+
         // Read all non-empty records from the buffer.
         // With batched slot allocation, records may not be contiguous —
         // zero-filled gaps exist where batch tails were unused.
@@ -207,6 +214,8 @@ public class ReplayCoordinator {
         try {
             activateRole(roleId);
             Condition myTurn = conditionFor(roleId);
+            System.out.println(String.format("[awaitTurn] role=%d type=%d objSite=%d objCount=%d data=%d",
+                    roleId, packedType & 0xFF, objSite, objCount, data));
             while (true) {
                 long idx = currentIdx.get();
                 if (idx >= totalEvents)
@@ -215,7 +224,8 @@ public class ReplayCoordinator {
                 long[] expected = sortedEvents[(int) idx];
                 int expectedRole = (int) expected[1];
                 int expectedType = (int) expected[2];
-
+                System.out.println(String.format("[check] idx=%-4d expects role=%d type=%d objSite=%d objCount=%d data1=%d data2=%d",
+                    idx, expectedRole, expectedType & 0xFF, expected[3], expected[4], expected[5], expected[6]));
                 // Block advancing past an event whose role hasn't checked in yet —
                 // that thread exists in the trace but hasn't started in replay yet.
                 // Give it time to start rather than deadlocking immediately.
@@ -245,9 +255,27 @@ public class ReplayCoordinator {
                     continue;
                 }
 
-                // Normal strict total-order match
+                // Normal strict total-order match. Also require the event-specific
+                // data payload (e.g. array index or sync site id) to match so
+                // events on the same object but different indices cannot be
+                // matched out-of-order.
+                int eventId = expectedType & 0xFF;
+                boolean payloadMatches;
+                if (eventId == BinarySchema.Event.THREAD_START) {
+                    // THREAD_START stores (childRoleId, site) in data1/data2.
+                    // Replay calls checkSync with the site as the single "data" arg,
+                    // so match against data2 (expected[6]).
+                    payloadMatches = ((int) expected[6] == data);
+                } else {
+                    // For other single-payload events (fields, arrays, class-init,
+                    // exceptions) the canonical payload is in data1 (expected[5]).
+                    // Accept old traces that put the payload in data2 when data1==0.
+                    payloadMatches = (((int) expected[5] == data) || ((int) expected[5] == 0 && (int) expected[6] == data));
+                }
+
                 if (roleId == expectedRole && packedType == expectedType
-                        && (int) expected[3] == objSite && (int) expected[4] == objCount) {
+                    && (int) expected[3] == objSite && (int) expected[4] == objCount
+                    && payloadMatches) {
                     lastMatchedSeq.set(expected[0]);
                     if (onMatch != null) {
                         try { onMatch.run(); }

@@ -1,1 +1,7 @@
+correctness/SharedObjectRaceTest.class
 Main.class
+correctness/VolatileWriteRaceTest.class
+correctness/PlainCounterTest.class
+correctness/SharedObjectRaceTest$Holder.class
+correctness/ArrayElementRaceTest.class
+correctness/AtomicCounterTest.class

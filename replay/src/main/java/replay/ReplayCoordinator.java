@@ -214,8 +214,8 @@ public class ReplayCoordinator {
         try {
             activateRole(roleId);
             Condition myTurn = conditionFor(roleId);
-            System.out.println(String.format("[awaitTurn] role=%d type=%d objSite=%d objCount=%d data=%d",
-                    roleId, packedType & 0xFF, objSite, objCount, data));
+            // System.out.println(String.format("[awaitTurn] role=%d type=%d objSite=%d objCount=%d data=%d",
+            //         roleId, packedType & 0xFF, objSite, objCount, data));
             while (true) {
                 long idx = currentIdx.get();
                 if (idx >= totalEvents)
@@ -224,8 +224,8 @@ public class ReplayCoordinator {
                 long[] expected = sortedEvents[(int) idx];
                 int expectedRole = (int) expected[1];
                 int expectedType = (int) expected[2];
-                System.out.println(String.format("[check] idx=%-4d expects role=%d type=%d objSite=%d objCount=%d data1=%d data2=%d",
-                    idx, expectedRole, expectedType & 0xFF, expected[3], expected[4], expected[5], expected[6]));
+                // System.out.println(String.format("[check] idx=%-4d expects role=%d type=%d objSite=%d objCount=%d data1=%d data2=%d",
+                //     idx, expectedRole, expectedType & 0xFF, expected[3], expected[4], expected[5], expected[6]));
                 // Block advancing past an event whose role hasn't checked in yet —
                 // that thread exists in the trace but hasn't started in replay yet.
                 // Give it time to start rather than deadlocking immediately.

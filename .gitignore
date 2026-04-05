@@ -2,3 +2,5 @@ lib/*
 *.jar
 build/
 *.bin
+target/
+*.class

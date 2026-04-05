@@ -49,9 +49,9 @@ public class BenchmarkRunner {
         checkExists(replayJar,  "replay agent");
         checkExists(benchJar,   "benchmark jar");
 
-        System.out.println("Capture agent : " + captureJar);
-        System.out.println("Replay agent  : " + replayJar);
-        System.out.println("Benchmark jar : " + benchJar);
+        // System.out.println("Capture agent : " + captureJar);
+        // System.out.println("Replay agent  : " + replayJar);
+        // System.out.println("Benchmark jar : " + benchJar);
         System.out.printf ("Warmup rounds : %d  |  Measure rounds: %d%n%n", WARMUP, MEASURE);
 
         Path workDir = Files.createTempDirectory("overhead-bench-");
@@ -153,7 +153,7 @@ public class BenchmarkRunner {
         System.out.printf(
             "%-28s  %16s  %16s  %16s  %8s  %8s%n",
             "Workload", "Baseline (ms)", "Capture (ms)", "Replay (ms)", "Cap/Base", "Rep/Base");
-        System.out.println("-".repeat(105));
+        // System.out.println("-".repeat(105));
     }
 
     static double mean(long[] vals) {

@@ -377,19 +377,31 @@ public class SyncTransformer implements ClassFileTransformer {
 
                 if (isArrayLoad(opcode)) {
                     if (isReplay) {
-                        // Stack: [arrayRef, index] — atomically read inside the coordination lock.
-                        mv.visitLdcInsn(siteId);
-                        if (opcode == Opcodes.FALOAD) {
-                            mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkArrayReadFloat",
-                                "(Ljava/lang/Object;II)F", false);
-                        } else if (opcode == Opcodes.AALOAD) {
-                            mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkArrayReadObj",
-                                "(Ljava/lang/Object;II)Ljava/lang/Object;", false);
-                        } else { // IALOAD, BALOAD, CALOAD, SALOAD
-                            mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkArrayReadInt",
-                                "(Ljava/lang/Object;II)I", false);
+                        if (opcode == Opcodes.AALOAD) {
+                            // AALOAD returns a reference whose concrete type the JVM tracks via
+                            // the array descriptor.  checkArrayReadObj() returns Object, which
+                            // erases that type and causes a VerifyError when the result is used
+                            // where a concrete subtype (e.g. Thread) is expected.
+                            // Fix: coordinate the total-order turn with a void helper, then emit
+                            // the real AALOAD directly so the verifier sees the concrete type.
+                            mv.visitInsn(Opcodes.DUP2);   // [arrayRef, index, arrayRef, index]
+                            mv.visitLdcInsn(siteId);       // [arrayRef, index, arrayRef, index, siteId]
+                            mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkArrayCoordinate",
+                                "(Ljava/lang/Object;II)V", false); // [arrayRef, index]
+                            mv.visitInsn(Opcodes.AALOAD);  // real load — element type preserved
+                            return; // skip capture-mode block and super.visitInsn
+                        } else {
+                            // Stack: [arrayRef, index] — atomically read inside the coordination lock.
+                            mv.visitLdcInsn(siteId);
+                            if (opcode == Opcodes.FALOAD) {
+                                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkArrayReadFloat",
+                                    "(Ljava/lang/Object;II)F", false);
+                            } else { // IALOAD, BALOAD, CALOAD, SALOAD
+                                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkArrayReadInt",
+                                    "(Ljava/lang/Object;II)I", false);
+                            }
+                            return; // read value is on stack; skip super.visitInsn
                         }
-                        return; // read value is on stack; skip super.visitInsn
                     }
                     mv.visitInsn(Opcodes.DUP2); // [arrayRef, index, arrayRef, index]
                     mv.visitLdcInsn(eventType); // [arrayRef, index, arrayRef, index, type]

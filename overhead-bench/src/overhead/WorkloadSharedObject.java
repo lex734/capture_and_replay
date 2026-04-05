@@ -29,6 +29,6 @@ public class WorkloadSharedObject {
         }
         for (Thread th : threads) th.start();
         for (Thread th : threads) th.join();
-        System.out.println("Final shared.value: " + shared.value);
+        // System.out.println("Final shared.value: " + shared.value);
     }
 }

@@ -29,6 +29,6 @@ public class WorkloadAtomicCounter {
         }
         for (Thread th : threads) th.start();
         for (Thread th : threads) th.join();
-        System.out.println("Final counter: " + counter.get());
+        // System.out.println("Final counter: " + counter.get());
     }
 }

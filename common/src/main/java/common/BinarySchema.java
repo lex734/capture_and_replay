@@ -104,6 +104,21 @@ public class BinarySchema {
 
 
     public static void write(long seq, long roleId, int packedType, int objSite, int objCount, int data1, int data2, int data3, int data4) {
+        write(seq, roleId, packedType, objSite, objCount, data1, data2, data3, data4, 0);
+    }
+
+    /**
+     * Full write with packed creator roles stored in the 4 bytes at pos+44
+     * (currently unused padding within RECORD_SIZE=48).
+     *
+     * creatorRoles packs two 16-bit role IDs:
+     *   bits 31-16 = creator role of the return-value object (data1/data2)
+     *   bits 15-0  = creator role of the post-op object     (data3/data4)
+     * Used only by logAtomicObj so that awaitTurnObj can call resolveByBirthId
+     * with the correct creator role when per-role birth counts are in use.
+     * All other events write 0 here via the 9-param overload.
+     */
+    public static void write(long seq, long roleId, int packedType, int objSite, int objCount, int data1, int data2, int data3, int data4, int creatorRoles) {
         long slot = allocateSlot();
         if (buffer == null || slot >= maxAllowedEvents)
             return;
@@ -123,6 +138,7 @@ public class BinarySchema {
         buffer.putInt(pos + 32, data2);
         buffer.putInt(pos + 36, data3);
         buffer.putInt(pos + 40, data4);
+        buffer.putInt(pos + 44, creatorRoles);
     }
 
     public static void write(long seq, long roleId, int packedType, int objSite, int objCount, int data) {

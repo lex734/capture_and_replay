@@ -24,6 +24,6 @@ public class WorkloadVolatileWrite {
         }
         for (Thread th : threads) th.start();
         for (Thread th : threads) th.join();
-        System.out.println("Final x: " + x);
+        // System.out.println("Final x: " + x);
     }
 }

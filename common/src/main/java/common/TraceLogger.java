@@ -31,24 +31,24 @@ public class TraceLogger {
             long childTid = ((Thread) lock).threadId();
             int childRoleId = IdentityMapper.getRoleIdBySite(childTid, currentSiteId);
             long seq = nextSeq();
-            System.out.println(String.format(
-                    "[SYNC]   seq=%d role=%d  %-24s lock=%s  site=%d  childRole=%d",
-                    seq, roleId, eventName,
-                    lock.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(lock)),
-                    currentSiteId, childRoleId));
+            // System.out.println(String.format(
+                    // "[SYNC]   seq=%d role=%d  %-24s lock=%s  site=%d  childRole=%d",
+                    // seq, roleId, eventName,
+                    // lock.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(lock)),
+                    // currentSiteId, childRoleId));
             BinarySchema.write(seq, (long) roleId, ((eventType & 0xFF) | (BinarySchema.Flags.NONE << 8)),
                     birthId.siteId, birthId.count, childRoleId, currentSiteId);
             return;
         }
 
         long seq = nextSeq();
-        System.out.println(String.format(
-                "[SYNC]   seq=%d role=%d  %-24s lock=%s  site=%d",
-                seq, roleId, eventName,
-                lock != null
-                        ? lock.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(lock))
-                        : "null",
-                currentSiteId));
+        // System.out.println(String.format(
+                // "[SYNC]   seq=%d role=%d  %-24s lock=%s  site=%d",
+                // seq, roleId, eventName,
+                // lock != null
+                //         ? lock.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(lock))
+                //         : "null",
+                // currentSiteId));
         BinarySchema.write(seq, (long) roleId, ((eventType & 0xFF) | (BinarySchema.Flags.NONE << 8)), birthId.siteId,
                 birthId.count, currentSiteId);
     }
@@ -80,11 +80,11 @@ public class TraceLogger {
         //    and the actual field access that follows logField returning.
         long seq = nextSeq();
         String eventName = (eventType == BinarySchema.Event.FIELD_READ) ? "READ" : "WRITE";
-        System.out.println(String.format(
-                "[FIELD]  seq=%d role=%d  %-5s%s %s.%s  fieldId=%d",
-                seq, roleId, eventName,
-                isVolatile ? "(volatile)" : "",
-                ownerName, fieldName, fieldId));
+        // System.out.println(String.format(
+                // "[FIELD]  seq=%d role=%d  %-5s%s %s.%s  fieldId=%d",
+                // seq, roleId, eventName,
+                // isVolatile ? "(volatile)" : "",
+                // ownerName, fieldName, fieldId));
 
         // 7. Write to Binary Log
         // Data field contains the fieldId (the unique coordinate for this variable)
@@ -102,13 +102,13 @@ public class TraceLogger {
 
         long seq = nextSeq();
         String eventName = (eventType == BinarySchema.Event.ARRAY_READ) ? "ARRAY_READ" : "ARRAY_WRITE";
-        System.out.println(String.format(
-                "[ARRAY]  seq=%d role=%d  %-12s %s[%d]  site=%d",
-                seq, roleId, eventName,
-                array != null
-                        ? array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array))
-                        : "null",
-                index, currentSiteId));
+        // System.out.println(String.format(
+                // "[ARRAY]  seq=%d role=%d  %-12s %s[%d]  site=%d",
+                // seq, roleId, eventName,
+                // array != null
+                //         ? array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array))
+                //         : "null",
+                // index, currentSiteId));
 
         BinarySchema.write(seq, roleId, ((eventType & 0xFF) | (BinarySchema.Flags.NONE << 8)), birthId.siteId,
                 birthId.count, index);
@@ -157,15 +157,15 @@ public class TraceLogger {
         String receiverStr = receiver != null
                 ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver))
                 : "null";
-        if (isArray) {
-            System.out.println(String.format(
-                    "[ATOMIC] seq=%d role=%d  %-12s %s[%d] = %d",
-                    seq, roleId, eventName, receiverStr, index, returnValue));
-        } else {
-            System.out.println(String.format(
-                    "[ATOMIC] seq=%d role=%d  %-12s %s = %d",
-                    seq, roleId, eventName, receiverStr, returnValue));
-        }
+        // if (isArray) {
+        //     // System.out.println(String.format(
+        //             "[ATOMIC] seq=%d role=%d  %-12s %s[%d] = %d",
+        //             seq, roleId, eventName, receiverStr, index, returnValue));
+        // } else {
+        //     // System.out.println(String.format(
+        //             "[ATOMIC] seq=%d role=%d  %-12s %s = %d",
+        //             seq, roleId, eventName, receiverStr, returnValue));
+        // }
 
         // data1 = postOpValue (write-back value for RMW replay), data2 = returnValue
         if (isArray) {
@@ -195,15 +195,15 @@ public class TraceLogger {
         String receiverStr = receiver != null
                 ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver))
                 : "null";
-        if (isArray) {
-            System.out.println(String.format(
-                    "[ATOMIC] seq=%d role=%d  %-12s %s[%d] = %dL",
-                    seq, roleId, eventName, receiverStr, index, longValue));
-        } else {
-            System.out.println(String.format(
-                    "[ATOMIC] seq=%d role=%d  %-12s %s = %dL",
-                    seq, roleId, eventName, receiverStr, longValue));
-        }
+        // if (isArray) {
+        //     // System.out.println(String.format(
+        //             "[ATOMIC] seq=%d role=%d  %-12s %s[%d] = %dL",
+        //             seq, roleId, eventName, receiverStr, index, longValue));
+        // } else {
+        //     // System.out.println(String.format(
+        //             "[ATOMIC] seq=%d role=%d  %-12s %s = %dL",
+        //             seq, roleId, eventName, receiverStr, longValue));
+        // }
 
         if (isArray) {
             int packedType = packAtomicArrayType(eventType, birthId.siteId);
@@ -239,24 +239,36 @@ public class TraceLogger {
         String valueStr = objValue != null
                 ? objValue.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(objValue))
                 : "null";
-        if (isArray) {
-            System.out.println(String.format(
-                    "[ATOMIC] seq=%d role=%d  %-12s %s[%d] = %s",
-                    seq, roleId, eventName, receiverStr, index, valueStr));
-        } else {
-            System.out.println(String.format(
-                    "[ATOMIC] seq=%d role=%d  %-12s %s = %s",
-                    seq, roleId, eventName, receiverStr, valueStr));
-        }
+        // if (isArray) {
+        //     // System.out.println(String.format(
+        //             "[ATOMIC] seq=%d role=%d  %-12s %s[%d] = %s",
+        //             seq, roleId, eventName, receiverStr, index, valueStr));
+        // } else {
+        //     // System.out.println(String.format(
+        //             "[ATOMIC] seq=%d role=%d  %-12s %s = %s",
+        //             seq, roleId, eventName, receiverStr, valueStr));
+        // }
+
+        // Pack creator role IDs for both value objects into one int so that
+        // awaitTurnObj can call resolveByBirthId with the correct creatorRoleId
+        // when per-role-per-site birth counts are in use.
+        // bits 31-16: creator role of the return-value object (data1/data2)
+        // bits 15-0:  creator role of the post-op object     (data3/data4)
+        int valueCreatorRole   = (valueBirth    instanceof IdentityMapper.BirthId.Heap)
+                                 ? ((IdentityMapper.BirthId.Heap) valueBirth).creatorRoleId    : -1;
+        int postOpCreatorRole  = (postOpValueBirth instanceof IdentityMapper.BirthId.Heap)
+                                 ? ((IdentityMapper.BirthId.Heap) postOpValueBirth).creatorRoleId : -1;
+        int creatorRoles = ((Math.max(0, valueCreatorRole)  & 0xFFFF) << 16)
+                         |  (Math.max(0, postOpCreatorRole) & 0xFFFF);
 
         if (isArray) {
             int packedType = packAtomicArrayType(eventType, receiverBirth.siteId);
             BinarySchema.write(seq, (long) roleId, packedType, receiverBirth.count, index, valueBirth.siteId,
-                    valueBirth.count, postOpValueBirth.siteId, postOpValueBirth.count);
+                    valueBirth.count, postOpValueBirth.siteId, postOpValueBirth.count, creatorRoles);
         } else {
             int packedType = BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
             BinarySchema.write(seq, (long) roleId, packedType, receiverBirth.siteId, receiverBirth.count,
-                    valueBirth.siteId, valueBirth.count, postOpValueBirth.siteId, postOpValueBirth.count);
+                    valueBirth.siteId, valueBirth.count, postOpValueBirth.siteId, postOpValueBirth.count, creatorRoles);
         }
     }
 
@@ -268,9 +280,9 @@ public class TraceLogger {
         BirthId birthId = IdentityMapper.getBirthId(exception, null, siteId);
         long seq = nextSeq();
         String className = exception.getClass().getName();
-        System.out.println(String.format(
-                "[THROW]  seq=%d role=%d  %s  site=%d",
-                seq, roleId, className, siteId));
+        // System.out.println(String.format(
+                // "[THROW]  seq=%d role=%d  %s  site=%d",
+                // seq, roleId, className, siteId));
 
         BinarySchema.write(seq, (long) roleId,
                 BinarySchema.packType(BinarySchema.Event.EXCEPTION_THROW, BinarySchema.Flags.NONE),

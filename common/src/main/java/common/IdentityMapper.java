@@ -29,6 +29,11 @@ public class IdentityMapper {
     private static final Map<Object, BirthId> objToId = Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<BirthId, Object> idToObj = Collections.synchronizedMap(new WeakHashMap<>());
     private static final ConcurrentHashMap<Integer, AtomicInteger> siteCounters = new ConcurrentHashMap<>();
+    // Per-role-per-site counters: key = (roleId << 32) | siteId.
+    // Used by registerAllocation so that each role's Nth object at a given site
+    // always gets the same birth count across capture and replay runs,
+    // independent of how other roles interleave their allocations.
+    private static final ConcurrentHashMap<Long, AtomicInteger> roleSiteCounters = new ConcurrentHashMap<>();
 
     // Pool string literals (from LDC): keyed by string content so every reference
     // to the same literal resolves to the same BirthId.PoolString across runs.
@@ -46,19 +51,32 @@ public class IdentityMapper {
             this.count = count;
         }
 
-        /** Heap-allocated object: identified by allocation site + per-site ordinal. */
+        /**
+         * Heap-allocated object: identified by (creatorRoleId, siteId, roleLocalCount).
+         * creatorRoleId is the role that executed the NEW instruction, -1 for
+         * infrastructure/unregistered threads that fall back to global counters.
+         * Including creatorRoleId prevents idToObj collisions when two roles each
+         * allocate their first object at the same site (both would get count=1 under
+         * per-role-per-site counting, but their BirthIds are still distinct).
+         */
         public static final class Heap extends BirthId {
-            public Heap(int siteId, int count) { super(siteId, count); }
+            public final int creatorRoleId;
+            public Heap(int creatorRoleId, int siteId, int count) {
+                super(siteId, count);
+                this.creatorRoleId = creatorRoleId;
+            }
 
             @Override
             public boolean equals(Object o) {
                 if (!(o instanceof Heap)) return false;
                 Heap other = (Heap) o;
-                return siteId == other.siteId && count == other.count;
+                return creatorRoleId == other.creatorRoleId
+                    && siteId == other.siteId
+                    && count == other.count;
             }
 
             @Override
-            public int hashCode() { return siteId * 31 + count; }
+            public int hashCode() { return (creatorRoleId * 31 + siteId) * 31 + count; }
         }
 
         /**
@@ -81,7 +99,7 @@ public class IdentityMapper {
         }
 
         // Static constant representing the "Global/Static" birthplace
-        public static final BirthId GLOBAL = new Heap(0, 0);
+        public static final BirthId GLOBAL = new Heap(-1, 0, 0);
     }
 
     /**
@@ -142,8 +160,18 @@ public class IdentityMapper {
             if (existing != null)
                 return existing;
 
-            AtomicInteger counter = siteCounters.computeIfAbsent(currentInstructionSiteId, k -> new AtomicInteger(1));
-            BirthId.Heap newId = new BirthId.Heap(currentInstructionSiteId, counter.getAndIncrement());
+            // Object was never passed through registerAllocation — lazy-register it.
+            // Use per-role-per-site counters for the same reason as registerAllocation.
+            long tid = Thread.currentThread().threadId();
+            int roleId = getRoleIdBySite(tid, currentInstructionSiteId);
+            AtomicInteger counter;
+            if (roleId >= 0) {
+                long key = ((long) roleId << 32) | (currentInstructionSiteId & 0xFFFFFFFFL);
+                counter = roleSiteCounters.computeIfAbsent(key, k -> new AtomicInteger(1));
+            } else {
+                counter = siteCounters.computeIfAbsent(currentInstructionSiteId, k -> new AtomicInteger(1));
+            }
+            BirthId.Heap newId = new BirthId.Heap(roleId, currentInstructionSiteId, counter.getAndIncrement());
             objToId.put(obj, newId);
             idToObj.put(newId, obj);
             return newId;
@@ -176,10 +204,21 @@ public class IdentityMapper {
      */
     public static void registerAllocation(Object obj, int siteId) {
         if (obj == null) return;
+        long tid = Thread.currentThread().threadId();
+        int roleId = getRoleIdBySite(tid, siteId);
         synchronized (objToId) {
             if (objToId.containsKey(obj)) return; // already registered
-            AtomicInteger counter = siteCounters.computeIfAbsent(siteId, k -> new AtomicInteger(1));
-            BirthId.Heap id = new BirthId.Heap(siteId, counter.getAndIncrement());
+            AtomicInteger counter;
+            if (roleId >= 0) {
+                // Per-role-per-site counter: role=2's Nth object at site S always
+                // gets count=N, independent of allocations by other roles.
+                long key = ((long) roleId << 32) | (siteId & 0xFFFFFFFFL);
+                counter = roleSiteCounters.computeIfAbsent(key, k -> new AtomicInteger(1));
+            } else {
+                // Infrastructure / unregistered thread — fall back to global counter.
+                counter = siteCounters.computeIfAbsent(siteId, k -> new AtomicInteger(1));
+            }
+            BirthId.Heap id = new BirthId.Heap(roleId, siteId, counter.getAndIncrement());
             objToId.put(obj, id);
             idToObj.put(id, obj);
         }
@@ -203,8 +242,8 @@ public class IdentityMapper {
         });
     }
 
-    public static Object resolveByBirthId(int valueSiteId, int valueCount) {
-        return idToObj.get(new BirthId.Heap(valueSiteId, valueCount));
+    public static Object resolveByBirthId(int creatorRoleId, int valueSiteId, int valueCount) {
+        return idToObj.get(new BirthId.Heap(creatorRoleId, valueSiteId, valueCount));
     }
 
     /** Looks up the roleId for a thread that has already been assigned one, or -1. */
@@ -231,6 +270,7 @@ public class IdentityMapper {
         idToObj.clear();
         poolStringToId.clear();
         siteCounters.clear();
-        System.out.println("[IdentityMapper] All maps cleared for new trace.");
+        roleSiteCounters.clear();
+        // System.out.println("[IdentityMapper] All maps cleared for new trace.");
     }
 }

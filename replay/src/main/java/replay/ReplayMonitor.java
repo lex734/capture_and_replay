@@ -40,11 +40,11 @@ public class ReplayMonitor {
 
             ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, currentSiteId);
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format(
-                    "[CHECK-SYNC]  seq=%d role=%d  %-24s lock=%s  site=%d",
-                    seq, roleId, getEventName(eventType),
-                    lock != null ? lock.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(lock)) : "null",
-                    currentSiteId));
+            // System.out.println(String.format(
+                    // "[CHECK-SYNC]  seq=%d role=%d  %-24s lock=%s  site=%d",
+                    // seq, roleId, getEventName(eventType),
+                    // lock != null ? lock.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(lock)) : "null",
+                    // currentSiteId));
         } finally {
             isInside.set(false);
         }
@@ -73,11 +73,11 @@ public class ReplayMonitor {
 
             ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, fieldId);
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format(
-                    "[CHECK-FIELD] seq=%d role=%d  %-5s%s %s.%s  fieldId=%d",
-                    seq, roleId, evName,
-                    isVolatile ? "(volatile)" : "",
-                    ownerName, fieldName, fieldId));
+            // System.out.println(String.format(
+                    // "[CHECK-FIELD] seq=%d role=%d  %-5s%s %s.%s  fieldId=%d",
+                    // seq, roleId, evName,
+                    // isVolatile ? "(volatile)" : "",
+                    // ownerName, fieldName, fieldId));
         } finally {
             isInside.set(false);
         }
@@ -100,11 +100,11 @@ public class ReplayMonitor {
 
             ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, index);
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format(
-                    "[CHECK-ARRAY] seq=%d role=%d  %-12s %s[%d]  site=%d",
-                    seq, roleId, evName,
-                    array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array)),
-                    index, currentSiteId));
+            // System.out.println(String.format(
+                    // "[CHECK-ARRAY] seq=%d role=%d  %-12s %s[%d]  site=%d",
+                    // seq, roleId, evName,
+                    // array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array)),
+                    // index, currentSiteId));
         } finally {
             isInside.set(false);
         }
@@ -149,9 +149,9 @@ public class ReplayMonitor {
                 } catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
             });
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format(
-                    "[CHECK-FIELD] seq=%d role=%d  READ%s %s.%s = %d  fieldId=%d",
-                    seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, result[0], fieldId));
+            // System.out.println(String.format(
+                    // "[CHECK-FIELD] seq=%d role=%d  READ%s %s.%s = %d  fieldId=%d",
+                    // seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, result[0], fieldId));
             return result[0];
         } finally {
             isInside.set(false);
@@ -186,9 +186,9 @@ public class ReplayMonitor {
                 catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
             });
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format(
-                    "[CHECK-FIELD] seq=%d role=%d  READ%s %s.%s = %f  fieldId=%d",
-                    seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, result[0], fieldId));
+            // System.out.println(String.format(
+                    // "[CHECK-FIELD] seq=%d role=%d  READ%s %s.%s = %f  fieldId=%d",
+                    // seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, result[0], fieldId));
             return result[0];
         } finally {
             isInside.set(false);
@@ -223,9 +223,9 @@ public class ReplayMonitor {
                 catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
             });
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format(
-                    "[CHECK-FIELD] seq=%d role=%d  READ%s %s.%s = %dL  fieldId=%d",
-                    seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, result[0], fieldId));
+            // System.out.println(String.format(
+                    // "[CHECK-FIELD] seq=%d role=%d  READ%s %s.%s = %dL  fieldId=%d",
+                    // seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, result[0], fieldId));
             return result[0];
         } finally {
             isInside.set(false);
@@ -260,9 +260,9 @@ public class ReplayMonitor {
                 catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
             });
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format(
-                    "[CHECK-FIELD] seq=%d role=%d  READ%s %s.%s = %f  fieldId=%d",
-                    seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, result[0], fieldId));
+            // System.out.println(String.format(
+                    // "[CHECK-FIELD] seq=%d role=%d  READ%s %s.%s = %f  fieldId=%d",
+                    // seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, result[0], fieldId));
             return result[0];
         } finally {
             isInside.set(false);
@@ -297,11 +297,11 @@ public class ReplayMonitor {
                 catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
             });
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format(
-                    "[CHECK-FIELD] seq=%d role=%d  READ%s %s.%s = %s  fieldId=%d",
-                    seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName,
-                    result[0] != null ? result[0].getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(result[0])) : "null",
-                    fieldId));
+            // System.out.println(String.format(
+                    // "[CHECK-FIELD] seq=%d role=%d  READ%s %s.%s = %s  fieldId=%d",
+                    // seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName,
+                    // result[0] != null ? result[0].getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(result[0])) : "null",
+                    // fieldId));
             return result[0];
         } finally {
             isInside.set(false);
@@ -348,11 +348,11 @@ public class ReplayMonitor {
                 else if (comp == char.class)    result[0] = ((char[])   array)[index];
             });
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format(
-                    "[CHECK-ARRAY] seq=%d role=%d  ARRAY_READ %s[%d] = %d  site=%d",
-                    seq, roleId,
-                    array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array)),
-                    index, result[0], currentSiteId));
+            // System.out.println(String.format(
+                    // "[CHECK-ARRAY] seq=%d role=%d  ARRAY_READ %s[%d] = %d  site=%d",
+                    // seq, roleId,
+                    // array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array)),
+                    // index, result[0], currentSiteId));
             return result[0];
         } finally {
             isInside.set(false);
@@ -374,11 +374,11 @@ public class ReplayMonitor {
             ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, index,
                 () -> result[0] = ((float[]) array)[index]);
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format(
-                    "[CHECK-ARRAY] seq=%d role=%d  ARRAY_READ %s[%d] = %f  site=%d",
-                    seq, roleId,
-                    array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array)),
-                    index, result[0], currentSiteId));
+            // System.out.println(String.format(
+                    // "[CHECK-ARRAY] seq=%d role=%d  ARRAY_READ %s[%d] = %f  site=%d",
+                    // seq, roleId,
+                    // array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array)),
+                    // index, result[0], currentSiteId));
             return result[0];
         } finally {
             isInside.set(false);
@@ -400,11 +400,11 @@ public class ReplayMonitor {
             ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, index,
                 () -> result[0] = ((long[]) array)[index]);
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format(
-                    "[CHECK-ARRAY] seq=%d role=%d  ARRAY_READ %s[%d] = %dL  site=%d",
-                    seq, roleId,
-                    array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array)),
-                    index, result[0], currentSiteId));
+            // System.out.println(String.format(
+                    // "[CHECK-ARRAY] seq=%d role=%d  ARRAY_READ %s[%d] = %dL  site=%d",
+                    // seq, roleId,
+                    // array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array)),
+                    // index, result[0], currentSiteId));
             return result[0];
         } finally {
             isInside.set(false);
@@ -426,11 +426,11 @@ public class ReplayMonitor {
             ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, index,
                 () -> result[0] = ((double[]) array)[index]);
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format(
-                    "[CHECK-ARRAY] seq=%d role=%d  ARRAY_READ %s[%d] = %f  site=%d",
-                    seq, roleId,
-                    array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array)),
-                    index, result[0], currentSiteId));
+            // System.out.println(String.format(
+                    // "[CHECK-ARRAY] seq=%d role=%d  ARRAY_READ %s[%d] = %f  site=%d",
+                    // seq, roleId,
+                    // array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array)),
+                    // index, result[0], currentSiteId));
             return result[0];
         } finally {
             isInside.set(false);
@@ -452,14 +452,43 @@ public class ReplayMonitor {
             ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, index,
                 () -> result[0] = ((Object[]) array)[index]);
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format(
-                    "[CHECK-ARRAY] seq=%d role=%d  ARRAY_READ %s[%d] = %s  site=%d",
-                    seq, roleId,
-                    array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array)),
-                    index,
-                    result[0] != null ? result[0].getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(result[0])) : "null",
-                    currentSiteId));
+            // System.out.println(String.format(
+                    // "[CHECK-ARRAY] seq=%d role=%d  ARRAY_READ %s[%d] = %s  site=%d",
+                    // seq, roleId,
+                    // array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array)),
+                    // index,
+                    // result[0] != null ? result[0].getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(result[0])) : "null",
+                    // currentSiteId));
             return result[0];
+        } finally {
+            isInside.set(false);
+        }
+    }
+
+    /**
+     * Coordinates the total-order turn for an AALOAD without returning the element.
+     * The caller executes the real AALOAD bytecode afterward so the JVM preserves
+     * the concrete element type on the operand stack (avoids VerifyError when the
+     * element type is narrower than Object, e.g. Thread[]).
+     */
+    public static void checkArrayCoordinate(Object array, int index, int currentSiteId) {
+        if (isInside.get() || array == null) return;
+        isInside.set(true);
+        try {
+            long tid = Thread.currentThread().threadId();
+            int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+            if (roleId == -1) return;
+
+            BirthId birthId = IdentityMapper.getBirthId(array, null, currentSiteId);
+            int packedType = (BinarySchema.Event.ARRAY_READ & 0xFF) | (BinarySchema.Flags.NONE << 8);
+
+            ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, index, () -> {});
+            long seq = ReplayCoordinator.getLastMatchedSeq();
+            // System.out.println(String.format(
+                    // "[CHECK-ARRAY] seq=%d role=%d  ARRAY_READ(coord) %s[%d]  site=%d",
+                    // seq, roleId,
+                    // array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array)),
+                    // index, currentSiteId));
         } finally {
             isInside.set(false);
         }
@@ -495,9 +524,9 @@ public class ReplayMonitor {
                 } catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
             });
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format(
-                    "[CHECK-FIELD] seq=%d role=%d  WRITE%s %s.%s = %d  fieldId=%d",
-                    seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, value, fieldId));
+            // System.out.println(String.format(
+                    // "[CHECK-FIELD] seq=%d role=%d  WRITE%s %s.%s = %d  fieldId=%d",
+                    // seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, value, fieldId));
         } finally {
             isInside.set(false);
         }
@@ -525,9 +554,9 @@ public class ReplayMonitor {
                 } catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
             });
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format(
-                    "[CHECK-FIELD] seq=%d role=%d  WRITE%s %s.%s = %f  fieldId=%d",
-                    seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, value, fieldId));
+            // System.out.println(String.format(
+                    // "[CHECK-FIELD] seq=%d role=%d  WRITE%s %s.%s = %f  fieldId=%d",
+                    // seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, value, fieldId));
         } finally {
             isInside.set(false);
         }
@@ -555,9 +584,9 @@ public class ReplayMonitor {
                 } catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
             });
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format(
-                    "[CHECK-FIELD] seq=%d role=%d  WRITE%s %s.%s = %dL  fieldId=%d",
-                    seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, value, fieldId));
+            // System.out.println(String.format(
+                    // "[CHECK-FIELD] seq=%d role=%d  WRITE%s %s.%s = %dL  fieldId=%d",
+                    // seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, value, fieldId));
         } finally {
             isInside.set(false);
         }
@@ -585,9 +614,9 @@ public class ReplayMonitor {
                 } catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
             });
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format(
-                    "[CHECK-FIELD] seq=%d role=%d  WRITE%s %s.%s = %f  fieldId=%d",
-                    seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, value, fieldId));
+            // System.out.println(String.format(
+                    // "[CHECK-FIELD] seq=%d role=%d  WRITE%s %s.%s = %f  fieldId=%d",
+                    // seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, value, fieldId));
         } finally {
             isInside.set(false);
         }
@@ -615,11 +644,11 @@ public class ReplayMonitor {
                 } catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
             });
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format(
-                    "[CHECK-FIELD] seq=%d role=%d  WRITE%s %s.%s = %s  fieldId=%d",
-                    seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName,
-                    value != null ? value.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(value)) : "null",
-                    fieldId));
+            // System.out.println(String.format(
+                    // "[CHECK-FIELD] seq=%d role=%d  WRITE%s %s.%s = %s  fieldId=%d",
+                    // seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName,
+                    // value != null ? value.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(value)) : "null",
+                    // fieldId));
         } finally {
             isInside.set(false);
         }
@@ -647,11 +676,11 @@ public class ReplayMonitor {
                 else if (comp == char.class)    ((char[])   array)[index] = (char)  value;
             });
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format(
-                    "[CHECK-ARRAY] seq=%d role=%d  ARRAY_WRITE %s[%d] = %d  site=%d",
-                    seq, roleId,
-                    array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array)),
-                    index, value, currentSiteId));
+            // System.out.println(String.format(
+                    // "[CHECK-ARRAY] seq=%d role=%d  ARRAY_WRITE %s[%d] = %d  site=%d",
+                    // seq, roleId,
+                    // array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array)),
+                    // index, value, currentSiteId));
         } finally {
             isInside.set(false);
         }
@@ -671,11 +700,11 @@ public class ReplayMonitor {
             ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, index,
                 () -> ((float[]) array)[index] = value);
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format(
-                    "[CHECK-ARRAY] seq=%d role=%d  ARRAY_WRITE %s[%d] = %f  site=%d",
-                    seq, roleId,
-                    array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array)),
-                    index, value, currentSiteId));
+            // System.out.println(String.format(
+                    // "[CHECK-ARRAY] seq=%d role=%d  ARRAY_WRITE %s[%d] = %f  site=%d",
+                    // seq, roleId,
+                    // array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array)),
+                    // index, value, currentSiteId));
         } finally {
             isInside.set(false);
         }
@@ -695,11 +724,11 @@ public class ReplayMonitor {
             ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, index,
                 () -> ((long[]) array)[index] = value);
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format(
-                    "[CHECK-ARRAY] seq=%d role=%d  ARRAY_WRITE %s[%d] = %dL  site=%d",
-                    seq, roleId,
-                    array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array)),
-                    index, value, currentSiteId));
+            // System.out.println(String.format(
+                    // "[CHECK-ARRAY] seq=%d role=%d  ARRAY_WRITE %s[%d] = %dL  site=%d",
+                    // seq, roleId,
+                    // array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array)),
+                    // index, value, currentSiteId));
         } finally {
             isInside.set(false);
         }
@@ -719,11 +748,11 @@ public class ReplayMonitor {
             ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, index,
                 () -> ((double[]) array)[index] = value);
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format(
-                    "[CHECK-ARRAY] seq=%d role=%d  ARRAY_WRITE %s[%d] = %f  site=%d",
-                    seq, roleId,
-                    array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array)),
-                    index, value, currentSiteId));
+            // System.out.println(String.format(
+                    // "[CHECK-ARRAY] seq=%d role=%d  ARRAY_WRITE %s[%d] = %f  site=%d",
+                    // seq, roleId,
+                    // array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array)),
+                    // index, value, currentSiteId));
         } finally {
             isInside.set(false);
         }
@@ -744,13 +773,13 @@ public class ReplayMonitor {
             ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, index,
                 () -> ((Object[]) array)[index] = value);
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format(
-                    "[CHECK-ARRAY] seq=%d role=%d  ARRAY_WRITE %s[%d] = %s  site=%d",
-                    seq, roleId,
-                    array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array)),
-                    index,
-                    value != null ? value.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(value)) : "null",
-                    currentSiteId));
+            // System.out.println(String.format(
+                    // "[CHECK-ARRAY] seq=%d role=%d  ARRAY_WRITE %s[%d] = %s  site=%d",
+                    // seq, roleId,
+                    // array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array)),
+                    // index,
+                    // value != null ? value.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(value)) : "null",
+                    // currentSiteId));
         } finally {
             isInside.set(false);
         }
@@ -857,10 +886,10 @@ public class ReplayMonitor {
             };
             int val = ReplayCoordinator.awaitTurnInt(roleId, packedType, objSite, objCount, writeBack);
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format("[CHECK-ATOMIC] seq=%d role=%d  ATOMIC_CAS     %s[%d] = %d  (inject)",
-                    seq, roleId,
-                    receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
-                    index, val));
+            // System.out.println(String.format("[CHECK-ATOMIC] seq=%d role=%d  ATOMIC_CAS     %s[%d] = %d  (inject)",
+                    // seq, roleId,
+                    // receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
+                    // index, val));
             return val;
         } finally {
             isInside.set(false);
@@ -897,10 +926,10 @@ public class ReplayMonitor {
             };
             long val = ReplayCoordinator.awaitTurnLong(roleId, packedType, objSite, objCount, writeBack);
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format("[CHECK-ATOMIC] seq=%d role=%d  ATOMIC_CAS     %s[%d] = %dL  (inject)",
-                    seq, roleId,
-                    receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
-                    index, val));
+            // System.out.println(String.format("[CHECK-ATOMIC] seq=%d role=%d  ATOMIC_CAS     %s[%d] = %dL  (inject)",
+                    // seq, roleId,
+                    // receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
+                    // index, val));
             return val;
         } finally {
             isInside.set(false);
@@ -936,11 +965,11 @@ public class ReplayMonitor {
             };
             Object val = ReplayCoordinator.awaitTurnObj(roleId, packedType, objSite, objCount, writeBack);
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format("[CHECK-ATOMIC] seq=%d role=%d  ATOMIC_CAS     %s[%d] = %s  (inject)",
-                    seq, roleId,
-                    receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
-                    index,
-                    val != null ? val.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(val)) : "null"));
+            // System.out.println(String.format("[CHECK-ATOMIC] seq=%d role=%d  ATOMIC_CAS     %s[%d] = %s  (inject)",
+                    // seq, roleId,
+                    // receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
+                    // index,
+                    // val != null ? val.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(val)) : "null"));
             return val;
         } finally {
             isInside.set(false);
@@ -960,10 +989,10 @@ public class ReplayMonitor {
             int packedType = BinarySchema.packType(BinarySchema.Event.EXCEPTION_THROW, BinarySchema.Flags.NONE);
             ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, siteId);
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format(
-                    "[CHECK-THROW] seq=%d role=%d  %s  site=%d",
-                    seq, roleId,
-                    exception.getClass().getName(), siteId));
+            // System.out.println(String.format(
+                    // "[CHECK-THROW] seq=%d role=%d  %s  site=%d",
+                    // seq, roleId,
+                    // exception.getClass().getName(), siteId));
         } finally {
             isInside.set(false);
         }
@@ -981,7 +1010,7 @@ public class ReplayMonitor {
 
             IdentityMapper.preAssignRole(tid, nextRole);
             ReplayCoordinator.checkIn(nextRole);
-            System.out.println("[PreRegister] role=" + nextRole);
+            // System.out.println("[PreRegister] role=" + nextRole);
         } finally {
             isInside.set(false);
         }

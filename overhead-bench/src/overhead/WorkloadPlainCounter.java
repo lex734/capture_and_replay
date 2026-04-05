@@ -24,6 +24,6 @@ public class WorkloadPlainCounter {
         }
         for (Thread th : threads) th.start();
         for (Thread th : threads) th.join();
-        System.out.println("Final counter: " + counter);
+        // System.out.println("Final counter: " + counter);
     }
 }

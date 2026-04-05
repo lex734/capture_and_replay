@@ -26,6 +26,6 @@ public class WorkloadArrayElement {
         }
         for (Thread th : threads) th.start();
         for (Thread th : threads) th.join();
-        System.out.println("Final array[0]: " + arr[0]);
+        // System.out.println("Final array[0]: " + arr[0]);
     }
 }

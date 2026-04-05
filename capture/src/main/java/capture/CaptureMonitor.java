@@ -225,9 +225,9 @@ public class CaptureMonitor {
         } catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
         long seq = TraceLogger.nextSeq();
         BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, fieldId);
-        System.out.println(String.format(
-            "[FIELD]  seq=%d role=%d  READ%s %s.%s = %d  fieldId=%d",
-            seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, result[0], fieldId));
+        // System.out.println(String.format(
+            // "[FIELD]  seq=%d role=%d  READ%s %s.%s = %d  fieldId=%d",
+            // seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, result[0], fieldId));
       } finally {
         captureOrderLock.unlock();
       }
@@ -265,9 +265,9 @@ public class CaptureMonitor {
         catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
         long seq = TraceLogger.nextSeq();
         BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, fieldId);
-        System.out.println(String.format(
-            "[FIELD]  seq=%d role=%d  READ%s %s.%s = %f  fieldId=%d",
-            seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, result[0], fieldId));
+        // System.out.println(String.format(
+            // "[FIELD]  seq=%d role=%d  READ%s %s.%s = %f  fieldId=%d",
+            // seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, result[0], fieldId));
       } finally {
         captureOrderLock.unlock();
       }
@@ -305,9 +305,9 @@ public class CaptureMonitor {
         catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
         long seq = TraceLogger.nextSeq();
         BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, fieldId);
-        System.out.println(String.format(
-            "[FIELD]  seq=%d role=%d  READ%s %s.%s = %dL  fieldId=%d",
-            seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, result[0], fieldId));
+        // System.out.println(String.format(
+            // "[FIELD]  seq=%d role=%d  READ%s %s.%s = %dL  fieldId=%d",
+            // seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, result[0], fieldId));
       } finally {
         captureOrderLock.unlock();
       }
@@ -345,9 +345,9 @@ public class CaptureMonitor {
         catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
         long seq = TraceLogger.nextSeq();
         BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, fieldId);
-        System.out.println(String.format(
-            "[FIELD]  seq=%d role=%d  READ%s %s.%s = %f  fieldId=%d",
-            seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, result[0], fieldId));
+        // System.out.println(String.format(
+            // "[FIELD]  seq=%d role=%d  READ%s %s.%s = %f  fieldId=%d",
+            // seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, result[0], fieldId));
       } finally {
         captureOrderLock.unlock();
       }
@@ -385,11 +385,11 @@ public class CaptureMonitor {
         catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
         long seq = TraceLogger.nextSeq();
         BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, fieldId);
-        System.out.println(String.format(
-            "[FIELD]  seq=%d role=%d  READ%s %s.%s = %s  fieldId=%d",
-            seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName,
-            result[0] != null ? result[0].getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(result[0])) : "null",
-            fieldId));
+        // System.out.println(String.format(
+            // "[FIELD]  seq=%d role=%d  READ%s %s.%s = %s  fieldId=%d",
+            // seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName,
+            // result[0] != null ? result[0].getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(result[0])) : "null",
+            // fieldId));
       } finally {
         captureOrderLock.unlock();
       }
@@ -430,9 +430,9 @@ public class CaptureMonitor {
         } catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
         long seq = TraceLogger.nextSeq();
         BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, fieldId);
-        System.out.println(String.format(
-            "[FIELD]  seq=%d role=%d  WRITE%s %s.%s = %d  fieldId=%d",
-            seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, value, fieldId));
+        // System.out.println(String.format(
+            // "[FIELD]  seq=%d role=%d  WRITE%s %s.%s = %d  fieldId=%d",
+            // seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, value, fieldId));
       } finally {
         captureOrderLock.unlock();
       }
@@ -462,9 +462,9 @@ public class CaptureMonitor {
         catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
         long seq = TraceLogger.nextSeq();
         BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, fieldId);
-        System.out.println(String.format(
-            "[FIELD]  seq=%d role=%d  WRITE%s %s.%s = %f  fieldId=%d",
-            seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, value, fieldId));
+        // System.out.println(String.format(
+            // "[FIELD]  seq=%d role=%d  WRITE%s %s.%s = %f  fieldId=%d",
+            // seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, value, fieldId));
       } finally {
         captureOrderLock.unlock();
       }
@@ -494,9 +494,9 @@ public class CaptureMonitor {
         catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
         long seq = TraceLogger.nextSeq();
         BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, fieldId);
-        System.out.println(String.format(
-            "[FIELD]  seq=%d role=%d  WRITE%s %s.%s = %dL  fieldId=%d",
-            seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, value, fieldId));
+        // // System.out.println(String.format(
+        //     "[FIELD]  seq=%d role=%d  WRITE%s %s.%s = %dL  fieldId=%d",
+        //     seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, value, fieldId));
       } finally {
         captureOrderLock.unlock();
       }
@@ -526,9 +526,9 @@ public class CaptureMonitor {
         catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
         long seq = TraceLogger.nextSeq();
         BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, fieldId);
-        System.out.println(String.format(
-            "[FIELD]  seq=%d role=%d  WRITE%s %s.%s = %f  fieldId=%d",
-            seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, value, fieldId));
+        // System.out.println(String.format(
+            // "[FIELD]  seq=%d role=%d  WRITE%s %s.%s = %f  fieldId=%d",
+            // seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName, value, fieldId));
       } finally {
         captureOrderLock.unlock();
       }
@@ -558,11 +558,11 @@ public class CaptureMonitor {
         catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
         long seq = TraceLogger.nextSeq();
         BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, fieldId);
-        System.out.println(String.format(
-            "[FIELD]  seq=%d role=%d  WRITE%s %s.%s = %s  fieldId=%d",
-            seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName,
-            value != null ? value.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(value)) : "null",
-            fieldId));
+        // System.out.println(String.format(
+            // "[FIELD]  seq=%d role=%d  WRITE%s %s.%s = %s  fieldId=%d",
+            // seq, roleId, isVolatile ? "(volatile)" : "", ownerName, fieldName,
+            // value != null ? value.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(value)) : "null",
+            // fieldId));
       } finally {
         captureOrderLock.unlock();
       }

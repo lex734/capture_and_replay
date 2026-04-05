@@ -213,7 +213,7 @@ public class IdentityMapper {
      */
     public static void registerByBirthId(int siteId, int count, Object obj) {
         if (obj == null) return;
-        BirthId id = new BirthId(siteId, count);
+        BirthId id = new BirthId.Heap(siteId, count);
         synchronized (objToId) {
             idToObj.putIfAbsent(id, obj);
             objToId.putIfAbsent(obj, id);

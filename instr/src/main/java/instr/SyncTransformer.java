@@ -374,21 +374,32 @@ public class SyncTransformer implements ClassFileTransformer {
                 } else {
                     /** LOGGING **/
                     if (isLoad) {
-                        mv.visitInsn(Opcodes.DUP2); 
-                        super.visitInsn(opcode); // [array, index, VALUE]
-                        
-                        // Move VALUE to bottom: [VALUE, array, index]
-                        if (isLongOp) {
-                            mv.visitInsn(Opcodes.DUP2_X2); mv.visitInsn(Opcodes.POP2);
-                        } else {
-                            mv.visitInsn(Opcodes.DUP_X2); mv.visitInsn(Opcodes.POP);
-                        }
-                        
-                        mv.visitLdcInsn(eventType); 
-                        mv.visitInsn(Opcodes.DUP_X2); 
-                        mv.visitInsn(Opcodes.POP); 
-                        mv.visitLdcInsn(siteId); 
+                        // Use locals to save array/index, perform the load, log, then
+                        // restore the loaded value onto the stack. Pure stack manipulation
+                        // (DUP2 + DUP_X2) was consuming the value via the void log call,
+                        // leaving the stack empty and causing ASM frame computation to crash.
+                        int valStoreOp = isLongOp ? Opcodes.LSTORE : isObjOp ? Opcodes.ASTORE : Opcodes.ISTORE;
+                        int valLoadOp  = isLongOp ? Opcodes.LLOAD  : isObjOp ? Opcodes.ALOAD  : Opcodes.ILOAD;
+                        Type valType   = isLongOp ? Type.LONG_TYPE : isObjOp ? Type.getType(Object.class) : Type.INT_TYPE;
+                        int idxLocal   = newLocal(Type.INT_TYPE);
+                        int arrLocal   = newLocal(Type.getType(Object.class));
+                        int valLocal   = newLocal(valType);
+                        // Stack: [array, index]
+                        mv.visitVarInsn(Opcodes.ISTORE, idxLocal);
+                        mv.visitVarInsn(Opcodes.ASTORE, arrLocal);
+                        mv.visitVarInsn(Opcodes.ALOAD,  arrLocal);
+                        mv.visitVarInsn(Opcodes.ILOAD,  idxLocal);
+                        super.visitInsn(opcode); // actual XALOAD → [value]
+                        mv.visitVarInsn(valStoreOp, valLocal);
+                        // Log: (value, eventType, array, index, siteId)
+                        mv.visitVarInsn(valLoadOp, valLocal);
+                        mv.visitLdcInsn(eventType);
+                        mv.visitVarInsn(Opcodes.ALOAD, arrLocal);
+                        mv.visitVarInsn(Opcodes.ILOAD, idxLocal);
+                        mv.visitLdcInsn(siteId);
                         mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logArray" + typeSuffix, "(" + valDesc + "ILjava/lang/Object;II)V", false);
+                        // Restore loaded value onto the stack
+                        mv.visitVarInsn(valLoadOp, valLocal);
                         return;
 
                     } else {
@@ -487,6 +498,12 @@ public class SyncTransformer implements ClassFileTransformer {
                 }
             } else if (owner.equals("java/lang/Thread")) {
                 if (name.equals("start")) {
+                    // The receiver may be typed as Object by the verifier when loaded
+                    // from an instrumented array access (checkArrayObj returns Object).
+                    // CHECKCAST restores the Thread type for both preRegisterThread and
+                    // invokevirtual; it is a no-op at runtime since the object is always
+                    // a Thread here.
+                    mv.visitTypeInsn(Opcodes.CHECKCAST, "java/lang/Thread");
                     mv.visitInsn(Opcodes.DUP); // for logSyncCall
                     if (isReplay) {
                         mv.visitInsn(Opcodes.DUP); // extra copy consumed by preRegisterThread
@@ -498,11 +515,15 @@ public class SyncTransformer implements ClassFileTransformer {
                     int eventType = descriptor.equals("()V") ? 10 : 18; // 10=JOIN, 18=JOIN_TIMEOUT
 
                     if (descriptor.equals("()V")) {
+                        // Same as start(): receiver may be Object after array instrumentation.
+                        mv.visitTypeInsn(Opcodes.CHECKCAST, "java/lang/Thread");
                         mv.visitInsn(Opcodes.DUP);
                     } else {
                         // Stack surgery for join(long): [threadRef, longValue]
+                        // Extract threadRef, cast it, then restore stack order.
                         mv.visitInsn(Opcodes.DUP2_X1);
                         mv.visitInsn(Opcodes.POP2);
+                        mv.visitTypeInsn(Opcodes.CHECKCAST, "java/lang/Thread"); // [long, Thread]
                         mv.visitInsn(Opcodes.DUP); // Duplicate threadRef
                         mv.visitInsn(Opcodes.DUP_X2); // Move duplicated ref behind long
                         mv.visitInsn(Opcodes.POP); // Clean up top
@@ -515,6 +536,7 @@ public class SyncTransformer implements ClassFileTransformer {
                     mv.visitInsn(Opcodes.ACONST_NULL);
                     logSyncCall(14, siteId); // THREAD_YIELD
                 } else if (name.equals("interrupt")) {
+                    mv.visitTypeInsn(Opcodes.CHECKCAST, "java/lang/Thread");
                     mv.visitInsn(Opcodes.DUP);
                     logSyncCall(11, siteId); // THREAD_INTERRUPT
                 } else if (name.equals("interrupted")) {
@@ -525,6 +547,7 @@ public class SyncTransformer implements ClassFileTransformer {
                     logSyncCall(19, siteId); // THREAD_INTERRUPT_CHECK
                 } else if (name.equals("isInterrupted")) {
                     // Instance method — receiver is the thread being checked
+                    mv.visitTypeInsn(Opcodes.CHECKCAST, "java/lang/Thread");
                     mv.visitInsn(Opcodes.DUP);
                     logSyncCall(19, siteId); // THREAD_INTERRUPT_CHECK
                 }

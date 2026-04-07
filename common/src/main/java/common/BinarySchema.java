@@ -69,7 +69,8 @@ public class BinarySchema {
         maxAllowedEvents = maxEvents;
         long totalSize = maxEvents * RECORD_SIZE;
         try (RandomAccessFile file = new RandomAccessFile(fileName, "rw")) {
-            file.setLength(totalSize);
+            file.setLength(0);        // truncate to clear stale data from previous runs
+            file.setLength(totalSize); // extend with zero-filled bytes
             buffer = file.getChannel().map(FileChannel.MapMode.READ_WRITE, 0, totalSize);
         }
         // Ensure dirty mapped pages are flushed to disk even if the JVM exits

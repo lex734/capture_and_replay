@@ -6,7 +6,6 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.io.InputStream;
 import org.objectweb.asm.*;
 import org.objectweb.asm.commons.LocalVariablesSorter;
@@ -15,18 +14,23 @@ import org.w3c.dom.events.EventTarget;
 public class SyncTransformer implements ClassFileTransformer {
 
     // ---- Site ID registry (assigned at class-load/transform time, not runtime) ----
-    // This ensures site IDs are identical across capture and replay runs,
-    // regardless of thread scheduling during execution.
+    // Site IDs are derived from the site string content, not registration order.
+    // This makes them identical across capture and replay regardless of class-load order.
     private static final ConcurrentHashMap<String, Integer> siteRegistry = new ConcurrentHashMap<>();
-    private static final AtomicInteger siteIdCounter = new AtomicInteger(1);
 
     public static int registerSiteId(String siteString) {
-        return siteRegistry.computeIfAbsent(siteString, k -> siteIdCounter.getAndIncrement());
+        return siteRegistry.computeIfAbsent(siteString, k -> {
+            // Derive a stable, content-based ID. Mix bits to reduce clustering from
+            // the polynomial hashCode, then strip the sign bit. Reserve 0 for GLOBAL.
+            int h = k.hashCode();
+            h ^= (h >>> 16);
+            h &= 0x7FFFFFFF;
+            return (h == 0) ? 1 : h;
+        });
     }
 
     public static void resetSiteRegistry() {
         siteRegistry.clear();
-        siteIdCounter.set(1);
     }
 
     // ---- Global volatile field resolution ----
@@ -947,11 +951,7 @@ public class SyncTransformer implements ClassFileTransformer {
                     } else {
                         // Stack: [owner(1), val(1)]
                         mv.visitInsn(Opcodes.DUP2);    // [owner, val, owner, val]
-                        mv.visitInsn(Opcodes.DUP);     // [owner, val, owner, val, val]
-                        mv.visitInsn(Opcodes.DUP_X2);  // [owner, val, val, owner, val, val]
-                        mv.visitInsn(Opcodes.POP2);    // [owner, val, val, owner]
-                        mv.visitInsn(Opcodes.DUP_X2);  // [owner, val, owner, val, val, owner]
-                        mv.visitInsn(Opcodes.POP);     // [owner, val, val, owner] (This is the pair for log)
+                        mv.visitInsn(Opcodes.SWAP);    // [owner, val, val, owner] — bottom pair for PUTFIELD, top pair [val,owner] for log
                     }
                     // Prep Log Args
                     pushLogArgs(typeSuffix, retDesc, eventType, siteId, isVolatile, isStatic, name, owner);

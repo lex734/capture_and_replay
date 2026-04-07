@@ -24,6 +24,13 @@ public class ReplayCoordinator {
     // so ReplayMonitor can print epoch/seq after awaitTurn returns.
     private static final ThreadLocal<Long> lastMatchedSeq = ThreadLocal.withInitial(() -> 0L);
 
+    // Universal target epoch: the lowest epoch any role is currently trying to
+    // advance releasedEpoch to. Roles with release events at higher epochs must
+    // defer until the pending lower-epoch release succeeds, preventing circular
+    // waits (e.g. Role A waiting for Role B at epoch N while Role B is waiting
+    // for Role A at epoch N+1).
+    private static final AtomicLong pendingTargetEpoch = new AtomicLong(Long.MAX_VALUE);
+
     public static long getLastMatchedSeq() { return lastMatchedSeq.get(); }
 
     // Roles seen in the trace that haven't checked in yet
@@ -36,7 +43,24 @@ public class ReplayCoordinator {
     private static final Map<Integer, LinkedList<long[]>> roleQueues = new ConcurrentHashMap<>();
     private static final AtomicLong globalMatchCount = new AtomicLong(0);
 
+    // Maps roleId → the Thread object that owns it, so isAnyRoleBehind can skip
+    // roles whose thread has exited normally (without an uncaught exception).
+    private static final ConcurrentHashMap<Integer, Thread> roleIdToThread = new ConcurrentHashMap<>();
+
     public static void init(MappedByteBuffer traceBuffer, long count) {
+        // Clear all state so init() is safe to call more than once (e.g. in tests).
+        sortedEvents = null;
+        totalEvents = 0;
+        currentIdx.set(0);
+        releasedEpoch.set(0);
+        pendingTargetEpoch.set(Long.MAX_VALUE);
+        pendingRoles.clear();
+        activeRoles.clear();
+        startedRoles.clear();
+        roleQueues.clear();
+        globalMatchCount.set(0);
+        roleIdToThread.clear();
+
         ArrayList<long[]> allEvents = new ArrayList<>();
         long maxSlots = traceBuffer.capacity() / BinarySchema.RECORD_SIZE;
 
@@ -81,6 +105,7 @@ public class ReplayCoordinator {
         int mainRole = (int) sortedEvents[0][1];
         pendingRoles.remove(mainRole);
         activeRoles.add(mainRole);
+        roleIdToThread.put(mainRole, Thread.currentThread());
         IdentityMapper.preAssignRole(mainTid, mainRole);
         System.out.println("[Replay] main thread registered as role=" + mainRole);
     }
@@ -93,13 +118,13 @@ public class ReplayCoordinator {
             // Iterate through all queues to find the 'next' logical thread to start
             for (Map.Entry<Integer, LinkedList<long[]>> entry : roleQueues.entrySet()) {
                 int roleId = entry.getKey();
-                
+
                 // Only consider roles that are truly PENDING (not started, not active)
                 if (pendingRoles.contains(roleId) && !startedRoles.contains(roleId) && !activeRoles.contains(roleId)) {
                     LinkedList<long[]> queue = entry.getValue();
                     if (queue != null && !queue.isEmpty()) {
                         long headSeq = queue.peek()[0];
-                        
+
                         // We want the role that appears EARLIEST in the global timeline
                         if (headSeq < lowestSeq) {
                             lowestSeq = headSeq;
@@ -112,10 +137,32 @@ public class ReplayCoordinator {
         }
     }
 
+    /**
+     * Scans the parent role's event queue for its next unconsumed THREAD_START
+     * event and returns the child roleId stored in data1 (field [5]).
+     * During capture, TraceLogger.logSync writes childRoleId into data1 for
+     * every THREAD_START record, so this lookup is authoritative.
+     * Returns -1 if the parent queue has no pending THREAD_START event.
+     */
+    public static int peekChildRoleFromThreadStart(int parentRoleId) {
+        synchronized (controlLock) {
+            LinkedList<long[]> parentQueue = roleQueues.get(parentRoleId);
+            if (parentQueue == null) return -1;
+            for (long[] event : parentQueue) {
+                int eType = (int) event[2] & 0xFF;
+                if (eType == BinarySchema.Event.THREAD_START) {
+                    return (int) event[5]; // data1 = childRoleId written at capture time
+                }
+            }
+            return -1;
+        }
+    }
+
     // In ReplayCoordinator — called from IdentityMapper on first role assignment
     public static void checkIn(int roleId) {
         if (pendingRoles.remove(roleId)) {
             startedRoles.add(roleId);
+            roleIdToThread.put(roleId, Thread.currentThread());
             synchronized (controlLock) {
                 System.out.println("[Replay] role=" + roleId + " started, waiting to be scheduled.");
                 controlLock.notifyAll();
@@ -144,6 +191,9 @@ public class ReplayCoordinator {
             // Move the role to active regardless of its current state (pending or started)
             boolean removed = pendingRoles.remove(roleId) || startedRoles.remove(roleId);
             activeRoles.add(roleId);
+            // Store the actual worker thread so that isAnyRoleBehind's t.isAlive()
+            // check reflects when THIS thread exits, not an earlier caller.
+            roleIdToThread.put(roleId, Thread.currentThread());
             System.out.println("[Replay] role=" + roleId + " is now active.");
             controlLock.notifyAll();
         }
@@ -183,10 +233,36 @@ public class ReplayCoordinator {
                 // boundary). Non-release events (MONITOR_ENTER, field reads, etc.) just wait
                 // until the release event that opened this epoch has been processed.
                 if (eEpoch > releasedEpoch.get()) {
-                    if (isReleaseEvent(eType) && !isAnyRoleBehind(eEpoch)) {
-                        // This release event is the epoch leader — open the new epoch.
-                        System.out.println("[Replay] Role " + roleId + " advancing Epoch to " + eEpoch + " for type " + (eType & 0xFF));
-                        releasedEpoch.set(eEpoch);
+                    if (isReleaseEvent(eType)) {
+                        // Register our target and get the current global minimum.
+                        // Only the role with the lowest pending target epoch may advance;
+                        // roles targeting higher epochs defer so lower-epoch releases go
+                        // first, breaking circular waits.
+                        long lowestPending = pendingTargetEpoch.accumulateAndGet(eEpoch, Math::min);
+                        if (lowestPending < eEpoch) {
+                            // An earlier epoch is pending — defer and wait for it to advance.
+                            try {
+                                controlLock.wait(100);
+                                continue;
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                                return;
+                            }
+                        }
+                        if (!isAnyRoleBehind(eEpoch)) {
+                            // This release event is the epoch leader — open the new epoch.
+                            System.out.println("[Replay] Role " + roleId + " advancing Epoch to " + eEpoch + " for type " + (eType & 0xFF));
+                            releasedEpoch.set(eEpoch);
+                            pendingTargetEpoch.compareAndSet(eEpoch, Long.MAX_VALUE);
+                        } else {
+                            try {
+                                controlLock.wait(100);
+                                continue;
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                                return;
+                            }
+                        }
                     } else {
                         try {
                             controlLock.wait(100);
@@ -218,7 +294,10 @@ public class ReplayCoordinator {
                                 roleId, eEpoch, eType & 0xFF, packedType & 0xFF));
                 new RuntimeException("[DIVERGENCE] stack trace").printStackTrace(System.err);
                 lastMatchedSeq.set(eSeq);
-                if (isReleaseEvent(eType)) releasedEpoch.set(eEpoch);
+                if (isReleaseEvent(eType)) {
+                    releasedEpoch.set(eEpoch);
+                    pendingTargetEpoch.compareAndSet(eEpoch, Long.MAX_VALUE);
+                }
                 controlLock.notifyAll();
                 return;
             }
@@ -445,14 +524,42 @@ public class ReplayCoordinator {
                 long eEpoch = eSeq >>> 32;
                 int eType = (int) expected[2];
 
+                // System.out.println(String.format("[Replay] Role %d awaiting event Type %d ObjSite %d ObjCount %d at Epoch %d (releasedEpoch=%d) but got event Type %d ObjSite %d ObjCount %d",
+                //         roleId, eType, (int) expected[3], (int) expected[4], eEpoch, releasedEpoch.get(), packedType, objSite, objCount));
+                // int eFlags = (eType >> 8) & 0xFF;
+                // System.out.println(String.format("Flags: Volatile=%b Static=%b ArrayValued=%b Release=%b",
+                //         (eFlags & BinarySchema.Flags.IS_VOLATILE) != 0,
+                //         (eFlags & BinarySchema.Flags.IS_STATIC) != 0,
+                //         (eFlags & BinarySchema.Flags.IS_ARRAY_VALUED) != 0,
+                        // isReleaseEvent(eType)));
+
                 // --- EPOCH GUARD ---
                 // Only release events may advance releasedEpoch. Field/array reads and
                 // writes follow thread-local sequence without cross-thread epoch blocking;
                 // they wait here only until the release event that opened this epoch fires.
+                // Use > (same as awaitTurn) so events multiple epochs ahead don't bypass
+                // the guard and execute out of order.
                 if (eEpoch > releasedEpoch.get()) {
-                    if (isReleaseEvent(eType) && !isAnyRoleBehind(eEpoch)) {
-                        System.out.println("[Replay] Role " + roleId + " advancing global epoch to " + eEpoch);
-                        releasedEpoch.set(eEpoch);
+                    if (isReleaseEvent(eType)) {
+                        // Same pendingTargetEpoch logic as awaitTurn: only the role
+                        // targeting the lowest pending epoch may advance.
+                        long lowestPending = pendingTargetEpoch.accumulateAndGet(eEpoch, Math::min);
+                        if (lowestPending < eEpoch) {
+                            try {
+                                controlLock.wait(100);
+                                continue;
+                            } catch (InterruptedException e) { return null; }
+                        }
+                        if (!isAnyRoleBehind(eEpoch)) {
+                            System.out.println("[Replay] Role " + roleId + " advancing global epoch to " + eEpoch);
+                            releasedEpoch.set(eEpoch);
+                            pendingTargetEpoch.compareAndSet(eEpoch, Long.MAX_VALUE);
+                        } else {
+                            try {
+                                controlLock.wait(100);
+                                continue;
+                            } catch (InterruptedException e) { return null; }
+                        }
                     } else {
                         try {
                             controlLock.wait(100);
@@ -462,7 +569,8 @@ public class ReplayCoordinator {
                 }
 
                 // --- THE MATCH ---
-                if (packedType == (int) expected[2] && objSite == (int) expected[3] && objCount == (int) expected[4]) {
+                if (packedType == eType && objSite == (int) expected[3] && objCount == (int) expected[4]) {
+                    // System.out.println("Match found for Role " + roleId + " at Epoch " + eEpoch + " with Type " + (eType & 0xFF));
                     myQueue.poll();
                     lastMatchedSeq.set(eSeq);
                     
@@ -477,11 +585,14 @@ public class ReplayCoordinator {
 
                 // --- DIVERGENCE: consume, log, inject trace value, and continue ---
                 myQueue.poll();
-                System.err.println(String.format("[DIVERGENCE] doAwaitTurnValued Role %d at Epoch %d. Trace wants Type %d, Code did Type %d",
-                                roleId, eEpoch, (int) expected[2] & 0xFF, packedType & 0xFF));
+                System.err.println(String.format("[DIVERGENCE] doAwaitTurnValued Role %d at Epoch %d. Trace wants Role %d Type %d, Code did Type %d",
+                                roleId, eEpoch, (int) expected[1], (int) expected[2] & 0xFF, packedType & 0xFF));
                 new RuntimeException("[DIVERGENCE] stack trace").printStackTrace(System.err);
                 lastMatchedSeq.set(eSeq);
-                if (isReleaseEvent((int) expected[2])) releasedEpoch.set(eEpoch);
+                if (isReleaseEvent((int) expected[2])) {
+                    releasedEpoch.set(eEpoch);
+                    pendingTargetEpoch.compareAndSet(eEpoch, Long.MAX_VALUE);
+                }
                 controlLock.notifyAll();
                 return expected;
             }
@@ -593,15 +704,38 @@ public class ReplayCoordinator {
 
     private static boolean isAnyRoleBehind(long targetEpoch) {
         for (Integer activeId : activeRoles) {
+            // If the thread that owns this role has exited normally (no uncaught
+            // exception), it will never call awaitTurn again. Any leftover events
+            // in its queue are phantom events — don't let them block epoch advancement.
+            Thread t = roleIdToThread.get(activeId);
+            if (t != null && !t.isAlive()) continue;
+
             LinkedList<long[]> queue = roleQueues.get(activeId);
             if (queue != null && !queue.isEmpty()) {
                 long headEpoch = queue.peek()[0] >>> 32;
                 if (headEpoch < targetEpoch) {
+                    System.out.println("[Replay] Role " + activeId + " is still at Epoch " + headEpoch + " (targetEpoch=" + targetEpoch + ")");
                     // An active thread still has events to process in an older epoch.
-                    return true; 
+                    return true;
                 }
             }
         }
+
+        // Also check roles that have called checkIn() but haven't yet called
+        // awaitTurn() (so activateRole() hasn't moved them to activeRoles yet).
+        // Without this, a freshly-started thread sitting in startedRoles is invisible
+        // to the epoch guard and the epoch can race past its early events.
+        for (Integer startedId : startedRoles) {
+            LinkedList<long[]> queue = roleQueues.get(startedId);
+            if (queue != null && !queue.isEmpty()) {
+                long headEpoch = queue.peek()[0] >>> 32;
+                if (headEpoch < targetEpoch) {
+                    System.out.println("[Replay] Started-but-not-active role " + startedId + " is still at Epoch " + headEpoch + " (targetEpoch=" + targetEpoch + ")");
+                    return true;
+                }
+            }
+        }
+
         return false;
     }
 }

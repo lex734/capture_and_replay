@@ -27,7 +27,13 @@ public class IdentityMapper {
     // with a heap string of the same content.
     private static final Map<Object, BirthId> objToId = Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<BirthId, Object> idToObj = Collections.synchronizedMap(new WeakHashMap<>());
-    private static final ConcurrentHashMap<Integer, AtomicInteger> siteCounters = new ConcurrentHashMap<>();
+    // Keyed by "siteId:roleId" so each role gets its own allocation counter per
+    // site. This makes birth IDs stable across runs: role R's N-th allocation at
+    // site S always receives the same (siteId, count) regardless of what other
+    // roles are doing concurrently. The count is encoded as (roleId << 16) | n
+    // so that the (siteId, count) pair remains globally unique without changing
+    // the trace format.
+    private static final ConcurrentHashMap<String, AtomicInteger> siteCounters = new ConcurrentHashMap<>();
 
     // Pool string literals (from LDC): keyed by string content so every reference
     // to the same literal resolves to the same BirthId.PoolString across runs.
@@ -47,7 +53,13 @@ public class IdentityMapper {
 
         /** Heap-allocated object: identified by allocation site + per-site ordinal. */
         public static final class Heap extends BirthId {
-            public Heap(int siteId, int count) { super(siteId, count); }
+            /** The role that allocated this object, recorded at allocation time. */
+            public final int creatorRole;
+
+            public Heap(int siteId, int creatorRole, int count) {
+                super(siteId, count);
+                this.creatorRole = creatorRole;
+            }
 
             @Override
             public boolean equals(Object o) {
@@ -80,7 +92,7 @@ public class IdentityMapper {
         }
 
         // Static constant representing the "Global/Static" birthplace
-        public static final BirthId GLOBAL = new Heap(0, 0);
+        public static final BirthId GLOBAL = new Heap(0, 0, 0);
     }
 
     /**
@@ -141,8 +153,16 @@ public class IdentityMapper {
             if (existing != null)
                 return existing;
 
-            AtomicInteger counter = siteCounters.computeIfAbsent(currentInstructionSiteId, k -> new AtomicInteger(1));
-            BirthId.Heap newId = new BirthId.Heap(currentInstructionSiteId, counter.getAndIncrement());
+            // Fallback: object was not registered at allocation time (e.g. came from
+            // uninstrumented code). Use the same per-role-per-site scheme so the count
+            // is stable across capture and replay.
+            int roleId = getRoleId(Thread.currentThread().getId());
+            if (roleId < 0) roleId = 0;
+            String counterKey = currentInstructionSiteId + ":" + roleId;
+            AtomicInteger counter = siteCounters.computeIfAbsent(counterKey, k -> new AtomicInteger(1));
+            int perRoleCount = counter.getAndIncrement();
+            int encodedCount = (roleId << 16) | (perRoleCount & 0xFFFF);
+            BirthId.Heap newId = new BirthId.Heap(currentInstructionSiteId, roleId, encodedCount);
             objToId.put(obj, newId);
             idToObj.put(newId, obj);
             return newId;
@@ -175,10 +195,17 @@ public class IdentityMapper {
      */
     public static void registerAllocation(Object obj, int siteId) {
         if (obj == null) return;
+        int roleId = getRoleId(Thread.currentThread().getId());
+        if (roleId < 0) roleId = 0;
+        String counterKey = siteId + ":" + roleId;
         synchronized (objToId) {
             if (objToId.containsKey(obj)) return; // already registered
-            AtomicInteger counter = siteCounters.computeIfAbsent(siteId, k -> new AtomicInteger(1));
-            BirthId.Heap id = new BirthId.Heap(siteId, counter.getAndIncrement());
+            AtomicInteger counter = siteCounters.computeIfAbsent(counterKey, k -> new AtomicInteger(1));
+            int perRoleCount = counter.getAndIncrement();
+            // Encode roleId in the upper 16 bits so the (siteId, count) pair is
+            // globally unique even when multiple roles allocate at the same site.
+            int encodedCount = (roleId << 16) | (perRoleCount & 0xFFFF);
+            BirthId.Heap id = new BirthId.Heap(siteId, roleId, encodedCount);
             objToId.put(obj, id);
             idToObj.put(id, obj);
         }
@@ -203,7 +230,8 @@ public class IdentityMapper {
     }
 
     public static Object resolveByBirthId(int valueSiteId, int valueCount) {
-        return idToObj.get(new BirthId.Heap(valueSiteId, valueCount));
+        int creatorRole = (valueCount >>> 16) & 0xFFFF;
+        return idToObj.get(new BirthId.Heap(valueSiteId, creatorRole, valueCount));
     }
 
     /**
@@ -213,10 +241,15 @@ public class IdentityMapper {
      */
     public static void registerByBirthId(int siteId, int count, Object obj) {
         if (obj == null) return;
-        BirthId id = new BirthId.Heap(siteId, count);
+        int creatorRole = (count >>> 16) & 0xFFFF;
+        BirthId id = new BirthId.Heap(siteId, creatorRole, count);
         synchronized (objToId) {
             idToObj.putIfAbsent(id, obj);
-            objToId.putIfAbsent(obj, id);
+            // Use put (not putIfAbsent): if this object was already registered under its
+            // natural allocation BirthId, overwrite it with the trace BirthId so that
+            // subsequent getBirthId(obj) calls (e.g. when obj is used as a field owner)
+            // return the identity the trace expects, not the replay's allocation ordinal.
+            objToId.put(obj, id);
         }
     }
     /** Looks up the roleId for a thread that has already been assigned one, or -1. */

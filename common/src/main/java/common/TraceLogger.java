@@ -30,12 +30,12 @@ public class TraceLogger {
      */
     private static long nextSeq(boolean advanceEpoch) {
         long[] state = threadState.get();
-        state[0]++; // thread-local increment — zero contention
-        if (advanceEpoch) {
-            state[1] = globalEpoch.incrementAndGet();
-        } else {
-            state[1] = globalEpoch.get(); // volatile read — no CAS
+        long newEpoch = advanceEpoch ? globalEpoch.incrementAndGet() : globalEpoch.get();
+        if (newEpoch != state[1]) {
+            state[1] = newEpoch;
+            state[0] = 0; // reset localSeq at each epoch boundary
         }
+        state[0]++;
         return (state[1] << 32) | (state[0] & 0xFFFFFFFFL);
     }
 

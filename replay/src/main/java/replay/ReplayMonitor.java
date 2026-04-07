@@ -390,14 +390,34 @@ public class ReplayMonitor {
         isInside.set(true);
         try {
             // Assign this thread's roleId now, before it runs a single instruction.
-            // Uses the next expected role from the trace at the current idx.
+            // Look up the child role from the parent's next THREAD_START event in the
+            // trace (data1 holds the childRoleId written at capture time). This is
+            // correct even when threads run different workloads, because the mapping is
+            // based on which parent spawned which child, not on global sequence order.
             long tid = thread.getId();
-            int nextRole = ReplayCoordinator.peekNextPendingRole();
+            int parentRole = IdentityMapper.getRoleId(Thread.currentThread().getId());
+            int nextRole = (parentRole != -1)
+                    ? ReplayCoordinator.peekChildRoleFromThreadStart(parentRole)
+                    : -1;
+            if (nextRole == -1) {
+                // Fallback: no THREAD_START found in parent queue — use sequence order.
+                nextRole = ReplayCoordinator.peekNextPendingRole();
+            }
             if (nextRole == -1) return;
 
             IdentityMapper.preAssignRole(tid, nextRole);
-            ReplayCoordinator.checkIn(nextRole);
-            System.out.println("[PreRegister] role=" + nextRole);
+            // Do NOT call checkIn() here. checkIn() would place the child role in
+            // startedRoles before thread.start() is actually called. isAnyRoleBehind
+            // checks startedRoles and would block the parent's THREAD_START epoch
+            // advancement if the child has any trace events at epochs below the
+            // THREAD_START epoch (which happens when the child races ahead of the
+            // parent's logSync call during capture). Since thread.start() is called
+            // AFTER checkSync(THREAD_START) returns, the child thread can never run
+            // to process those events — a true deadlock. Instead, the child remains
+            // in pendingRoles (invisible to the epoch guard) until its thread actually
+            // starts and calls awaitTurn(), at which point activateRole() moves it
+            // directly from pendingRoles to activeRoles.
+            System.out.println("[PreRegister] role=" + nextRole + " (parent role=" + parentRole + ")");
         } finally {
             isInside.set(false);
         }

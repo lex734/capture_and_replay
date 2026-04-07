@@ -47,6 +47,13 @@ public class ReplayCoordinator {
     // roles whose thread has exited normally (without an uncaught exception).
     private static final ConcurrentHashMap<Integer, Thread> roleIdToThread = new ConcurrentHashMap<>();
 
+    // Global divergence flag. Set at most once; once true all awaitTurn* methods
+    // return immediately so threads run freely rather than deadlocking.
+    private static volatile boolean hasDiverged = false;
+    private static volatile String firstDivergenceInfo = null;
+
+    public static boolean hasDiverged() { return hasDiverged; }
+
     public static void init(MappedByteBuffer traceBuffer, long count) {
         // Clear all state so init() is safe to call more than once (e.g. in tests).
         sortedEvents = null;
@@ -60,6 +67,8 @@ public class ReplayCoordinator {
         roleQueues.clear();
         globalMatchCount.set(0);
         roleIdToThread.clear();
+        hasDiverged = false;
+        firstDivergenceInfo = null;
 
         ArrayList<long[]> allEvents = new ArrayList<>();
         long maxSlots = traceBuffer.capacity() / BinarySchema.RECORD_SIZE;
@@ -91,8 +100,28 @@ public class ReplayCoordinator {
         }
 
         totalEvents = allEvents.size();
-        System.out.println("[Replay] Distributed " + totalEvents + " events into " + roleQueues.keySet().size() + " role queues.");
+        // System.out.println("[Replay] Distributed " + totalEvents + " events into " + roleQueues.keySet().size() + " role queues.");
     }
+    /**
+     * Records the first structural divergence and wakes all waiting threads so
+     * they can exit their spin loops and run without synchronization guidance.
+     * Uses double-checked locking so only the very first divergence is recorded.
+     */
+    private static void reportDivergence(int roleId, long epoch,
+            int expectedType, int actualType, String extra) {
+        if (hasDiverged) return;
+        synchronized (controlLock) {
+            if (hasDiverged) return;
+            hasDiverged = true;
+            firstDivergenceInfo = String.format(
+                    "role=%d epoch=%d expectedType=0x%02x actualType=0x%02x | %s",
+                    roleId, epoch, expectedType & 0xFF, actualType & 0xFF, extra);
+            System.err.println("[DIVERGENCE] Replay has structurally diverged: " + firstDivergenceInfo);
+            System.err.println("[DIVERGENCE] Synchronization and injection will no longer be applied.");
+            controlLock.notifyAll();
+        }
+    }
+
     /**
      * Registers the main thread so its role is immediately active.
      * The main thread is always the first role in the sorted trace.
@@ -107,7 +136,7 @@ public class ReplayCoordinator {
         activeRoles.add(mainRole);
         roleIdToThread.put(mainRole, Thread.currentThread());
         IdentityMapper.preAssignRole(mainTid, mainRole);
-        System.out.println("[Replay] main thread registered as role=" + mainRole);
+        // System.out.println("[Replay] main thread registered as role=" + mainRole);
     }
 
     public static int peekNextPendingRole() {
@@ -164,7 +193,7 @@ public class ReplayCoordinator {
             startedRoles.add(roleId);
             roleIdToThread.put(roleId, Thread.currentThread());
             synchronized (controlLock) {
-                System.out.println("[Replay] role=" + roleId + " started, waiting to be scheduled.");
+                // System.out.println("[Replay] role=" + roleId + " started, waiting to be scheduled.");
                 controlLock.notifyAll();
             }
         }
@@ -175,7 +204,7 @@ public class ReplayCoordinator {
         activeRoles.remove(roleId);
         startedRoles.remove(roleId);
         pendingRoles.remove(roleId);
-        System.err.println("[Replay] role=" + roleId + " died (uncaught exception) — skipping its remaining events.");
+        // System.err.println("[Replay] role=" + roleId + " died (uncaught exception) — skipping its remaining events.");
         synchronized (controlLock) {
             controlLock.notifyAll();
         }
@@ -184,7 +213,7 @@ public class ReplayCoordinator {
     private static void activateRole(int roleId) {
         if (activeRoles.contains(roleId))
             return;
-        System.out.println("[Replay] Activating role=" + roleId);
+        // System.out.println("[Replay] Activating role=" + roleId);
         synchronized (controlLock) {
             // Re-check after acquiring lock to prevent double-activation
             if (activeRoles.contains(roleId)) return;
@@ -194,7 +223,7 @@ public class ReplayCoordinator {
             // Store the actual worker thread so that isAnyRoleBehind's t.isAlive()
             // check reflects when THIS thread exits, not an earlier caller.
             roleIdToThread.put(roleId, Thread.currentThread());
-            System.out.println("[Replay] role=" + roleId + " is now active.");
+            // System.out.println("[Replay] role=" + roleId + " is now active.");
             controlLock.notifyAll();
         }
     }
@@ -221,6 +250,8 @@ public class ReplayCoordinator {
 
         synchronized (controlLock) {
             while (true) {
+                if (hasDiverged) { controlLock.notifyAll(); return; }
+
                 long[] expected = myQueue.peek();
                 if (expected == null) return;
 
@@ -251,7 +282,7 @@ public class ReplayCoordinator {
                         }
                         if (!isAnyRoleBehind(eEpoch)) {
                             // This release event is the epoch leader — open the new epoch.
-                            System.out.println("[Replay] Role " + roleId + " advancing Epoch to " + eEpoch + " for type " + (eType & 0xFF));
+                            // System.out.println("[Replay] Role " + roleId + " advancing Epoch to " + eEpoch + " for type " + (eType & 0xFF));
                             releasedEpoch.set(eEpoch);
                             pendingTargetEpoch.compareAndSet(eEpoch, Long.MAX_VALUE);
                         } else {
@@ -288,17 +319,15 @@ public class ReplayCoordinator {
                     return;
                 }
 
-                // --- DIVERGENCE: consume, log, inject trace value, and continue ---
+                // --- DIVERGENCE: structural mismatch — stop all synchronization ---
                 myQueue.poll();
-                System.err.println(String.format("[DIVERGENCE] Role %d at Epoch %d. Trace wants Type %d, Code did Type %d",
-                                roleId, eEpoch, eType & 0xFF, packedType & 0xFF));
-                new RuntimeException("[DIVERGENCE] stack trace").printStackTrace(System.err);
                 lastMatchedSeq.set(eSeq);
                 if (isReleaseEvent(eType)) {
                     releasedEpoch.set(eEpoch);
                     pendingTargetEpoch.compareAndSet(eEpoch, Long.MAX_VALUE);
                 }
-                controlLock.notifyAll();
+                reportDivergence(roleId, eEpoch, eType, packedType,
+                        "sync event mismatch: objSite=" + objSite + " objCount=" + objCount);
                 return;
             }
         }
@@ -331,22 +360,19 @@ public class ReplayCoordinator {
                     if (isReleaseEvent(packedType)) releasedEpoch.set(eEpoch);
                     controlLock.notifyAll();
                     if (naturalValue != traceValue) {
-                        System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnInt role=%d: natural=%d trace=%d",
-                                roleId, naturalValue, traceValue));
+                        // System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnInt role=%d: natural=%d trace=%d",
+                                // roleId, naturalValue, traceValue));
                         return traceValue;
                     }
                     return naturalValue;
                 }
-                // Type-level divergence: consume, log, inject trace value.
                 myQueue.poll();
-                System.err.println(String.format("[DIVERGENCE] awaitTurnInt Role %d at Epoch %d. Trace wants Type %d, Code did Type %d",
-                                roleId, eEpoch, eType & 0xFF, packedType & 0xFF));
-                new RuntimeException("[DIVERGENCE] stack trace").printStackTrace(System.err);
-                int divergedValue = (int) expected[6];
                 lastMatchedSeq.set(eSeq);
                 if (isReleaseEvent(eType)) releasedEpoch.set(eEpoch);
+                reportDivergence(roleId, eEpoch, eType, packedType,
+                        "awaitTurnInt mismatch: objSite=" + objSite + " objCount=" + objCount);
                 controlLock.notifyAll();
-                return divergedValue;
+                return naturalValue;
             }
         }
     }
@@ -377,21 +403,19 @@ public class ReplayCoordinator {
                     if (isReleaseEvent(packedType)) releasedEpoch.set(eEpoch);
                     controlLock.notifyAll();
                     if (naturalValue != traceValue) {
-                        System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnLong role=%d: natural=%d trace=%d",
-                                roleId, naturalValue, traceValue));
+                        // System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnLong role=%d: natural=%d trace=%d",
+                                // roleId, naturalValue, traceValue));
                         return traceValue;
                     }
                     return naturalValue;
                 }
                 myQueue.poll();
-                System.err.println(String.format("[DIVERGENCE] awaitTurnLong Role %d at Epoch %d. Trace wants Type %d, Code did Type %d",
-                                roleId, eEpoch, eType & 0xFF, packedType & 0xFF));
-                new RuntimeException("[DIVERGENCE] stack trace").printStackTrace(System.err);
-                long divergedValue = ((long) expected[5] << 32) | (expected[6] & 0xFFFFFFFFL);
                 lastMatchedSeq.set(eSeq);
                 if (isReleaseEvent(eType)) releasedEpoch.set(eEpoch);
+                reportDivergence(roleId, eEpoch, eType, packedType,
+                        "awaitTurnLong mismatch: objSite=" + objSite + " objCount=" + objCount);
                 controlLock.notifyAll();
-                return divergedValue;
+                return naturalValue;
             }
         }
     }
@@ -426,21 +450,19 @@ public class ReplayCoordinator {
                         return naturalValue;
                     }
                     if (naturalValue != traceValue) {
-                        System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnObj role=%d: natural=%s trace=%s",
-                                roleId, naturalValue, traceValue));
+                        // System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnObj role=%d: natural=%s trace=%s",
+                                // roleId, naturalValue, traceValue));
                         return traceValue;
                     }
                     return naturalValue;
                 }
                 myQueue.poll();
-                System.err.println(String.format("[DIVERGENCE] awaitTurnObj Role %d at Epoch %d. Trace wants Type %d, Code did Type %d",
-                                roleId, eEpoch, eType & 0xFF, packedType & 0xFF));
-                new RuntimeException("[DIVERGENCE] stack trace").printStackTrace(System.err);
-                Object divergedValue = IdentityMapper.resolveByBirthId((int) expected[5], (int) expected[6]);
                 lastMatchedSeq.set(eSeq);
                 if (isReleaseEvent(eType)) releasedEpoch.set(eEpoch);
+                reportDivergence(roleId, eEpoch, eType, packedType,
+                        "awaitTurnObj mismatch: objSite=" + objSite + " objCount=" + objCount);
                 controlLock.notifyAll();
-                return divergedValue;
+                return naturalValue;
             }
         }
     }
@@ -476,9 +498,8 @@ public class ReplayCoordinator {
         if (ev == null) return naturalValue;
         int traceValue = (int) ev[6];
         if (naturalValue != traceValue) {
-            System.err.println(String.format(
-                    "[VALUE-DIVERGENCE] awaitTurnRmwInt role=%d: natural=%d trace=%d (RMW — natural value kept)",
-                    roleId, naturalValue, traceValue));
+            reportDivergence(roleId, ev[0] >>> 32, (int) ev[2], packedType,
+                    "RMW value mismatch: natural=" + naturalValue + " trace=" + traceValue);
         }
         return naturalValue;
     }
@@ -488,9 +509,8 @@ public class ReplayCoordinator {
         if (ev == null) return naturalValue;
         long traceValue = ((long) ev[5] << 32) | (ev[6] & 0xFFFFFFFFL);
         if (naturalValue != traceValue) {
-            System.err.println(String.format(
-                    "[VALUE-DIVERGENCE] awaitTurnRmwLong role=%d: natural=%d trace=%d (RMW — natural value kept)",
-                    roleId, naturalValue, traceValue));
+            reportDivergence(roleId, ev[0] >>> 32, (int) ev[2], packedType,
+                    "RMW value mismatch: natural=" + naturalValue + " trace=" + traceValue);
         }
         return naturalValue;
     }
@@ -500,9 +520,8 @@ public class ReplayCoordinator {
         if (ev == null) return naturalValue;
         Object traceValue = IdentityMapper.resolveByBirthId((int) ev[5], (int) ev[6]);
         if (naturalValue != traceValue) {
-            System.err.println(String.format(
-                    "[VALUE-DIVERGENCE] awaitTurnRmwObj role=%d: natural=%s trace=%s (RMW — natural value kept)",
-                    roleId, naturalValue, traceValue));
+            reportDivergence(roleId, ev[0] >>> 32, (int) ev[2], packedType,
+                    "RMW value mismatch: natural=" + naturalValue + " trace=" + traceValue);
         }
         return naturalValue;
     }
@@ -519,15 +538,17 @@ public class ReplayCoordinator {
 
         synchronized (controlLock) {
             while (true) {
+                if (hasDiverged) { controlLock.notifyAll(); return null; }
+
                 long[] expected = myQueue.peek();
                 long eSeq = expected[0];
                 long eEpoch = eSeq >>> 32;
                 int eType = (int) expected[2];
 
-                // System.out.println(String.format("[Replay] Role %d awaiting event Type %d ObjSite %d ObjCount %d at Epoch %d (releasedEpoch=%d) but got event Type %d ObjSite %d ObjCount %d",
+                // // System.out.println(String.format("[Replay] Role %d awaiting event Type %d ObjSite %d ObjCount %d at Epoch %d (releasedEpoch=%d) but got event Type %d ObjSite %d ObjCount %d",
                 //         roleId, eType, (int) expected[3], (int) expected[4], eEpoch, releasedEpoch.get(), packedType, objSite, objCount));
                 // int eFlags = (eType >> 8) & 0xFF;
-                // System.out.println(String.format("Flags: Volatile=%b Static=%b ArrayValued=%b Release=%b",
+                // // System.out.println(String.format("Flags: Volatile=%b Static=%b ArrayValued=%b Release=%b",
                 //         (eFlags & BinarySchema.Flags.IS_VOLATILE) != 0,
                 //         (eFlags & BinarySchema.Flags.IS_STATIC) != 0,
                 //         (eFlags & BinarySchema.Flags.IS_ARRAY_VALUED) != 0,
@@ -551,7 +572,7 @@ public class ReplayCoordinator {
                             } catch (InterruptedException e) { return null; }
                         }
                         if (!isAnyRoleBehind(eEpoch)) {
-                            System.out.println("[Replay] Role " + roleId + " advancing global epoch to " + eEpoch);
+                            // System.out.println("[Replay] Role " + roleId + " advancing global epoch to " + eEpoch);
                             releasedEpoch.set(eEpoch);
                             pendingTargetEpoch.compareAndSet(eEpoch, Long.MAX_VALUE);
                         } else {
@@ -570,7 +591,7 @@ public class ReplayCoordinator {
 
                 // --- THE MATCH ---
                 if (packedType == eType && objSite == (int) expected[3] && objCount == (int) expected[4]) {
-                    // System.out.println("Match found for Role " + roleId + " at Epoch " + eEpoch + " with Type " + (eType & 0xFF));
+                    // // System.out.println("Match found for Role " + roleId + " at Epoch " + eEpoch + " with Type " + (eType & 0xFF));
                     myQueue.poll();
                     lastMatchedSeq.set(eSeq);
                     
@@ -583,18 +604,25 @@ public class ReplayCoordinator {
                     return expected;
                 }
 
-                // --- DIVERGENCE: consume, log, inject trace value, and continue ---
+                // --- DIVERGENCE: type/identity mismatch ---
                 myQueue.poll();
-                System.err.println(String.format("[DIVERGENCE] doAwaitTurnValued Role %d at Epoch %d. Trace wants Role %d Type %d, Code did Type %d",
-                                roleId, eEpoch, (int) expected[1], (int) expected[2] & 0xFF, packedType & 0xFF));
-                new RuntimeException("[DIVERGENCE] stack trace").printStackTrace(System.err);
                 lastMatchedSeq.set(eSeq);
                 if (isReleaseEvent((int) expected[2])) {
                     releasedEpoch.set(eEpoch);
                     pendingTargetEpoch.compareAndSet(eEpoch, Long.MAX_VALUE);
                 }
                 controlLock.notifyAll();
-                return expected;
+                // CAS is special: its boolean result drives if-branches, so keep
+                // injecting even on identity/type mismatch (Option B). For all other
+                // operations, stop synchronization — there is no safe value to inject.
+                if ((packedType & 0xFF) == BinarySchema.Event.ATOMIC_CAS) {
+                    return expected;
+                }
+                reportDivergence(roleId, eEpoch, (int) expected[2], packedType,
+                        "valued event mismatch: expected objSite=" + (int) expected[3]
+                        + " objCount=" + (int) expected[4]
+                        + " got objSite=" + objSite + " objCount=" + objCount);
+                return null;
             }
         }
     }
@@ -604,8 +632,8 @@ public class ReplayCoordinator {
         if (ev == null) return naturalValue;
         int traceValue = (int) ev[6];
         if (naturalValue != traceValue) {
-            System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnFieldInt role=%d: natural=%d trace=%d",
-                    roleId, naturalValue, traceValue));
+            // System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnFieldInt role=%d: natural=%d trace=%d",
+                    // roleId, naturalValue, traceValue));
             return traceValue;
         }
         return naturalValue;
@@ -616,8 +644,8 @@ public class ReplayCoordinator {
         if (ev == null) return naturalValue;
         long traceValue = ((long) ev[5] << 32) | (ev[6] & 0xFFFFFFFFL);
         if (naturalValue != traceValue) {
-            System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnFieldLong role=%d: natural=%d trace=%d",
-                    roleId, naturalValue, traceValue));
+            // System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnFieldLong role=%d: natural=%d trace=%d",
+                    // roleId, naturalValue, traceValue));
             return traceValue;
         }
         return naturalValue;
@@ -632,8 +660,8 @@ public class ReplayCoordinator {
             return naturalValue;
         }
         if (naturalValue != traceValue) {
-            System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnFieldObj role=%d: natural=%s trace=%s",
-                    roleId, naturalValue, traceValue));
+            // System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnFieldObj role=%d: natural=%s trace=%s",
+                    // roleId, naturalValue, traceValue));
             return traceValue;
         }
         return naturalValue;
@@ -649,8 +677,8 @@ public class ReplayCoordinator {
         if (ev == null) return naturalValue;
         int traceValue = (int) ev[6];
         if (naturalValue != traceValue) {
-            System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnArrayInt role=%d: natural=%d trace=%d",
-                    roleId, naturalValue, traceValue));
+            // System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnArrayInt role=%d: natural=%d trace=%d",
+                    // roleId, naturalValue, traceValue));
             return traceValue;
         }
         return naturalValue;
@@ -661,8 +689,8 @@ public class ReplayCoordinator {
         if (ev == null) return naturalValue;
         long traceValue = ((long) ev[5] << 32) | (ev[6] & 0xFFFFFFFFL);
         if (naturalValue != traceValue) {
-            System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnArrayLong role=%d: natural=%d trace=%d",
-                    roleId, naturalValue, traceValue));
+            // System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnArrayLong role=%d: natural=%d trace=%d",
+                    // roleId, naturalValue, traceValue));
             return traceValue;
         }
         return naturalValue;
@@ -677,8 +705,8 @@ public class ReplayCoordinator {
             return naturalValue;
         }
         if (naturalValue != traceValue) {
-            System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnArrayObj role=%d: natural=%s trace=%s",
-                    roleId, naturalValue, traceValue));
+            // System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnArrayObj role=%d: natural=%s trace=%s",
+                    // roleId, naturalValue, traceValue));
             return traceValue;
         }
         return naturalValue;
@@ -714,7 +742,7 @@ public class ReplayCoordinator {
             if (queue != null && !queue.isEmpty()) {
                 long headEpoch = queue.peek()[0] >>> 32;
                 if (headEpoch < targetEpoch) {
-                    System.out.println("[Replay] Role " + activeId + " is still at Epoch " + headEpoch + " (targetEpoch=" + targetEpoch + ")");
+                    // // System.out.println("[Replay] Role " + activeId + " is still at Epoch " + headEpoch + " (targetEpoch=" + targetEpoch + ")");
                     // An active thread still has events to process in an older epoch.
                     return true;
                 }
@@ -730,7 +758,7 @@ public class ReplayCoordinator {
             if (queue != null && !queue.isEmpty()) {
                 long headEpoch = queue.peek()[0] >>> 32;
                 if (headEpoch < targetEpoch) {
-                    System.out.println("[Replay] Started-but-not-active role " + startedId + " is still at Epoch " + headEpoch + " (targetEpoch=" + targetEpoch + ")");
+                    // // System.out.println("[Replay] Started-but-not-active role " + startedId + " is still at Epoch " + headEpoch + " (targetEpoch=" + targetEpoch + ")");
                     return true;
                 }
             }

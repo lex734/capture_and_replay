@@ -40,11 +40,11 @@ public class ReplayMonitor {
 
             ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, currentSiteId);
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format(
-                    "[CHECK-SYNC]  epoch=%d seq=%d role=%d  %-24s lock=%s  site=%d",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
-                    lock != null ? lock.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(lock)) : "null",
-                    currentSiteId));
+            // System.out.println(String.format(
+                    // "[CHECK-SYNC]  epoch=%d seq=%d role=%d  %-24s lock=%s  site=%d",
+                    // seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
+                    // lock != null ? lock.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(lock)) : "null",
+                    // currentSiteId));
         } finally {
             isInside.set(false);
         }
@@ -83,9 +83,9 @@ public class ReplayMonitor {
             int val = ReplayCoordinator.awaitTurnFieldInt(roleId, packed[0], site[0], count[0], naturalValue);
             long seq = ReplayCoordinator.getLastMatchedSeq();
             String evName = (eventType == BinarySchema.Event.FIELD_READ) ? "READ" : "WRITE";
-            System.out.println(String.format("[CHECK-FIELD] epoch=%d seq=%d role=%d  %-5s%s %s.%s = %d",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
-                    isVolatile ? "(volatile)" : "", ownerName, fieldName, val));
+            // System.out.println(String.format("[CHECK-FIELD] epoch=%d seq=%d role=%d  %-5s%s %s.%s = %d",
+                    // seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
+                    // isVolatile ? "(volatile)" : "", ownerName, fieldName, val));
             return val;
         } finally {
             isInside.set(false);
@@ -104,9 +104,9 @@ public class ReplayMonitor {
             long val = ReplayCoordinator.awaitTurnFieldLong(roleId, packed[0], site[0], count[0], naturalValue);
             long seq = ReplayCoordinator.getLastMatchedSeq();
             String evName = (eventType == BinarySchema.Event.FIELD_READ) ? "READ" : "WRITE";
-            System.out.println(String.format("[CHECK-FIELD] epoch=%d seq=%d role=%d  %-5s%s %s.%s = %dL",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
-                    isVolatile ? "(volatile)" : "", ownerName, fieldName, val));
+            // System.out.println(String.format("[CHECK-FIELD] epoch=%d seq=%d role=%d  %-5s%s %s.%s = %dL",
+                    // seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
+                    // isVolatile ? "(volatile)" : "", ownerName, fieldName, val));
             return val;
         } finally {
             isInside.set(false);
@@ -125,11 +125,11 @@ public class ReplayMonitor {
             Object val = ReplayCoordinator.awaitTurnFieldObj(roleId, packed[0], site[0], count[0], naturalValue);
             long seq = ReplayCoordinator.getLastMatchedSeq();
             String evName = (eventType == BinarySchema.Event.FIELD_READ) ? "READ" : "WRITE";
-            System.out.println(String.format("[CHECK-FIELD] epoch=%d seq=%d role=%d  %-5s%s %s.%s = %s",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
-                    isVolatile ? "(volatile)" : "", ownerName, fieldName,
-                    val != null ? val.getClass().getSimpleName()
-                            + "@" + Integer.toHexString(System.identityHashCode(val)) : "null"));
+            // System.out.println(String.format("[CHECK-FIELD] epoch=%d seq=%d role=%d  %-5s%s %s.%s = %s",
+                    // seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
+                    // isVolatile ? "(volatile)" : "", ownerName, fieldName,
+                    // val != null ? val.getClass().getSimpleName()
+                    //         + "@" + Integer.toHexString(System.identityHashCode(val)) : "null"));
             return val;
         } finally {
             isInside.set(false);
@@ -153,10 +153,10 @@ public class ReplayMonitor {
             int val = ReplayCoordinator.awaitTurnArrayInt(roleId, packedType, birthId.count, index, naturalValue);
             long seq = ReplayCoordinator.getLastMatchedSeq();
             String evName = (eventType == BinarySchema.Event.ARRAY_READ) ? "ARRAY_READ" : "ARRAY_WRITE";
-            System.out.println(String.format("[CHECK-ARRAY] epoch=%d seq=%d role=%d  %-12s %s[%d] = %d",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
-                    array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array)),
-                    index, val));
+            // System.out.println(String.format("[CHECK-ARRAY] epoch=%d seq=%d role=%d  %-12s %s[%d] = %d",
+                    // seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
+                    // array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array)),
+                    // index, val));
             return val;
         } finally {
             isInside.set(false);
@@ -177,10 +177,10 @@ public class ReplayMonitor {
             long val = ReplayCoordinator.awaitTurnArrayLong(roleId, packedType, birthId.count, index, naturalValue);
             long seq = ReplayCoordinator.getLastMatchedSeq();
             String evName = (eventType == BinarySchema.Event.ARRAY_READ) ? "ARRAY_READ" : "ARRAY_WRITE";
-            System.out.println(String.format("[CHECK-ARRAY] epoch=%d seq=%d role=%d  %-12s %s[%d] = %dL",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
-                    array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array)),
-                    index, val));
+            // System.out.println(String.format("[CHECK-ARRAY] epoch=%d seq=%d role=%d  %-12s %s[%d] = %dL",
+                    // seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
+                    // array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array)),
+                    // index, val));
             return val;
         } finally {
             isInside.set(false);
@@ -201,12 +201,12 @@ public class ReplayMonitor {
             Object val = ReplayCoordinator.awaitTurnArrayObj(roleId, packedType, birthId.count, index, naturalValue);
             long seq = ReplayCoordinator.getLastMatchedSeq();
             String evName = (eventType == BinarySchema.Event.ARRAY_READ) ? "ARRAY_READ" : "ARRAY_WRITE";
-            System.out.println(String.format("[CHECK-ARRAY] epoch=%d seq=%d role=%d  %-12s %s[%d] = %s",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
-                    array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array)),
-                    index,
-                    val != null ? val.getClass().getSimpleName()
-                            + "@" + Integer.toHexString(System.identityHashCode(val)) : "null"));
+            // System.out.println(String.format("[CHECK-ARRAY] epoch=%d seq=%d role=%d  %-12s %s[%d] = %s",
+                    // seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
+                    // array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array)),
+                    // index,
+                    // val != null ? val.getClass().getSimpleName()
+                    //         + "@" + Integer.toHexString(System.identityHashCode(val)) : "null"));
             return val;
         } finally {
             isInside.set(false);
@@ -241,10 +241,10 @@ public class ReplayMonitor {
             int val = ReplayCoordinator.awaitTurnCasInt(roleId,
                     buildAtomicPackedType(eventType, b, index), atomicObjSite(b, index), atomicObjCount(b, index));
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format("[INJECT-CAS]  epoch=%d seq=%d role=%d  %-12s %s → %d",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
-                    receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
-                    val));
+            // System.out.println(String.format("[INJECT-CAS]  epoch=%d seq=%d role=%d  %-12s %s → %d",
+                    // seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
+                    // receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
+                    // val));
             return val;
         } finally {
             isInside.set(false);
@@ -262,10 +262,10 @@ public class ReplayMonitor {
             long val = ReplayCoordinator.awaitTurnCasLong(roleId,
                     buildAtomicPackedType(eventType, b, index), atomicObjSite(b, index), atomicObjCount(b, index));
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format("[INJECT-CAS]  epoch=%d seq=%d role=%d  %-12s %s → %dL",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
-                    receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
-                    val));
+            // System.out.println(String.format("[INJECT-CAS]  epoch=%d seq=%d role=%d  %-12s %s → %dL",
+                    // seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
+                    // receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
+                    // val));
             return val;
         } finally {
             isInside.set(false);
@@ -283,10 +283,10 @@ public class ReplayMonitor {
             Object val = ReplayCoordinator.awaitTurnCasObj(roleId,
                     buildAtomicPackedType(eventType, b, index), atomicObjSite(b, index), atomicObjCount(b, index));
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format("[INJECT-CAS]  epoch=%d seq=%d role=%d  %-12s %s → %s",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
-                    receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
-                    val != null ? val.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(val)) : "null"));
+            // System.out.println(String.format("[INJECT-CAS]  epoch=%d seq=%d role=%d  %-12s %s → %s",
+                    // seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
+                    // receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
+                    // val != null ? val.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(val)) : "null"));
             return val;
         } finally {
             isInside.set(false);
@@ -309,10 +309,10 @@ public class ReplayMonitor {
                     buildAtomicPackedType(eventType, b, index), atomicObjSite(b, index), atomicObjCount(b, index),
                     naturalValue);
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format("[CHECK-RMW]   epoch=%d seq=%d role=%d  %-12s %s = %d",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
-                    receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
-                    val));
+            // System.out.println(String.format("[CHECK-RMW]   epoch=%d seq=%d role=%d  %-12s %s = %d",
+                    // seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
+                    // receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
+                    // val));
             return val;
         } finally {
             isInside.set(false);
@@ -331,10 +331,10 @@ public class ReplayMonitor {
                     buildAtomicPackedType(eventType, b, index), atomicObjSite(b, index), atomicObjCount(b, index),
                     naturalValue);
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format("[CHECK-RMW]   epoch=%d seq=%d role=%d  %-12s %s = %dL",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
-                    receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
-                    val));
+            // System.out.println(String.format("[CHECK-RMW]   epoch=%d seq=%d role=%d  %-12s %s = %dL",
+                    // seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
+                    // receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
+                    // val));
             return val;
         } finally {
             isInside.set(false);
@@ -353,10 +353,10 @@ public class ReplayMonitor {
                     buildAtomicPackedType(eventType, b, index), atomicObjSite(b, index), atomicObjCount(b, index),
                     naturalValue);
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format("[CHECK-RMW]   epoch=%d seq=%d role=%d  %-12s %s = %s",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
-                    receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
-                    val != null ? val.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(val)) : "null"));
+            // System.out.println(String.format("[CHECK-RMW]   epoch=%d seq=%d role=%d  %-12s %s = %s",
+                    // seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
+                    // receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
+                    // val != null ? val.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(val)) : "null"));
             return val;
         } finally {
             isInside.set(false);
@@ -376,10 +376,10 @@ public class ReplayMonitor {
             int packedType = BinarySchema.packType(BinarySchema.Event.EXCEPTION_THROW, BinarySchema.Flags.NONE);
             ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, siteId);
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format(
-                    "[CHECK-THROW] epoch=%d seq=%d role=%d  %s  site=%d",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId,
-                    exception.getClass().getName(), siteId));
+            // System.out.println(String.format(
+                    // "[CHECK-THROW] epoch=%d seq=%d role=%d  %s  site=%d",
+                    // seq >>> 32, seq & 0xFFFFFFFFL, roleId,
+                    // exception.getClass().getName(), siteId));
         } finally {
             isInside.set(false);
         }
@@ -417,7 +417,7 @@ public class ReplayMonitor {
             // in pendingRoles (invisible to the epoch guard) until its thread actually
             // starts and calls awaitTurn(), at which point activateRole() moves it
             // directly from pendingRoles to activeRoles.
-            System.out.println("[PreRegister] role=" + nextRole + " (parent role=" + parentRole + ")");
+            // System.out.println("[PreRegister] role=" + nextRole + " (parent role=" + parentRole + ")");
         } finally {
             isInside.set(false);
         }

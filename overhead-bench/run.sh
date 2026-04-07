@@ -34,13 +34,9 @@ find_jar() {
     exit 1
 }
 
-CAPTURE_JAR=$(find_jar "capture agent" \
-    "$REPO_ROOT/libs/trace-capture-agent.jar" \
-    "$REPO_ROOT/capture/target/trace-capture-agent.jar")
+CAPTURE_JAR="$REPO_ROOT/capture/target/trace-capture-agent.jar"
 
-REPLAY_JAR=$(find_jar "replay agent" \
-    "$REPO_ROOT/libs/trace-replay-agent.jar" \
-    "$REPO_ROOT/replay/target/trace-replay-agent.jar")
+REPLAY_JAR="$REPO_ROOT/replay/target/trace-replay-agent.jar"
 
 # ── Build benchmark jar if missing ────────────────────────────────────────────
 if [ ! -f "$BENCH_JAR" ]; then

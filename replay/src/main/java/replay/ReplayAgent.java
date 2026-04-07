@@ -13,7 +13,7 @@ import java.nio.MappedByteBuffer;
 public class ReplayAgent {
 
     public static void premain(String agentArgs, Instrumentation inst) {
-        System.out.println("[ReplayAgent] Initializing Enforcer...");
+        // System.out.println("[ReplayAgent] Initializing Enforcer...");
 
         try {
             // 1. Reset the "Brain" to ensure discovery order matches Capture
@@ -23,7 +23,7 @@ public class ReplayAgent {
             // 2. Load the Trace File
             File traceFile = new File("trace.bin");
             if (!traceFile.exists()) {
-                System.err.println("[ReplayAgent] ERROR: trace.bin not found!");
+                // System.err.println("[ReplayAgent] ERROR: trace.bin not found!");
                 return;
             }
 
@@ -55,14 +55,14 @@ public class ReplayAgent {
             // currentIdx past all events before t1/t2 even launch.
             ReplayCoordinator.registerMainThread(Thread.currentThread().getId());
 
-            System.out.println("[ReplayAgent] Loaded " + totalEvents + " events. Instrumentation active.");
+            // System.out.println("[ReplayAgent] Loaded " + totalEvents + " events. Instrumentation active.");
 
             // 4. Add the Transformer (The mode is handled by System Property tool.mode=REPLAY)
             System.setProperty("tool.mode", "REPLAY");
             inst.addTransformer(new SyncTransformer(), true);
 
         } catch (Exception e) {
-            System.err.println("[ReplayAgent] Failed to initialize:");
+            // System.err.println("[ReplayAgent] Failed to initialize:");
             e.printStackTrace();
         }
     }

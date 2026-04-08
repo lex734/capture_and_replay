@@ -41,7 +41,7 @@ public class ReplayAgent {
             // 3a. Install a global handler so threads that die from uncaught exceptions
             // are removed from the active-role set, preventing coordinator deadlock.
             Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
-                int roleId = IdentityMapper.getRoleId(thread.threadId());
+                int roleId = IdentityMapper.getRoleId(thread.getId());
                 if (roleId != -1) {
                     ReplayCoordinator.reportThreadDead(roleId);
                 }
@@ -54,7 +54,7 @@ public class ReplayAgent {
             // called for spawned threads), so without this its role stays in
             // pendingRoles and every early event gets deadlock-skipped, racing
             // currentIdx past all events before t1/t2 even launch.
-            ReplayCoordinator.registerMainThread(Thread.currentThread().threadId());
+            ReplayCoordinator.registerMainThread(Thread.currentThread().getId());
 
             // System.out.println("[ReplayAgent] Loaded " + totalEvents + " events. Instrumentation active.");
 

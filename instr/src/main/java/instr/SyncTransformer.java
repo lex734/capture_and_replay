@@ -171,6 +171,14 @@ public class SyncTransformer implements ClassFileTransformer {
         private final String monitorClass = isReplay ? "replay/ReplayMonitor" : "capture/CaptureMonitor";
         private final String monitorDescriptor = "(ILjava/lang/Object;I)V";
 
+        // Guard: in <init> methods, 'this' is uninitializedThis until the first
+        // INVOKESPECIAL <init> (super/this constructor call).  Instrumenting it
+        // before that point causes VerifyError: Bad type on operand stack.
+        // superInitCalled starts false only for constructors; all other methods
+        // treat it as already true so instrumentation proceeds normally.
+        private final boolean isConstructorMethod;
+        private boolean superInitCalled;
+
         private boolean isArrayLoad(int opcode) {
             return opcode >= Opcodes.IALOAD && opcode <= Opcodes.SALOAD;
         }
@@ -185,6 +193,10 @@ public class SyncTransformer implements ClassFileTransformer {
 
         @Override
         public void visitTypeInsn(int opcode, String type) {
+            if (!superInitCalled) {
+                super.visitTypeInsn(opcode, type);
+                return;
+            }
             if (opcode == Opcodes.NEW) {
                 String allocSite = className + "." + methodName + "#alloc_" + instructionId++;
                 pendingNewTypes.push(type);
@@ -205,6 +217,10 @@ public class SyncTransformer implements ClassFileTransformer {
 
         @Override
         public void visitIntInsn(int opcode, int operand) {
+            if (!superInitCalled) {
+                super.visitIntInsn(opcode, operand);
+                return;
+            }
             if (opcode == Opcodes.NEWARRAY) {
                 String allocSite = className + "." + methodName + "#alloc_" + instructionId++;
                 int allocSiteId = SyncTransformer.registerSiteId(allocSite);
@@ -220,6 +236,10 @@ public class SyncTransformer implements ClassFileTransformer {
 
         @Override
         public void visitMultiANewArrayInsn(String descriptor, int numDimensions) {
+            if (!superInitCalled) {
+                super.visitMultiANewArrayInsn(descriptor, numDimensions);
+                return;
+            }
             String allocSite = className + "." + methodName + "#alloc_" + instructionId++;
             int allocSiteId = SyncTransformer.registerSiteId(allocSite);
             super.visitMultiANewArrayInsn(descriptor, numDimensions);
@@ -231,6 +251,10 @@ public class SyncTransformer implements ClassFileTransformer {
 
         @Override
         public void visitLdcInsn(Object value) {
+            if (!superInitCalled) {
+                super.visitLdcInsn(value);
+                return;
+            }
             super.visitLdcInsn(value);
             if (value instanceof String) {
                 // String literals are JVM-interned: one canonical object per unique value.
@@ -250,6 +274,10 @@ public class SyncTransformer implements ClassFileTransformer {
 
         @Override
         public void visitInvokeDynamicInsn(String name, String descriptor, Handle bsm, Object... bsmArgs) {
+            if (!superInitCalled) {
+                super.visitInvokeDynamicInsn(name, descriptor, bsm, bsmArgs);
+                return;
+            }
             super.visitInvokeDynamicInsn(name, descriptor, bsm, bsmArgs);
             // Register lambda/method-reference instances created by LambdaMetafactory.
             // Stateless lambdas are JVM-cached singletons; registerAllocation is idempotent
@@ -278,10 +306,18 @@ public class SyncTransformer implements ClassFileTransformer {
             this.className = className;
             this.methodName = methodName;
             this.loader = loader;
+            this.isConstructorMethod = "<init>".equals(methodName);
+            // For constructors, hold off instrumentation until super/this() is called.
+            // For all other methods, 'this' is always initialized so act as if done.
+            this.superInitCalled = !isConstructorMethod;
         }
 
         @Override
         public void visitInsn(int opcode) {
+            if (!superInitCalled) {
+                super.visitInsn(opcode);
+                return;
+            }
             // Handle explicit/implicit throws — log before the throw so the
             // coordinator sees EXCEPTION_THROW in the right sequence position.
             if (opcode == Opcodes.ATHROW) {
@@ -472,6 +508,21 @@ public class SyncTransformer implements ClassFileTransformer {
 
         @Override
         public void visitMethodInsn(int opcode, String owner, String name, String descriptor, boolean isInterface) {
+            // If we are in a constructor before the super/this() call, skip all
+            // instrumentation.  Detect the super/this call itself and mark the guard.
+            if (!superInitCalled) {
+                if (opcode == Opcodes.INVOKESPECIAL && name.equals("<init>")
+                        && (pendingNewTypes.isEmpty() || !pendingNewTypes.peek().equals(owner))) {
+                    // This is the super/this constructor call; emit it raw then lift the guard.
+                    super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
+                    superInitCalled = true;
+                    return;
+                }
+                // Some other call before super() — pass through without instrumentation.
+                super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
+                return;
+            }
+
             // Detect the INVOKESPECIAL <init> that matches a preceding NEW instruction.
             // We must handle this before incrementing instructionId for the sync site string
             // so the allocation site and the constructor-call site remain distinct.
@@ -892,6 +943,10 @@ public class SyncTransformer implements ClassFileTransformer {
 
         @Override
         public void visitFieldInsn(int opcode, String owner, String name, String descriptor) {
+            if (!superInitCalled) {
+                super.visitFieldInsn(opcode, owner, name, descriptor);
+                return;
+            }
             // Resolve volatility from the OWNER class, not just the current class.
             // This handles cross-class field accesses (e.g., Main accessing Counter.x).
             boolean isVolatile = SyncTransformer.isFieldVolatile(loader, owner, name);

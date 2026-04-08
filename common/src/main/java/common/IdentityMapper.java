@@ -162,7 +162,7 @@ public class IdentityMapper {
 
             // Object was never passed through registerAllocation — lazy-register it.
             // Use per-role-per-site counters for the same reason as registerAllocation.
-            long tid = Thread.currentThread().threadId();
+            long tid = Thread.currentThread().getId();
             int roleId = getRoleIdBySite(tid, currentInstructionSiteId);
             AtomicInteger counter;
             if (roleId >= 0) {
@@ -204,7 +204,7 @@ public class IdentityMapper {
      */
     public static void registerAllocation(Object obj, int siteId) {
         if (obj == null) return;
-        long tid = Thread.currentThread().threadId();
+        long tid = Thread.currentThread().getId();
         int roleId = getRoleIdBySite(tid, siteId);
         synchronized (objToId) {
             if (objToId.containsKey(obj)) return; // already registered

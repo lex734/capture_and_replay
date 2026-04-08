@@ -33,15 +33,15 @@ public class ObserverEffectRunner {
     // Hard timeout per JCStress subprocess (should be >> TEST_TIME_SECS).
     static final int TIMEOUT_SECS   = 120;
 
-    // JCStress prints outcome tables that look like:
+    // JCStress 0.16 prints per-fork outcome lines that look like:
     //
-    //   Observed state           Occurrences        Expectation   Interpretation
-    //         0, 0                        47        FORBIDDEN     Store buffering ...
-    //         0, 1                    498231       ACCEPTABLE     ...
+    //       0, 0       56    0.81%   Forbidden  Store buffering ...
+    //       0, 1   498,231   98.5%  Acceptable  ...
     //
-    // This regex captures: (state) (count) (FORBIDDEN|ACCEPTABLE|INTERESTING)
+    // Multiple rows appear for the same state (one per fork); we accumulate counts.
+    // Groups: (1) state  (2) count (may contain commas)  (3) Expectation (title case)
     static final Pattern OUTCOME_LINE = Pattern.compile(
-        "^\\s+(\\S.*?)\\s{2,}(\\d+)\\s+(FORBIDDEN|ACCEPTABLE|INTERESTING)\\b.*$"
+        "^\\s+(\\S.*?)\\s{2,}([\\d,]+)\\s+[\\d.]+%\\s+(Forbidden|Acceptable|Interesting)\\b.*$"
     );
 
     public static void main(String[] args) throws Exception {
@@ -100,8 +100,10 @@ public class ObserverEffectRunner {
 
     /**
      * Forks a JCStress subprocess for a single scenario.
-     * If agentJar is non-null, attaches it with exclude=org/openjdk/jcstress
-     * so JCStress's own infrastructure is not instrumented.
+     * If agentJar is non-null, passes it via -jvmArgs so it is attached to the
+     * forked test JVMs (not the JCStress orchestrator JVM), with
+     * exclude=org/openjdk/jcstress so JCStress's own infrastructure is not
+     * instrumented.
      * Returns the combined stdout + stderr as a string.
      */
     static String runJCStress(Path agentJar, Path jcstressJar, String scenario, Path workDir)
@@ -109,15 +111,17 @@ public class ObserverEffectRunner {
 
         List<String> cmd = new ArrayList<>();
         cmd.add("java");
-        if (agentJar != null) {
-            cmd.add("-javaagent:" + agentJar + "=exclude=org/openjdk/jcstress");
-        }
         cmd.add("-jar");
         cmd.add(jcstressJar.toString());
         cmd.add("-t");
         cmd.add(scenario);
         cmd.add("-time");
         cmd.add(String.valueOf(TEST_TIME_SECS));
+        cmd.add("-v"); // always print per-fork outcome tables so we can parse counts
+        if (agentJar != null) {
+            cmd.add("-jvmArgs");
+            cmd.add("-javaagent:" + agentJar + "=exclude=org/openjdk/jcstress");
+        }
 
         ProcessBuilder pb = new ProcessBuilder(cmd);
         pb.directory(workDir.toFile());
@@ -131,21 +135,18 @@ public class ObserverEffectRunner {
             p.destroyForcibly();
             throw new RuntimeException("JCStress timed out after " + TIMEOUT_SECS + "s for: " + scenario);
         }
-        if (p.exitValue() != 0) {
-            String output = new String(out);
-            throw new RuntimeException(
-                "JCStress exited with " + p.exitValue() + " for " + scenario
-                + "\n--- output ---\n" + output);
-        }
-
+        // JCStress exits with code 1 when forbidden/interesting outcomes are observed —
+        // that is normal and expected.  Only hard failures (crash, missing class, etc.)
+        // produce other non-zero codes, but we still want the output in all cases so
+        // we can parse the outcome table.
         return new String(out);
     }
 
     // ── Output parsing ────────────────────────────────────────────────────────
 
     /**
-     * Parses JCStress stdout for outcome lines.
-     * Returns a map: outcome-string → [count, expectation-code]
+     * Parses JCStress stdout for outcome lines and accumulates counts across all forks.
+     * Returns a map: outcome-string → [total-count, expectation-code]
      * where expectation-code is 0=ACCEPTABLE, 1=INTERESTING, 2=FORBIDDEN.
      */
     static Map<String, long[]> parseOutcomes(String output) {
@@ -154,12 +155,20 @@ public class ObserverEffectRunner {
             Matcher m = OUTCOME_LINE.matcher(line);
             if (!m.matches()) continue;
             String state  = m.group(1).trim();
-            long   count  = Long.parseLong(m.group(2));
+            // Strip commas from formatted numbers like "6,788"
+            long   count  = Long.parseLong(m.group(2).replace(",", ""));
             String expect = m.group(3);
-            int    code   = expect.equals("FORBIDDEN")    ? 2
-                          : expect.equals("INTERESTING")  ? 1
-                          :                                 0;
-            map.put(state, new long[]{count, code});
+            int    code   = expect.equalsIgnoreCase("Forbidden")   ? 2
+                          : expect.equalsIgnoreCase("Interesting") ? 1
+                          :                                          0;
+            long[] existing = map.get(state);
+            if (existing == null) {
+                map.put(state, new long[]{count, code});
+            } else {
+                // Accumulate counts across forks; keep highest expectation code seen
+                existing[0] += count;
+                if (code > existing[1]) existing[1] = code;
+            }
         }
         return map;
     }

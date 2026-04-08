@@ -38,9 +38,7 @@ find_jar() {
     exit 1
 }
 
-CAPTURE_JAR=$(find_jar "capture agent" \
-    "$REPO_ROOT/libs/trace-capture-agent.jar" \
-    "$REPO_ROOT/capture/target/trace-capture-agent.jar")
+CAPTURE_JAR="$REPO_ROOT/capture/target/trace-capture-agent.jar"
 
 # ── Build jcstress jar if missing ─────────────────────────────────────────────
 if [ ! -f "$JCSTRESS_JAR" ]; then
@@ -59,8 +57,8 @@ if [ $# -ge 1 ]; then
             java -jar "$JCSTRESS_JAR" -t "$SCENARIO" -time 5
             ;;
         capture)
-            java -javaagent:"$CAPTURE_JAR=exclude=org/openjdk/jcstress" \
-                 -jar "$JCSTRESS_JAR" -t "$SCENARIO" -time 5
+            java -jar "$JCSTRESS_JAR" -t "$SCENARIO" -time 5 \
+                 -jvmArgs "-javaagent:$CAPTURE_JAR=exclude=org/openjdk/jcstress"
             ;;
         *)
             echo "Unknown mode '$MODE'. Valid modes: plain | capture" >&2

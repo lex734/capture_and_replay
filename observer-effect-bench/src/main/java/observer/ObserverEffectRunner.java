@@ -33,15 +33,17 @@ public class ObserverEffectRunner {
     // Hard timeout per JCStress subprocess (should be >> TEST_TIME_SECS).
     static final int TIMEOUT_SECS   = 120;
 
-    // JCStress prints outcome tables that look like:
+    // JCStress prints per-fork outcome tables that look like:
     //
-    //   Observed state           Occurrences        Expectation   Interpretation
-    //         0, 0                        47        FORBIDDEN     Store buffering ...
-    //         0, 1                    498231       ACCEPTABLE     ...
+    //   RESULT  SAMPLES     FREQ      EXPECT  DESCRIPTION
+    //     0, 0        9    0.18%   Forbidden  Store buffering ...
+    //     0, 1       42    0.82%  Acceptable  Sequentially consistent
+    //     1, 0    5,040   99.00%  Acceptable  Sequentially consistent
     //
-    // This regex captures: (state) (count) (FORBIDDEN|ACCEPTABLE|INTERESTING)
+    // Multiple forks each emit their own table; counts are summed across forks.
+    // This regex captures: (state) (count-with-optional-commas) (Forbidden|Acceptable|Interesting)
     static final Pattern OUTCOME_LINE = Pattern.compile(
-        "^\\s+(\\S.*?)\\s{2,}(\\d+)\\s+(FORBIDDEN|ACCEPTABLE|INTERESTING)\\b.*$"
+        "^\\s+(\\S.*?)\\s{2,}([\\d,]+)\\s+[\\d.]+%\\s+(Forbidden|Acceptable|Interesting)\\b.*$"
     );
 
     public static void main(String[] args) throws Exception {
@@ -109,44 +111,60 @@ public class ObserverEffectRunner {
 
         List<String> cmd = new ArrayList<>();
         cmd.add("java");
-        if (agentJar != null) {
-            cmd.add("-javaagent:" + agentJar + "=exclude=org/openjdk/jcstress");
-        }
         cmd.add("-jar");
         cmd.add(jcstressJar.toString());
         cmd.add("-t");
         cmd.add(scenario);
         cmd.add("-time");
-        cmd.add(String.valueOf(TEST_TIME_SECS));
+        cmd.add(String.valueOf(TEST_TIME_SECS)); // -time takes seconds
+        cmd.add("-v"); // verbose: prints per-fork RESULT tables to stdout (required for parseOutcomes)
+
+        // Pass the agent to the forked test JVMs (not the orchestrator JVM).
+        // JCStress forks a child process per test; -jvmArgs propagates flags to those forks.
+        if (agentJar != null) {
+            cmd.add("-jvmArgs");
+            cmd.add("-javaagent:" + agentJar.toString() + "=exclude=org/openjdk/jcstress");
+        }
 
         ProcessBuilder pb = new ProcessBuilder(cmd);
         pb.directory(workDir.toFile());
         pb.redirectErrorStream(true);
 
         Process p = pb.start();
-        byte[] out = p.getInputStream().readAllBytes();
-        boolean done = p.waitFor(TIMEOUT_SECS, TimeUnit.SECONDS);
 
+        // Read stdout in a background thread so we can enforce the timeout
+        // without risking a deadlock from a full pipe buffer.
+        StringBuilder sb = new StringBuilder();
+        Thread reader = new Thread(() -> {
+            try (BufferedReader br = new BufferedReader(
+                     new InputStreamReader(p.getInputStream()))) {
+                String line;
+                while ((line = br.readLine()) != null) {
+                    sb.append(line).append('\n');
+                }
+            } catch (IOException ignored) {}
+        });
+        reader.setDaemon(true);
+        reader.start();
+
+        boolean done = p.waitFor(TIMEOUT_SECS, TimeUnit.SECONDS);
         if (!done) {
             p.destroyForcibly();
+            reader.join(2000);
             throw new RuntimeException("JCStress timed out after " + TIMEOUT_SECS + "s for: " + scenario);
         }
-        if (p.exitValue() != 0) {
-            String output = new String(out);
-            throw new RuntimeException(
-                "JCStress exited with " + p.exitValue() + " for " + scenario
-                + "\n--- output ---\n" + output);
-        }
+        reader.join(5000); // allow reader to drain any remaining output
 
-        return new String(out);
+        return sb.toString();
     }
 
     // ── Output parsing ────────────────────────────────────────────────────────
 
     /**
-     * Parses JCStress stdout for outcome lines.
-     * Returns a map: outcome-string → [count, expectation-code]
+     * Parses JCStress stdout for outcome lines across all forks.
+     * Returns a map: outcome-string → [total-count, expectation-code]
      * where expectation-code is 0=ACCEPTABLE, 1=INTERESTING, 2=FORBIDDEN.
+     * Counts are summed across all forks that appear in the output.
      */
     static Map<String, long[]> parseOutcomes(String output) {
         Map<String, long[]> map = new LinkedHashMap<>();
@@ -154,12 +172,18 @@ public class ObserverEffectRunner {
             Matcher m = OUTCOME_LINE.matcher(line);
             if (!m.matches()) continue;
             String state  = m.group(1).trim();
-            long   count  = Long.parseLong(m.group(2));
+            long   count  = Long.parseLong(m.group(2).replace(",", ""));
             String expect = m.group(3);
-            int    code   = expect.equals("FORBIDDEN")    ? 2
-                          : expect.equals("INTERESTING")  ? 1
-                          :                                 0;
-            map.put(state, new long[]{count, code});
+            int    code   = expect.equalsIgnoreCase("Forbidden")   ? 2
+                          : expect.equalsIgnoreCase("Interesting")  ? 1
+                          :                                           0;
+            long[] existing = map.get(state);
+            if (existing == null) {
+                map.put(state, new long[]{count, code});
+            } else {
+                existing[0] += count;
+                if (code > existing[1]) existing[1] = code;
+            }
         }
         return map;
     }

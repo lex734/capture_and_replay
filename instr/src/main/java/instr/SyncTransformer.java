@@ -13,6 +13,11 @@ import org.w3c.dom.events.EventTarget;
 
 public class SyncTransformer implements ClassFileTransformer {
 
+    private final String extraExclude; // optional extra package prefix to skip; may be null
+
+    public SyncTransformer()                    { this.extraExclude = null; }
+    public SyncTransformer(String extraExclude) { this.extraExclude = extraExclude; }
+
     // ---- Site ID registry (assigned at class-load/transform time, not runtime) ----
     // Site IDs are derived from the site string content, not registration order.
     // This makes them identical across capture and replay regardless of class-load order.
@@ -93,6 +98,9 @@ public class SyncTransformer implements ClassFileTransformer {
                 className.startsWith("common/") || className.startsWith("capture/") ||
                 className.startsWith("replay/") || className.startsWith("java/") || className.startsWith("jdk/")
                 || className.startsWith("sun/")) {
+            return null;
+        }
+        if (extraExclude != null && className.startsWith(extraExclude)) {
             return null;
         }
 

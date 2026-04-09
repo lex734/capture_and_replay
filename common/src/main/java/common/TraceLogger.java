@@ -272,6 +272,71 @@ public class TraceLogger {
         }
     }
 
+    /**
+     * Logs a nondeterministic int-sized return value (int, boolean).
+     * Stored as: objSite=0, objCount=siteId, data2=value.
+     * The call site (siteId) is the unique key for matching during replay.
+     */
+    public static void logNondetInt(int value, int siteId) {
+        long seq = nextSeq(false);
+        long tid = Thread.currentThread().getId();
+        int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
+        if (roleId == -1) return;
+        int packedType = BinarySchema.packType(BinarySchema.Event.NONDETERMINISTIC_INT, BinarySchema.Flags.NONE);
+        System.out.println(String.format(
+                "[NONDET] epoch=%d seq=%d role=%d  nondet_int=%d  site=%d",
+                seq >>> 32, seq & 0xFFFFFFFFL, roleId, value, siteId));
+        BinarySchema.write(seq, (long) roleId, packedType, 0, siteId, value);
+    }
+
+    /**
+     * Logs a nondeterministic float return value (stored as raw int bits).
+     */
+    public static void logNondetFloat(float value, int siteId) {
+        long seq = nextSeq(false);
+        long tid = Thread.currentThread().getId();
+        int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
+        if (roleId == -1) return;
+        int bits = Float.floatToRawIntBits(value);
+        int packedType = BinarySchema.packType(BinarySchema.Event.NONDETERMINISTIC_INT, BinarySchema.Flags.NONE);
+        System.out.println(String.format(
+                "[NONDET] epoch=%d seq=%d role=%d  nondet_float=%f  site=%d",
+                seq >>> 32, seq & 0xFFFFFFFFL, roleId, value, siteId));
+        BinarySchema.write(seq, (long) roleId, packedType, 0, siteId, bits);
+    }
+
+    /**
+     * Logs a nondeterministic long return value (long, System time).
+     * Stored as: objSite=0, objCount=siteId, data1=hi32, data2=lo32.
+     */
+    public static void logNondetLong(long value, int siteId) {
+        long seq = nextSeq(false);
+        long tid = Thread.currentThread().getId();
+        int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
+        if (roleId == -1) return;
+        int packedType = BinarySchema.packType(BinarySchema.Event.NONDETERMINISTIC_LONG, BinarySchema.Flags.NONE);
+        System.out.println(String.format(
+                "[NONDET] epoch=%d seq=%d role=%d  nondet_long=%d  site=%d",
+                seq >>> 32, seq & 0xFFFFFFFFL, roleId, value, siteId));
+        BinarySchema.write(seq, (long) roleId, packedType, 0, siteId, (int) (value >> 32), (int) value);
+    }
+
+    /**
+     * Logs a nondeterministic double return value (stored as raw long bits).
+     */
+    public static void logNondetDouble(double value, int siteId) {
+        long seq = nextSeq(false);
+        long tid = Thread.currentThread().getId();
+        int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
+        if (roleId == -1) return;
+        long bits = Double.doubleToRawLongBits(value);
+        int packedType = BinarySchema.packType(BinarySchema.Event.NONDETERMINISTIC_LONG, BinarySchema.Flags.NONE);
+        System.out.println(String.format(
+                "[NONDET] epoch=%d seq=%d role=%d  nondet_double=%f  site=%d",
+                seq >>> 32, seq & 0xFFFFFFFFL, roleId, value, siteId));
+        BinarySchema.write(seq, (long) roleId, packedType, 0, siteId, (int) (bits >> 32), (int) bits);
+    }
+
     public static void logException(Object exception, int siteId) {
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
@@ -336,6 +401,10 @@ public class TraceLogger {
                 return "CLASS_INIT_END";
             case BinarySchema.Event.EXCEPTION_THROW:
                 return "EXCEPTION_THROW";
+            case BinarySchema.Event.NONDETERMINISTIC_INT:
+                return "NONDETERMINISTIC_INT";
+            case BinarySchema.Event.NONDETERMINISTIC_LONG:
+                return "NONDETERMINISTIC_LONG";
             default:
                 return "UNKNOWN(" + eventType + ")";
         }

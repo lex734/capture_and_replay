@@ -56,6 +56,8 @@ public class BinarySchema {
         public static final int ATOMIC_CAS = 26;
         public static final int CLASS_INIT_END = 24;
         public static final int EXCEPTION_THROW = 25;
+        public static final int NONDETERMINISTIC_INT = 26;  // int / boolean / float (stored as raw int bits)
+        public static final int NONDETERMINISTIC_LONG = 27; // long / double (stored as raw long bits)
     }
 
     public static class Flags {

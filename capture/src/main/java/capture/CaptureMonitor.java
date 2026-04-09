@@ -586,4 +586,44 @@ public class CaptureMonitor {
     }
     throw new NoSuchFieldException(ownerName + "." + fieldName);
   }
+
+  public static void logNondetInt(int value, int siteId) {
+    if (isInside.get()) return;
+    isInside.set(true);
+    try {
+      TraceLogger.logNondetInt(value, siteId);
+    } finally {
+      isInside.set(false);
+    }
+  }
+
+  public static void logNondetFloat(float value, int siteId) {
+    if (isInside.get()) return;
+    isInside.set(true);
+    try {
+      TraceLogger.logNondetFloat(value, siteId);
+    } finally {
+      isInside.set(false);
+    }
+  }
+
+  public static void logNondetLong(long value, int siteId) {
+    if (isInside.get()) return;
+    isInside.set(true);
+    try {
+      TraceLogger.logNondetLong(value, siteId);
+    } finally {
+      isInside.set(false);
+    }
+  }
+
+  public static void logNondetDouble(double value, int siteId) {
+    if (isInside.get()) return;
+    isInside.set(true);
+    try {
+      TraceLogger.logNondetDouble(value, siteId);
+    } finally {
+      isInside.set(false);
+    }
+  }
 }

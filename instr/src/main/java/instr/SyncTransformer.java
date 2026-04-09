@@ -747,6 +747,51 @@ public class SyncTransformer implements ClassFileTransformer {
                 }
             }
 
+            // Detect nondeterministic calls (Random, System time, Math.random).
+            // Capture: execute the real call then log the return value.
+            // Replay: skip the real call and return the captured value.
+            String nondetType = classifyNondetOp(owner, name);
+            if (nondetType != null) {
+                Type[] argTypes = Type.getArgumentTypes(descriptor);
+                boolean isStaticCall = (opcode == Opcodes.INVOKESTATIC);
+
+                if (isReplay) {
+                    // Pop all args (top to bottom), then pop receiver if instance method
+                    for (int i = argTypes.length - 1; i >= 0; i--) {
+                        mv.visitInsn(argTypes[i].getSize() == 2 ? Opcodes.POP2 : Opcodes.POP);
+                    }
+                    if (!isStaticCall) {
+                        mv.visitInsn(Opcodes.POP); // pop receiver
+                    }
+                    mv.visitLdcInsn(siteId);
+                    emitNondetReplayCall(nondetType);
+                } else {
+                    // Save args and receiver (for instance methods) before the call
+                    int[] argSlots = new int[argTypes.length];
+                    for (int i = argTypes.length - 1; i >= 0; i--) {
+                        argSlots[i] = newLocal(argTypes[i]);
+                        mv.visitVarInsn(argTypes[i].getOpcode(Opcodes.ISTORE), argSlots[i]);
+                    }
+                    int receiverSlot = -1;
+                    if (!isStaticCall) {
+                        receiverSlot = newLocal(Type.getObjectType("java/lang/Object"));
+                        mv.visitVarInsn(Opcodes.ASTORE, receiverSlot);
+                        mv.visitVarInsn(Opcodes.ALOAD, receiverSlot);
+                    }
+                    for (int i = 0; i < argTypes.length; i++) {
+                        mv.visitVarInsn(argTypes[i].getOpcode(Opcodes.ILOAD), argSlots[i]);
+                    }
+                    // Execute the actual (nondeterministic) call
+                    super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
+                    // DUP return value so we can log it while leaving it on the stack
+                    boolean isWide = nondetType.equals("LONG") || nondetType.equals("DOUBLE");
+                    mv.visitInsn(isWide ? Opcodes.DUP2 : Opcodes.DUP);
+                    mv.visitLdcInsn(siteId);
+                    emitNondetLogCall(nondetType);
+                }
+                return;
+            }
+
             // Execute the original method call
             super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
             if (isBlockingCall(owner, name)) {
@@ -901,6 +946,70 @@ public class SyncTransformer implements ClassFileTransformer {
                 // I, Z, B, S, C
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logFieldWriteInt",
                     "(ILjava/lang/Object;IZZLjava/lang/String;Ljava/lang/String;)V", false);
+            }
+        }
+
+        /**
+         * Returns the nondeterminism category for a method call, or null if not nondeterministic.
+         * Categories: "INT" (int/boolean), "FLOAT", "LONG" (long), "DOUBLE"
+         */
+        private static String classifyNondetOp(String owner, String name) {
+            switch (owner) {
+                case "java/util/Random":
+                case "java/security/SecureRandom":
+                case "java/util/concurrent/ThreadLocalRandom":
+                    switch (name) {
+                        case "nextInt":     return "INT";
+                        case "nextLong":    return "LONG";
+                        case "nextFloat":   return "FLOAT";
+                        case "nextDouble":  return "DOUBLE";
+                        case "nextBoolean": return "INT";
+                        case "nextGaussian":return "DOUBLE";
+                    }
+                    break;
+                case "java/lang/System":
+                    if (name.equals("currentTimeMillis") || name.equals("nanoTime")) return "LONG";
+                    break;
+                case "java/lang/Math":
+                    if (name.equals("random")) return "DOUBLE";
+                    break;
+            }
+            return null;
+        }
+
+        /** Emits a call to logNondet*(value, siteId) in CaptureMonitor. Stack: [..., value, siteId] → [...] */
+        private void emitNondetLogCall(String nondetType) {
+            switch (nondetType) {
+                case "INT":
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logNondetInt", "(II)V", false);
+                    break;
+                case "FLOAT":
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logNondetFloat", "(FI)V", false);
+                    break;
+                case "LONG":
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logNondetLong", "(JI)V", false);
+                    break;
+                case "DOUBLE":
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logNondetDouble", "(DI)V", false);
+                    break;
+            }
+        }
+
+        /** Emits a call to replayNondet*(siteId) in ReplayMonitor. Stack: [..., siteId] → [..., value] */
+        private void emitNondetReplayCall(String nondetType) {
+            switch (nondetType) {
+                case "INT":
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayNondetInt", "(I)I", false);
+                    break;
+                case "FLOAT":
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayNondetFloat", "(I)F", false);
+                    break;
+                case "LONG":
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayNondetLong", "(I)J", false);
+                    break;
+                case "DOUBLE":
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayNondetDouble", "(I)D", false);
+                    break;
             }
         }
 

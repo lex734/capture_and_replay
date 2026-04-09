@@ -385,6 +385,88 @@ public class ReplayMonitor {
         }
     }
 
+    // ---- Nondeterministic value injection ----
+    // During replay, instead of calling the real Random/System method, return the captured value.
+    // The call site's siteId is used as the matching key (objSite=0, objCount=siteId).
+
+    public static int replayNondetInt(int siteId) {
+        if (isInside.get()) return 0;
+        isInside.set(true);
+        try {
+            long tid = Thread.currentThread().getId();
+            int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
+            if (roleId == -1) return 0;
+            int packedType = BinarySchema.packType(BinarySchema.Event.NONDETERMINISTIC_INT, BinarySchema.Flags.NONE);
+            int val = ReplayCoordinator.awaitTurnInt(roleId, packedType, 0, siteId);
+            long seq = ReplayCoordinator.getLastMatchedSeq();
+            System.out.println(String.format(
+                    "[REPLAY-NONDET] epoch=%d seq=%d role=%d  nondet_int=%d  site=%d",
+                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, val, siteId));
+            return val;
+        } finally {
+            isInside.set(false);
+        }
+    }
+
+    public static float replayNondetFloat(int siteId) {
+        if (isInside.get()) return 0f;
+        isInside.set(true);
+        try {
+            long tid = Thread.currentThread().getId();
+            int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
+            if (roleId == -1) return 0f;
+            int packedType = BinarySchema.packType(BinarySchema.Event.NONDETERMINISTIC_INT, BinarySchema.Flags.NONE);
+            int bits = ReplayCoordinator.awaitTurnInt(roleId, packedType, 0, siteId);
+            float val = Float.intBitsToFloat(bits);
+            long seq = ReplayCoordinator.getLastMatchedSeq();
+            System.out.println(String.format(
+                    "[REPLAY-NONDET] epoch=%d seq=%d role=%d  nondet_float=%f  site=%d",
+                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, val, siteId));
+            return val;
+        } finally {
+            isInside.set(false);
+        }
+    }
+
+    public static long replayNondetLong(int siteId) {
+        if (isInside.get()) return 0L;
+        isInside.set(true);
+        try {
+            long tid = Thread.currentThread().getId();
+            int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
+            if (roleId == -1) return 0L;
+            int packedType = BinarySchema.packType(BinarySchema.Event.NONDETERMINISTIC_LONG, BinarySchema.Flags.NONE);
+            long val = ReplayCoordinator.awaitTurnLong(roleId, packedType, 0, siteId);
+            long seq = ReplayCoordinator.getLastMatchedSeq();
+            System.out.println(String.format(
+                    "[REPLAY-NONDET] epoch=%d seq=%d role=%d  nondet_long=%d  site=%d",
+                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, val, siteId));
+            return val;
+        } finally {
+            isInside.set(false);
+        }
+    }
+
+    public static double replayNondetDouble(int siteId) {
+        if (isInside.get()) return 0.0;
+        isInside.set(true);
+        try {
+            long tid = Thread.currentThread().getId();
+            int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
+            if (roleId == -1) return 0.0;
+            int packedType = BinarySchema.packType(BinarySchema.Event.NONDETERMINISTIC_LONG, BinarySchema.Flags.NONE);
+            long bits = ReplayCoordinator.awaitTurnLong(roleId, packedType, 0, siteId);
+            double val = Double.longBitsToDouble(bits);
+            long seq = ReplayCoordinator.getLastMatchedSeq();
+            System.out.println(String.format(
+                    "[REPLAY-NONDET] epoch=%d seq=%d role=%d  nondet_double=%f  site=%d",
+                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, val, siteId));
+            return val;
+        } finally {
+            isInside.set(false);
+        }
+    }
+
     public static void preRegisterThread(Thread thread) {
         if (isInside.get()) return;
         isInside.set(true);
@@ -446,8 +528,10 @@ public class ReplayMonitor {
             case BinarySchema.Event.ATOMIC_CAS:           return "ATOMIC_CAS";
             case BinarySchema.Event.CLASS_INIT_BEGIN:     return "CLASS_INIT_BEGIN";
             case BinarySchema.Event.CLASS_INIT_END:       return "CLASS_INIT_END";
-            case BinarySchema.Event.EXCEPTION_THROW:      return "EXCEPTION_THROW";
-            default:                                      return "UNKNOWN(" + eventType + ")";
+            case BinarySchema.Event.EXCEPTION_THROW:        return "EXCEPTION_THROW";
+            case BinarySchema.Event.NONDETERMINISTIC_INT:  return "NONDETERMINISTIC_INT";
+            case BinarySchema.Event.NONDETERMINISTIC_LONG: return "NONDETERMINISTIC_LONG";
+            default:                                       return "UNKNOWN(" + eventType + ")";
         }
     }
 }

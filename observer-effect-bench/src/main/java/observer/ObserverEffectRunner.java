@@ -26,6 +26,8 @@ public class ObserverEffectRunner {
         "observer.ScenarioStoreBuf",
         "observer.ScenarioDekker",
         "observer.ScenarioMessagePass",
+        "observer.ScenarioLoadBuffer",
+        "observer.ScenarioLostUpdate",
     };
 
     // Per-test wall-clock budget in seconds passed to JCStress via -time.

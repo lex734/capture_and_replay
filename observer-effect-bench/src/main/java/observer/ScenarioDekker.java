@@ -22,13 +22,18 @@ import org.openjdk.jcstress.infra.results.II_Result;
  * On x86 (TSO): store buffers let both actors write their flag locally and
  * read the other's stale cache line, producing (1, 1).
  *
- * With the capture agent: field accesses are serialised → (1, 1) disappears.
+ * With the capture agent: the agent only LOGS field accesses — it does not
+ * insert memory barriers or synchronization around the actual reads and writes.
+ * The plain putfield/getfield instructions execute unchanged, so the store
+ * buffer is not flushed between the write and the subsequent read in each
+ * actor, and (1, 1) continues to appear.  This is a negative control: the
+ * observer effect is NOT expected here.
  */
 @JCStressTest
-@Outcome(id = "1, 1", expect = Expect.FORBIDDEN,
-        desc = "Both actors entered the critical section — SC violation via store buffering")
+@Outcome(id = "1, 1", expect = Expect.ACCEPTABLE,
+        desc = "Both actors entered the critical section — SC violation via store buffering; agent does not suppress this")
 @Outcome(id = {"0, 0", "1, 0", "0, 1"}, expect = Expect.ACCEPTABLE,
-        desc = "At most one actor entered the critical section — sequentially consistent")
+        desc = "At most one actor entered the critical section — sequentially consistent outcome")
 @State
 public class ScenarioDekker {
 

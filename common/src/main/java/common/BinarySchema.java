@@ -53,7 +53,7 @@ public class BinarySchema {
         // CAS is its own event type: result is injected during replay because the
         // boolean/witness return determines control flow and reference identity can
         // differ across runs.  Non-CAS atomics execute natively under total order.
-        public static final int ATOMIC_CAS = 26;
+        public static final int ATOMIC_CAS = 28;
         public static final int CLASS_INIT_END = 24;
         public static final int EXCEPTION_THROW = 25;
         public static final int NONDETERMINISTIC_INT = 26;  // int / boolean / float (stored as raw int bits)

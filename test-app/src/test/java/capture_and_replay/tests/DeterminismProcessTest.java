@@ -82,6 +82,7 @@ public class DeterminismProcessTest {
         "correctness.VolatileWriteRaceTest",
         "correctness.SharedObjectRaceTest",
         "correctness.ArrayElementRaceTest",
+        "correctness.LinkedListContentionTest",
     })
     void captureThenReplay_finalStateMatches(String mainClass) throws Exception {
         // 1) Capture

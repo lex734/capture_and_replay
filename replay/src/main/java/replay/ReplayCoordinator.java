@@ -20,6 +20,15 @@ public class ReplayCoordinator {
     private static final AtomicLong currentIdx = new AtomicLong(0);
     private static final ReentrantLock controlLock = new ReentrantLock();
 
+    // Order-correctness counters.
+    // matchedCount: events successfully replayed in the captured total order.
+    // skippedCount: events force-advanced because the owning role died or never started.
+    // sequenceHash:  rolling hash of (roleId, eventType) for each matched event in order;
+    //                updated only under controlLock so no extra synchronisation needed.
+    private static final AtomicLong matchedCount = new AtomicLong(0);
+    private static final AtomicLong skippedCount = new AtomicLong(0);
+    private static long sequenceHash = 17L;
+
     // Per-role condition: a thread waiting for its turn parks here.
     // Signalled precisely when currentIdx advances to that role's next event.
     private static final ConcurrentHashMap<Integer, Condition> roleConditions = new ConcurrentHashMap<>();
@@ -64,6 +73,9 @@ public class ReplayCoordinator {
     public static void init(MappedByteBuffer traceBuffer, long count) {
         // Reset all coordinator state so repeated calls (e.g. same JVM) start clean.
         currentIdx.set(0);
+        matchedCount.set(0);
+        skippedCount.set(0);
+        sequenceHash = 17L;
         roleConditions.clear();
         pendingRoles.clear();
         activeRoles.clear();
@@ -233,6 +245,7 @@ public class ReplayCoordinator {
                 if (pendingRoles.contains(expectedRole)) {
                     // Truly missing — never started, deadlock
                     System.err.println("[Replay DEADLOCK] Role=" + expectedRole + " never started.");
+                    skippedCount.incrementAndGet();
                     currentIdx.incrementAndGet();
                     signalNext();
                     continue;
@@ -251,6 +264,7 @@ public class ReplayCoordinator {
                 // Skip its remaining events so other threads can make progress.
                 if (!activeRoles.contains(expectedRole)) {
                     System.err.println("[Replay] role=" + expectedRole + " is dead, skipping event at idx=" + idx);
+                    skippedCount.incrementAndGet();
                     currentIdx.incrementAndGet();
                     signalNext();
                     continue;
@@ -278,6 +292,9 @@ public class ReplayCoordinator {
                     && (int) expected[3] == objSite && (int) expected[4] == objCount
                     && payloadMatches) {
                     lastMatchedSeq.set(expected[0]);
+                    sequenceHash = sequenceHash * 31L + (expected[1] & 0xFFFFL); // roleId
+                    sequenceHash = sequenceHash * 31L + (expected[2] & 0xFFL);   // eventType
+                    matchedCount.incrementAndGet();
                     if (onMatch != null) {
                         try { onMatch.run(); }
                         catch (Exception e) { e.printStackTrace(); }
@@ -328,6 +345,9 @@ public class ReplayCoordinator {
                 if (roleId == (int) expected[1] && packedType == (int) expected[2]
                         && (int) expected[3] == objSite && (int) expected[4] == objCount) {
                     lastMatchedSeq.set(expected[0]);
+                    sequenceHash = sequenceHash * 31L + (expected[1] & 0xFFFFL);
+                    sequenceHash = sequenceHash * 31L + (expected[2] & 0xFFL);
+                    matchedCount.incrementAndGet();
                     int postOpValue = (int) expected[5]; // data1
                     int returnValue = (int) expected[6]; // data2
                     if (onMatch != null) {
@@ -374,6 +394,9 @@ public class ReplayCoordinator {
                 if (roleId == (int) expected[1] && packedType == (int) expected[2]
                         && (int) expected[3] == objSite && (int) expected[4] == objCount) {
                     lastMatchedSeq.set(expected[0]);
+                    sequenceHash = sequenceHash * 31L + (expected[1] & 0xFFFFL);
+                    sequenceHash = sequenceHash * 31L + (expected[2] & 0xFFL);
+                    matchedCount.incrementAndGet();
                     long returnValue = ((long) expected[5] << 32) | (expected[6] & 0xFFFFFFFFL);
                     if (onMatch != null) {
                         long postOpValue = ((long) expected[7] << 32) | (expected[8] & 0xFFFFFFFFL);
@@ -421,6 +444,7 @@ public class ReplayCoordinator {
 
                 if (pendingRoles.contains(expectedRole)) {
                     System.err.println("[Replay DEADLOCK] Role=" + expectedRole + " never started.");
+                    skippedCount.incrementAndGet();
                     currentIdx.incrementAndGet();
                     signalNext();
                     continue;
@@ -432,6 +456,7 @@ public class ReplayCoordinator {
                 }
                 if (!activeRoles.contains(expectedRole)) {
                     System.err.println("[Replay] role=" + expectedRole + " is dead, skipping event at idx=" + idx);
+                    skippedCount.incrementAndGet();
                     currentIdx.incrementAndGet();
                     signalNext();
                     continue;
@@ -439,6 +464,9 @@ public class ReplayCoordinator {
                 if (roleId == expectedRole && packedType == expectedType
                         && (int) expected[3] == objSite && (int) expected[4] == objCount) {
                     lastMatchedSeq.set(expected[0]);
+                    sequenceHash = sequenceHash * 31L + (expected[1] & 0xFFFFL);
+                    sequenceHash = sequenceHash * 31L + (expected[2] & 0xFFL);
+                    matchedCount.incrementAndGet();
                     return; // matched — lock still held, endAtomicReplay() will advance + release
                 }
                 System.err.println(String.format("[WAIT]  idx=%-4d expects role=%d type=%d  got role=%d type=%d",
@@ -478,6 +506,25 @@ public class ReplayCoordinator {
      * to the atomic cell without racing against the next thread's write.
      * Returns the captured return value resolved from data1/data2.
      */
+    /**
+     * Prints a one-line order-correctness summary to stderr.
+     * Called from a JVM shutdown hook in ReplayAgent so it fires after all
+     * application threads have finished.
+     *
+     * Format: [ReplayStats] matched=X skipped=Y total=Z seqHash=H
+     *   matched  – events successfully replayed in the captured order
+     *   skipped  – events force-advanced due to a dead or never-started role
+     *   total    – events loaded from trace.bin
+     *   seqHash  – rolling hash of (roleId, eventType) across matched events;
+     *              recomputing the same hash over the sorted trace.bin must
+     *              yield an identical value for ordering to be correct
+     */
+    public static void printStats() {
+        System.err.println(String.format(
+            "[ReplayStats] matched=%d skipped=%d total=%d seqHash=%d",
+            matchedCount.get(), skippedCount.get(), totalEvents, sequenceHash));
+    }
+
     public static Object awaitTurnObj(int roleId, int packedType, int objSite, int objCount,
                                       java.util.function.Consumer<Object> onMatch) {
         controlLock.lock();
@@ -492,6 +539,9 @@ public class ReplayCoordinator {
                 if (roleId == (int) expected[1] && packedType == (int) expected[2]
                         && (int) expected[3] == objSite && (int) expected[4] == objCount) {
                     lastMatchedSeq.set(expected[0]);
+                    sequenceHash = sequenceHash * 31L + (expected[1] & 0xFFFFL);
+                    sequenceHash = sequenceHash * 31L + (expected[2] & 0xFFL);
+                    matchedCount.incrementAndGet();
                     int valueSiteId = (int) expected[5]; // data1 = return value siteId
                     int valueCount  = (int) expected[6]; // data2 = return value count
                     // Unpack the creator role IDs stored at bits 31-16 / 15-0 of expected[11]

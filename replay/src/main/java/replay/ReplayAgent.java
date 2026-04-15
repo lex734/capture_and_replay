@@ -49,7 +49,12 @@ public class ReplayAgent {
                 throwable.printStackTrace(System.err);
             });
 
-            // 3b. Register the main thread before the app starts.
+            // 3b. Register a shutdown hook to emit the order-correctness summary.
+            //     Runs after all application threads finish, so counts are final.
+            Runtime.getRuntime().addShutdownHook(new Thread(
+                ReplayCoordinator::printStats, "replay-stats-hook"));
+
+            // 3c. Register the main thread before the app starts.
             // The main thread never goes through preRegisterThread (which is only
             // called for spawned threads), so without this its role stays in
             // pendingRoles and every early event gets deadlock-skipped, racing

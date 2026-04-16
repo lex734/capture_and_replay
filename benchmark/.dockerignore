@@ -1,0 +1,9 @@
+Dockerfile
+.dockerignore
+*.log
+.DS_Store
+output
+build/
+result/
+TestDoug*
+.venv

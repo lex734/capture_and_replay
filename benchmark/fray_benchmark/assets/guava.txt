@@ -1,0 +1,3 @@
+com.google.common.cache.CacheBuilderTest#testRemovalNotification_clear_basher
+com.google.common.util.concurrent.FuturesTest#testCatchingAsync_interruptPropagatesToTransformingThread
+com.google.common.util.concurrent.UninterruptibleMonitorTest#testTryEnterIf_initiallyFalse

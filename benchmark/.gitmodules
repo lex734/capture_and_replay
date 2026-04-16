@@ -1,0 +1,21 @@
+[submodule "bms/guava"]
+	path = bms/guava
+	url = https://github.com/google/guava
+[submodule "bms/lucene"]
+	path = bms/lucene
+	url = https://github.com/apache/lucene
+  ignore = dirty
+[submodule "tools/rr"]
+	path = tools/rr
+	url = https://github.com/rr-debugger/rr.git
+  ignore = dirty
+[submodule "bms/kafka"]
+	path = bms/kafka
+	url = https://github.com/apache/kafka
+  ignore = dirty
+[submodule "tools/fray"]
+	path = tools/fray
+	url = https://github.com/cmu-pasta/fray
+[submodule "tools/jpf-core"]
+	path = tools/jpf-core
+	url = https://github.com/aoli-al/jpf-core

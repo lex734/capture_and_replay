@@ -60,3 +60,21 @@ java -javaagent:replay/target/trace-replay-agent.jar -jar your-app.jar
 ```
 
 The trace is written to / read from `trace.bin` in the working directory.
+
+## Inspecting Bytecode (for instrumentation debugging)
+
+Use ASM's `Textifier` to dump the bytecode of a class in human-readable form, including frame snapshots (`FRAME` lines showing locals and operand stack state at each instruction):
+
+```bash
+java -cp capture/target/trace-capture-agent.jar org.objectweb.asm.util.Textifier com/example/MyClass.class
+```
+
+To see the output of your instrumented class (post-transformation), use `TraceClassVisitor` inside `SyncTransformer.transform()` by wrapping the `ClassWriter` before passing it to `SyncClassVisitor`:
+
+```java
+java.io.PrintWriter pw = new java.io.PrintWriter(System.err);
+org.objectweb.asm.util.TraceClassVisitor tracer =
+    new org.objectweb.asm.util.TraceClassVisitor(writer, pw);
+SyncClassVisitor visitor = new SyncClassVisitor(tracer, className, loader);
+reader.accept(visitor, ClassReader.EXPAND_FRAMES);
+```

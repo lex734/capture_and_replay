@@ -1,0 +1,5 @@
+org.apache.lucene.index.TestPersistentSnapshotDeletionPolicy#testMultiThreadedSnapshotting
+org.apache.lucene.TestMergeSchedulerExternal#testSubclassConcurrentMergeScheduler
+org.apache.lucene.index.TestConcurrentMergeScheduler#testMaxMergeCount
+org.apache.lucene.index.TestSnapshotDeletionPolicy#testMultiThreadedSnapshotting
+org.apache.lucene.index.TestIndexWriterWithThreads#testIOExceptionDuringWriteSegmentWithThreads

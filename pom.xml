@@ -15,6 +15,7 @@
         <module>capture</module>
         <module>replay</module>
         <module>test-app</module>
+        <module>fidelity-benchmark</module>
     </modules>
 
     <properties>

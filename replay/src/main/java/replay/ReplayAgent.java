@@ -35,6 +35,9 @@ public class ReplayAgent {
             raf.close();
 
             // 3. Initialize the Coordinator with the data
+            String fidelityOutput = System.getProperty("tool.fidelity.output");
+            ReplayCoordinator.fidelityEnabled    = (fidelityOutput != null);
+            ReplayCoordinator.fidelityOutputPath = fidelityOutput;
             ReplayCoordinator.init(buffer, totalEvents);
 
             // 3a. Install a global handler so threads that die from uncaught exceptions
@@ -48,7 +51,13 @@ public class ReplayAgent {
                 throwable.printStackTrace(System.err);
             });
 
-            // 3b. Register the main thread before the app starts.
+            // 3b. Register fidelity shutdown hook if enabled.
+            if (ReplayCoordinator.fidelityEnabled) {
+                Runtime.getRuntime().addShutdownHook(new Thread(
+                    ReplayCoordinator::printFidelityReport, "fidelity-report"));
+            }
+
+            // 3c. Register the main thread before the app starts.
             // The main thread never goes through preRegisterThread (which is only
             // called for spawned threads), so without this its role stays in
             // pendingRoles and every early event gets deadlock-skipped, racing

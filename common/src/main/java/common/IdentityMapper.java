@@ -235,6 +235,23 @@ public class IdentityMapper {
     }
 
     /**
+     * Pure reverse lookup: returns the BirthId already registered for {@code obj},
+     * or {@code null} if the object is unknown (was never registered).
+     * Unlike {@link #getBirthId(Object, String, int)}, this method never allocates
+     * a new BirthId — it is safe to call on the replay hot path.
+     */
+    public static BirthId lookupBirthId(Object obj) {
+        if (obj == null) return BirthId.GLOBAL;
+        if (obj instanceof String) {
+            String str = (String) obj;
+            if (str.intern() == str) return poolStringToId.get(str);
+        }
+        synchronized (objToId) {
+            return objToId.get(obj);
+        }
+    }
+
+    /**
      * Registers a live replay object under a birth ID taken directly from the trace.
      * Used when the trace references an object (e.g. System.out) that was never
      * passed through registerAllocation or getBirthId during this replay run.

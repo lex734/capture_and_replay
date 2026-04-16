@@ -2,11 +2,15 @@ package replay;
 
 import common.BinarySchema;
 import common.IdentityMapper;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.Writer;
 import java.nio.MappedByteBuffer;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedList;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -54,6 +58,22 @@ public class ReplayCoordinator {
 
     public static boolean hasDiverged() { return hasDiverged; }
 
+    // ---- Fidelity tracking (opt-in, zero cost when disabled) ----
+    // Activated by -Dtool.fidelity.output=<path>; set by ReplayAgent.premain().
+    static volatile boolean fidelityEnabled    = false;
+    static volatile String  fidelityOutputPath = null;
+
+    // Counts all valued events (reads + writes) where we have a trace event to compare.
+    private static final AtomicLong totalValuedEvents = new AtomicLong(0);
+    private static final AtomicLong naturalAgreements = new AtomicLong(0);
+    // Counts events (reads or writes) where the natural value differed from the trace.
+    private static final AtomicLong injectedEvents    = new AtomicLong(0);
+
+    // key  = (objSite << 32) | (objCount & 0xFFFFFFFFL)
+    // v[0] = captured final value (packed data1<<32|data2)
+    // v[1] = last natural value seen during replay (Long.MIN_VALUE = never written)
+    private static final ConcurrentHashMap<Long, long[]> finalStateMap = new ConcurrentHashMap<>();
+
     public static void init(MappedByteBuffer traceBuffer, long count) {
         // Clear all state so init() is safe to call more than once (e.g. in tests).
         sortedEvents = null;
@@ -69,6 +89,10 @@ public class ReplayCoordinator {
         roleIdToThread.clear();
         hasDiverged = false;
         firstDivergenceInfo = null;
+        totalValuedEvents.set(0);
+        naturalAgreements.set(0);
+        injectedEvents.set(0);
+        finalStateMap.clear();
 
         ArrayList<long[]> allEvents = new ArrayList<>();
         long maxSlots = traceBuffer.capacity() / BinarySchema.RECORD_SIZE;
@@ -101,6 +125,18 @@ public class ReplayCoordinator {
 
         totalEvents = allEvents.size();
         // System.out.println("[Replay] Distributed " + totalEvents + " events into " + roleQueues.keySet().size() + " role queues.");
+
+        // Pre-compute captured final state for fidelity tracking.
+        // Iterating in causal order means the last write per location wins.
+        if (fidelityEnabled) {
+            for (long[] ev : allEvents) {
+                if (!isWriteEvent((int) ev[2] & 0xFF)) continue;
+                long key = ((long)(int) ev[3] << 32) | ((int) ev[4] & 0xFFFFFFFFL);
+                long val = ((long)(int) ev[5] << 32) | ((int) ev[6] & 0xFFFFFFFFL);
+                finalStateMap.compute(key, (k, v) ->
+                    v == null ? new long[]{val, Long.MIN_VALUE} : new long[]{val, v[1]});
+            }
+        }
     }
     /**
      * Records the first structural divergence and wakes all waiting threads so
@@ -333,6 +369,11 @@ public class ReplayCoordinator {
         }
     }
 
+    /** Convenience overload for events that carry no natural value (e.g. NONDETERMINISTIC_INT). */
+    public static int awaitTurnInt(int roleId, int packedType, int objSite, int objCount) {
+        return awaitTurnInt(roleId, packedType, objSite, objCount, 0);
+    }
+
     public static int awaitTurnInt(int roleId, int packedType, int objSite, int objCount, int naturalValue) {
         activateRole(roleId);
         LinkedList<long[]> myQueue = roleQueues.get(roleId);
@@ -359,9 +400,10 @@ public class ReplayCoordinator {
                     lastMatchedSeq.set(eSeq);
                     if (isReleaseEvent(packedType)) releasedEpoch.set(eEpoch);
                     controlLock.notifyAll();
+                    trackFidelityInt(packedType, objSite, objCount, naturalValue, expected);
                     if (naturalValue != traceValue) {
-                        // System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnInt role=%d: natural=%d trace=%d",
-                                // roleId, naturalValue, traceValue));
+                        System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnInt role=%d: natural=%d trace=%d",
+                                roleId, naturalValue, traceValue));
                         return traceValue;
                     }
                     return naturalValue;
@@ -375,6 +417,11 @@ public class ReplayCoordinator {
                 return naturalValue;
             }
         }
+    }
+
+    /** Convenience overload for events that carry no natural value (e.g. NONDETERMINISTIC_LONG). */
+    public static long awaitTurnLong(int roleId, int packedType, int objSite, int objCount) {
+        return awaitTurnLong(roleId, packedType, objSite, objCount, 0L);
     }
 
     public static long awaitTurnLong(int roleId, int packedType, int objSite, int objCount, long naturalValue) {
@@ -402,9 +449,10 @@ public class ReplayCoordinator {
                     lastMatchedSeq.set(eSeq);
                     if (isReleaseEvent(packedType)) releasedEpoch.set(eEpoch);
                     controlLock.notifyAll();
+                    trackFidelityLong(packedType, objSite, objCount, naturalValue, expected);
                     if (naturalValue != traceValue) {
-                        // System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnLong role=%d: natural=%d trace=%d",
-                                // roleId, naturalValue, traceValue));
+                        System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnLong role=%d: natural=%d trace=%d",
+                                roleId, naturalValue, traceValue));
                         return traceValue;
                     }
                     return naturalValue;
@@ -450,8 +498,8 @@ public class ReplayCoordinator {
                         return naturalValue;
                     }
                     if (naturalValue != traceValue) {
-                        // System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnObj role=%d: natural=%s trace=%s",
-                                // roleId, naturalValue, traceValue));
+                        System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnObj role=%d: natural=%s trace=%s",
+                                roleId, naturalValue, traceValue));
                         return traceValue;
                     }
                     return naturalValue;
@@ -495,6 +543,7 @@ public class ReplayCoordinator {
 
     public static int awaitTurnRmwInt(int roleId, int packedType, int objSite, int objCount, int naturalValue) {
         long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount);
+        trackFidelityInt(packedType, objSite, objCount, naturalValue, ev);
         if (ev == null) return naturalValue;
         int traceValue = (int) ev[6];
         if (naturalValue != traceValue) {
@@ -506,6 +555,7 @@ public class ReplayCoordinator {
 
     public static long awaitTurnRmwLong(int roleId, int packedType, int objSite, int objCount, long naturalValue) {
         long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount);
+        trackFidelityLong(packedType, objSite, objCount, naturalValue, ev);
         if (ev == null) return naturalValue;
         long traceValue = ((long) ev[5] << 32) | (ev[6] & 0xFFFFFFFFL);
         if (naturalValue != traceValue) {
@@ -517,6 +567,7 @@ public class ReplayCoordinator {
 
     public static Object awaitTurnRmwObj(int roleId, int packedType, int objSite, int objCount, Object naturalValue) {
         long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount);
+        trackFidelityObj(packedType, objSite, objCount, naturalValue, ev);
         if (ev == null) return naturalValue;
         Object traceValue = IdentityMapper.resolveByBirthId((int) ev[5], (int) ev[6]);
         if (naturalValue != traceValue) {
@@ -629,11 +680,12 @@ public class ReplayCoordinator {
 
     public static int awaitTurnFieldInt(int roleId, int packedType, int objSite, int objCount, int naturalValue) {
         long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount);
+        trackFidelityInt(packedType, objSite, objCount, naturalValue, ev);
         if (ev == null) return naturalValue;
         int traceValue = (int) ev[6];
         if (naturalValue != traceValue) {
-            // System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnFieldInt role=%d: natural=%d trace=%d",
-                    // roleId, naturalValue, traceValue));
+            System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnFieldInt role=%d: natural=%d trace=%d",
+                    roleId, naturalValue, traceValue));
             return traceValue;
         }
         return naturalValue;
@@ -641,11 +693,12 @@ public class ReplayCoordinator {
 
     public static long awaitTurnFieldLong(int roleId, int packedType, int objSite, int objCount, long naturalValue) {
         long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount);
+        trackFidelityLong(packedType, objSite, objCount, naturalValue, ev);
         if (ev == null) return naturalValue;
         long traceValue = ((long) ev[5] << 32) | (ev[6] & 0xFFFFFFFFL);
         if (naturalValue != traceValue) {
-            // System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnFieldLong role=%d: natural=%d trace=%d",
-                    // roleId, naturalValue, traceValue));
+            System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnFieldLong role=%d: natural=%d trace=%d",
+                    roleId, naturalValue, traceValue));
             return traceValue;
         }
         return naturalValue;
@@ -657,11 +710,14 @@ public class ReplayCoordinator {
         Object traceValue = IdentityMapper.resolveByBirthId((int) ev[5], (int) ev[6]);
         if (traceValue == null && naturalValue != null) {
             IdentityMapper.registerByBirthId((int) ev[5], (int) ev[6], naturalValue);
+            // lookupBirthId(naturalValue) now returns the trace birth ID — counts as agreement.
+            trackFidelityObj(packedType, objSite, objCount, naturalValue, ev);
             return naturalValue;
         }
+        trackFidelityObj(packedType, objSite, objCount, naturalValue, ev);
         if (naturalValue != traceValue) {
-            // System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnFieldObj role=%d: natural=%s trace=%s",
-                    // roleId, naturalValue, traceValue));
+            System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnFieldObj role=%d: natural=%s trace=%s",
+                    roleId, naturalValue, traceValue));
             return traceValue;
         }
         return naturalValue;
@@ -674,11 +730,13 @@ public class ReplayCoordinator {
 
     public static int awaitTurnArrayInt(int roleId, int packedType, int objSite, int objCount, int naturalValue) {
         long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount);
+        // For arrays: objSite=array-birthId.count, objCount=element-index — key is per element.
+        trackFidelityInt(packedType, objSite, objCount, naturalValue, ev);
         if (ev == null) return naturalValue;
         int traceValue = (int) ev[6];
         if (naturalValue != traceValue) {
-            // System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnArrayInt role=%d: natural=%d trace=%d",
-                    // roleId, naturalValue, traceValue));
+            System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnArrayInt role=%d: natural=%d trace=%d",
+                    roleId, naturalValue, traceValue));
             return traceValue;
         }
         return naturalValue;
@@ -686,11 +744,12 @@ public class ReplayCoordinator {
 
     public static long awaitTurnArrayLong(int roleId, int packedType, int objSite, int objCount, long naturalValue) {
         long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount);
+        trackFidelityLong(packedType, objSite, objCount, naturalValue, ev);
         if (ev == null) return naturalValue;
         long traceValue = ((long) ev[5] << 32) | (ev[6] & 0xFFFFFFFFL);
         if (naturalValue != traceValue) {
-            // System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnArrayLong role=%d: natural=%d trace=%d",
-                    // roleId, naturalValue, traceValue));
+            System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnArrayLong role=%d: natural=%d trace=%d",
+                    roleId, naturalValue, traceValue));
             return traceValue;
         }
         return naturalValue;
@@ -702,14 +761,147 @@ public class ReplayCoordinator {
         Object traceValue = IdentityMapper.resolveByBirthId((int) ev[5], (int) ev[6]);
         if (traceValue == null && naturalValue != null) {
             IdentityMapper.registerByBirthId((int) ev[5], (int) ev[6], naturalValue);
+            trackFidelityObj(packedType, objSite, objCount, naturalValue, ev);
             return naturalValue;
         }
+        trackFidelityObj(packedType, objSite, objCount, naturalValue, ev);
         if (naturalValue != traceValue) {
-            // System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnArrayObj role=%d: natural=%s trace=%s",
-                    // roleId, naturalValue, traceValue));
+            System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnArrayObj role=%d: natural=%s trace=%s",
+                    roleId, naturalValue, traceValue));
             return traceValue;
         }
         return naturalValue;
+    }
+
+    private static boolean isWriteEvent(int baseType) {
+        return baseType == BinarySchema.Event.FIELD_WRITE
+            || baseType == BinarySchema.Event.ARRAY_WRITE
+            || baseType == BinarySchema.Event.ATOMIC_WRITE
+            || baseType == BinarySchema.Event.ATOMIC_RMW
+            || baseType == BinarySchema.Event.ATOMIC_CAS;
+    }
+
+    /** True for all valued memory-access events (reads + writes). Excludes nondeterministic. */
+    private static boolean isTrackedEvent(int baseType) {
+        return baseType == BinarySchema.Event.FIELD_READ
+            || baseType == BinarySchema.Event.FIELD_WRITE
+            || baseType == BinarySchema.Event.ARRAY_READ
+            || baseType == BinarySchema.Event.ARRAY_WRITE
+            || baseType == BinarySchema.Event.ATOMIC_READ
+            || baseType == BinarySchema.Event.ATOMIC_WRITE
+            || baseType == BinarySchema.Event.ATOMIC_RMW;
+    }
+
+    /**
+     * Records fidelity stats for one int-sized valued event.
+     *
+     * <p>The finalStateMap update is done unconditionally (ev may be null when the
+     * run has diverged, but the last natural write still determines final state).
+     * Counter increments are only done when ev is non-null, i.e. we have a matched
+     * trace event to compare against.
+     */
+    private static void trackFidelityInt(int packedType, int objSite, int objCount,
+                                         int naturalValue, long[] ev) {
+        if (!fidelityEnabled) return;
+        int baseType = packedType & 0xFF;
+        if (isWriteEvent(baseType)) {
+            long key    = ((long) objSite << 32) | (objCount & 0xFFFFFFFFL);
+            long natLong = naturalValue & 0xFFFFFFFFL;
+            finalStateMap.computeIfPresent(key, (k, v) -> { v[1] = natLong; return v; });
+        }
+        if (ev != null && isTrackedEvent(baseType)) {
+            totalValuedEvents.incrementAndGet();
+            if (naturalValue == (int) ev[6]) naturalAgreements.incrementAndGet();
+            else                             injectedEvents.incrementAndGet();
+        }
+    }
+
+    /** Same as {@link #trackFidelityInt} but for long-sized valued events. */
+    private static void trackFidelityLong(int packedType, int objSite, int objCount,
+                                          long naturalValue, long[] ev) {
+        if (!fidelityEnabled) return;
+        int baseType = packedType & 0xFF;
+        if (isWriteEvent(baseType)) {
+            long key = ((long) objSite << 32) | (objCount & 0xFFFFFFFFL);
+            finalStateMap.computeIfPresent(key, (k, v) -> { v[1] = naturalValue; return v; });
+        }
+        if (ev != null && isTrackedEvent(baseType)) {
+            long traceValue = ((long) ev[5] << 32) | (ev[6] & 0xFFFFFFFFL);
+            totalValuedEvents.incrementAndGet();
+            if (naturalValue == traceValue) naturalAgreements.incrementAndGet();
+            else                            injectedEvents.incrementAndGet();
+        }
+    }
+
+    /**
+     * Records fidelity stats for one object-reference valued event.
+     *
+     * <p>For write events the location's entry in finalStateMap is updated with the
+     * natural object's birth ID packed as {@code (siteId << 32) | count}, matching
+     * the format used by {@link #init()} when it pre-computes the captured final
+     * state.  The captured birth ID is read directly from {@code ev[5..6]}.
+     *
+     * <p>This method must be called <em>after</em> any {@code registerByBirthId}
+     * call (the {@code traceValue == null} branch) so that
+     * {@link IdentityMapper#lookupBirthId} returns the updated identity.
+     *
+     * <p>{@code ev} may be null when the run has already diverged; in that case
+     * only the finalStateMap write update (if applicable) is performed.
+     */
+    private static void trackFidelityObj(int packedType, int objSite, int objCount,
+                                          Object naturalValue, long[] ev) {
+        if (!fidelityEnabled) return;
+        int baseType = packedType & 0xFF;
+        if (isWriteEvent(baseType)) {
+            IdentityMapper.BirthId nat = IdentityMapper.lookupBirthId(naturalValue);
+            long natLong = nat != null
+                    ? ((long) nat.siteId << 32) | (nat.count & 0xFFFFFFFFL)
+                    : Long.MIN_VALUE;
+            long key = ((long) objSite << 32) | (objCount & 0xFFFFFFFFL);
+            finalStateMap.computeIfPresent(key, (k, v) -> { v[1] = natLong; return v; });
+        }
+        if (ev != null && isTrackedEvent(baseType)) {
+            long capturedBirthId = ((long)(int) ev[5] << 32) | ((int) ev[6] & 0xFFFFFFFFL);
+            IdentityMapper.BirthId nat = IdentityMapper.lookupBirthId(naturalValue);
+            long natBirthId = nat != null
+                    ? ((long) nat.siteId << 32) | (nat.count & 0xFFFFFFFFL)
+                    : Long.MIN_VALUE;
+            totalValuedEvents.incrementAndGet();
+            if (natBirthId == capturedBirthId) naturalAgreements.incrementAndGet();
+            else                               injectedEvents.incrementAndGet();
+        }
+    }
+
+    public static void printFidelityReport() {
+        long total    = totalValuedEvents.get();
+        long agreed   = naturalAgreements.get();
+        long injected = injectedEvents.get();
+
+        int locs = finalStateMap.size(), matched = 0, unseen = 0;
+        for (long[] v : finalStateMap.values()) {
+            if (v[1] == Long.MIN_VALUE) { unseen++; continue; }
+            if (v[1] == v[0]) matched++;
+        }
+        // A run "matches" if every tracked write location's last natural value equals
+        // the captured final value.  Structural divergence is reported separately.
+        int seen = locs - unseen;
+        boolean match = (seen > 0) && (matched == seen);
+
+        Properties p = new Properties();
+        p.setProperty("match",                 String.valueOf(match));
+        p.setProperty("structural_divergence", String.valueOf(hasDiverged));
+        p.setProperty("valued_events",         String.valueOf(total));
+        p.setProperty("natural_agreements",    String.valueOf(agreed));
+        p.setProperty("injections",            String.valueOf(injected));
+        p.setProperty("locations_matched",     String.valueOf(matched));
+        p.setProperty("locations_total",       String.valueOf(locs));
+        p.setProperty("locations_unseen",      String.valueOf(unseen));
+
+        try (Writer w = new FileWriter(fidelityOutputPath)) {
+            p.store(w, "Replay Fidelity Result");
+        } catch (IOException e) {
+            System.err.println("[FIDELITY] Failed to write result file: " + e.getMessage());
+        }
     }
 
     private static boolean isReleaseEvent(int packedType) {

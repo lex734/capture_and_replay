@@ -6,6 +6,12 @@ import java.util.concurrent.locks.AbstractQueuedSynchronizer;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
+/**
+ * Bug: one thread leaves `x` locked, so the second copy of `thread1()` can deadlock
+ * trying to take the same lock again.
+ * Observe it when the benchmark prints `Deadlock detected`, throws `RuntimeException`,
+ * or blocks at the BAD `x.lock()` site.
+ */
 public class Phase01Bad {
   
   static ReentrantLock x = new ReentrantLock();

@@ -3,6 +3,11 @@ package cmu.pasta.fray.benchmark.sctbench.cb;
 /**
  * Translated from:
  * https://github.com/mc-imperial/sctbench/tree/master/benchmarks/conc-bugs/stringbuffer-jdk1.4
+ *
+ * Bug: one thread mutates `buffer` with `erase` and `append` while another thread
+ * appends from the same object, so the source length and contents can disagree.
+ * Observe it when one of the `assert false` bounds checks fires inside `getChars`
+ * or `erase`.
  */
 public class StringBufferJDK {
     private char[] value;

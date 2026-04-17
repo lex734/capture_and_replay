@@ -6,6 +6,12 @@ import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
+/**
+ * Bug: the producer and consumer can both get stuck waiting because the condition
+ * protocol and `waiting` flag are coordinated incorrectly.
+ * Observe it when the benchmark prints `Deadlock detected`, throws
+ * `RuntimeException`, or hangs until the runner times out.
+ */
 public class Sync02Bad {
   private static final int N = 2;
   private static int num;

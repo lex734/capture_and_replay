@@ -4,6 +4,11 @@ package cmu.pasta.fray.benchmark.sctbench.cs.origin;
 
 import java.util.concurrent.atomic.*;
 
+/**
+ * Bug: the three token values can be observed in an inconsistent combination after
+ * the update chain runs, so the ring invariant no longer holds.
+ * Observe it when `assert (x1 == x2 && x2 == x3)` fails in the checker thread.
+ */
 public class TokenRingBad {
     static int x1 = 1;
     static int x2 = 2; 

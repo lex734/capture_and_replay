@@ -5,6 +5,12 @@ package cmu.pasta.fray.benchmark.sctbench.cs.origin;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
+/**
+ * Bug: `check_result()` races with the deposit and withdraw threads and can observe
+ * an inconsistent final balance once both completion flags are set.
+ * Observe it when the BAD assertion fails in `check_result()`. The translated
+ * assertion text is a little odd, so the `AssertionError` is the real witness.
+ */
 public class AccountBad {
 
   private static Lock m = new ReentrantLock();

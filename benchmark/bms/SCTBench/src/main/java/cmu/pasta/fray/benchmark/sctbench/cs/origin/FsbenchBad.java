@@ -5,6 +5,12 @@ package cmu.pasta.fray.benchmark.sctbench.cs.origin;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
+/**
+ * Bug: the inode index can exceed the `locki` array because `NUMINODE` is larger
+ * than `NUMBLOCKS`, so the code can reference an invalid lock slot.
+ * Observe it via the index-range assertion failure or at the BAD unlock site once
+ * a thread computes an out-of-range `i`.
+ */
 public class FsbenchBad {
 
     private static final int NUMBLOCKS = 26;

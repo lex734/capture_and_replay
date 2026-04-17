@@ -4,6 +4,11 @@ package cmu.pasta.fray.benchmark.sctbench.cs.origin;
 
 import java.util.concurrent.locks.ReentrantLock;
 
+/**
+ * Bug: `funcA` and `funcB` protect the same shared counter with different locks, so
+ * increments can race and lose updates.
+ * Observe it when the benchmark prints `Bug Found!` and then hits `assert false`.
+ */
 public class WronglockBad {
     private static final String USAGE = "./wronglock <param1> <param2>\n";
     

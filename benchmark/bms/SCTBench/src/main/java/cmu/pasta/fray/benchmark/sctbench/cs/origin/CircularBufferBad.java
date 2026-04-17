@@ -5,6 +5,11 @@ package cmu.pasta.fray.benchmark.sctbench.cs.origin;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
+/**
+ * Bug: the circular buffer bookkeeping can return elements in the wrong order, so
+ * the consumer does not receive the same sequence the producer inserted.
+ * Observe it when `assert removeLogElement() == i` fails in `t2()`.
+ */
 public class CircularBufferBad {
     static final int BUFFER_MAX = 10;
     static final int N = 7;

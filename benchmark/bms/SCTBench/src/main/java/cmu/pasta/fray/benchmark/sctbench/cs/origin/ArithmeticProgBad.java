@@ -4,6 +4,12 @@ package cmu.pasta.fray.benchmark.sctbench.cs.origin;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
+/**
+ * Bug: this producer/consumer translation uses the final arithmetic total as its
+ * witness condition after the worker threads finish.
+ * Observe it when the closing BAD assertion throws `AssertionError`; for this test,
+ * the translated assertion expression itself is less informative than the failure.
+ */
 public class ArithmeticProgBad {
   private static final int N = 3;
 

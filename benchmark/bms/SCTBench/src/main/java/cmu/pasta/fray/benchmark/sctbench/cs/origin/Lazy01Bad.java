@@ -4,6 +4,11 @@ package cmu.pasta.fray.benchmark.sctbench.cs.origin;
 
 import java.util.concurrent.locks.ReentrantLock;
 
+/**
+ * Bug: after the two update threads run, the checker can see `data >= 3`, which this
+ * benchmark treats as the bad state.
+ * Observe it when `thread3()` reaches the BAD `assert false`.
+ */
 public class Lazy01Bad {
     
     private static ReentrantLock mutex = new ReentrantLock();

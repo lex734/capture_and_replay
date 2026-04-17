@@ -1,5 +1,10 @@
 package cmu.pasta.fray.benchmark.sctbench.cs.hard;
 
+/**
+ * Bug: the checker can observe a mixed state where `a` and `b` do not match either
+ * the initial pair `(0, 0)` or the updated pair `(1, -1)`.
+ * Observe it when `checkThread()` reaches the final `assert false`.
+ */
 public class Reorder100Bad {
     private static int iSet = 99;
     private static int iCheck = 1;

@@ -4,6 +4,11 @@ package cmu.pasta.fray.benchmark.sctbench.cs.origin;
 
 import java.util.concurrent.locks.ReentrantLock;
 
+/**
+ * Bug: the queue index updates can break FIFO order, so the consumer may dequeue a
+ * different value from the one recorded by the producer.
+ * Observe it when `assert dequeue(queue) == stored_elements[i]` fails in `t2()`.
+ */
 public class QueueBad {
   static final int SIZE = 20;
   static final int EMPTY = -1;

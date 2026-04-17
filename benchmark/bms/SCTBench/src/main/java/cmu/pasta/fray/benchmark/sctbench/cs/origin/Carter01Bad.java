@@ -5,6 +5,12 @@ package cmu.pasta.fray.benchmark.sctbench.cs.origin;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
+/**
+ * Bug: `t1` and `t2` can deadlock by holding `m` and `l` in an incompatible order
+ * while spinning to reacquire `m`.
+ * Observe it when the program prints `Deadlock detected`, throws `RuntimeException`,
+ * or hangs until the runner times out.
+ */
 public class Carter01Bad {
     static Lock m = new ReentrantLock();
     static Lock l = new ReentrantLock(); 

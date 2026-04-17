@@ -6,3 +6,5 @@ target/
 *.class
 *.gz
 *.html
+*.pyc
+*.hprof

@@ -2,6 +2,11 @@
 
 package cmu.pasta.fray.benchmark.sctbench.cs.origin;
 
+/**
+ * Bug: the stop path can mark the device as stopped while an add path still thinks
+ * I/O is active, so `BCSP_PnpAdd` runs after shutdown.
+ * Observe it when `assert !stopped` fails inside `BCSP_PnpAdd`.
+ */
 public class BluetoothDriverBad {
     private static final boolean TRUE = true;
     private static final boolean FALSE = false;

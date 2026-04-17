@@ -5,6 +5,11 @@ package cmu.pasta.fray.benchmark.sctbench.cs.origin;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
+/**
+ * Bug: the shared `flag` lets the pop thread run after only some pushes have
+ * happened, so it can pop more times than there are elements on the stack.
+ * Observe it when `assert pop(arr) != UNDERFLOW` fails in `t2()`.
+ */
 public class StackBad {
     private static final int TRUE = 1;
     private static final int FALSE = 0;

@@ -5,6 +5,11 @@ package cmu.pasta.fray.benchmark.sctbench.chess;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 
+/**
+ * Bug: concurrent `push`, `pop`, and `steal` can hand out the same work item more
+ * than once or lose an item because the queue state is updated inconsistently.
+ * Observe it at the end when `item.check()` fails its `field == 1` assertion.
+ */
 public class WorkStealQueue<T> {
     private static final long MaxSize = 1024 * 1024;
     private static final long InitialSize = 2; // must be a power of 2

@@ -7,6 +7,12 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.Condition;
 
+/**
+ * Bug: the producer/consumer protocol can deadlock because one side waits on a
+ * condition that the other side no longer makes progress to satisfy.
+ * Observe it when the benchmark prints `Deadlock detected`, throws
+ * `RuntimeException`, or blocks at the BAD `empty.await()` site.
+ */
 public class Sync01Bad {
     static final int N = 1;
 

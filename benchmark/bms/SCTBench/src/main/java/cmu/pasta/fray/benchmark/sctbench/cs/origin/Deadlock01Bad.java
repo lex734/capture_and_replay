@@ -4,6 +4,12 @@ package cmu.pasta.fray.benchmark.sctbench.cs.origin;
 
 import java.util.concurrent.locks.ReentrantLock;
 
+/**
+ * Bug: the two threads acquire `a` and `b` in opposite orders, creating a classic
+ * two-lock deadlock.
+ * Observe it when the code throws `RuntimeException("deadlock")` or stalls at the
+ * BAD lock acquisition until the runner times out.
+ */
 public class Deadlock01Bad {
     static ReentrantLock a = new ReentrantLock();
     static ReentrantLock b = new ReentrantLock();

@@ -278,7 +278,7 @@ public class TraceLogger {
      * The call site (siteId) is the unique key for matching during replay.
      */
     public static void logNondetInt(int value, int siteId) {
-        long seq = nextSeq(false);
+        long seq = nextSeq();
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
         if (roleId == -1) return;
@@ -293,7 +293,7 @@ public class TraceLogger {
      * Logs a nondeterministic float return value (stored as raw int bits).
      */
     public static void logNondetFloat(float value, int siteId) {
-        long seq = nextSeq(false);
+        long seq = nextSeq();
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
         if (roleId == -1) return;
@@ -310,7 +310,7 @@ public class TraceLogger {
      * Stored as: objSite=0, objCount=siteId, data1=hi32, data2=lo32.
      */
     public static void logNondetLong(long value, int siteId) {
-        long seq = nextSeq(false);
+        long seq = nextSeq();
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
         if (roleId == -1) return;
@@ -325,7 +325,7 @@ public class TraceLogger {
      * Logs a nondeterministic double return value (stored as raw long bits).
      */
     public static void logNondetDouble(double value, int siteId) {
-        long seq = nextSeq(false);
+        long seq = nextSeq();
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
         if (roleId == -1) return;

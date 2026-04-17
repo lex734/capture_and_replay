@@ -2,6 +2,11 @@ package cmu.pasta.fray.benchmark.sctbench.cs.origin;
 
 // Translated from: https://github.com/mc-imperial/sctbench/blob/d59ab26ddaedcd575ffb6a1f5e9711f7d6d2d9f2/benchmarks/concurrent-software-benchmarks/reorder_3_bad.c
 
+/**
+ * Bug: the checker can observe a mixed state where `a` and `b` do not match either
+ * the initial pair `(0, 0)` or the updated pair `(1, -1)`.
+ * Observe it when the benchmark prints `Bug found!` and then hits `assert false`.
+ */
 public class Reorder10Bad {
     private static int iSet = 9;
     private static int iCheck = 1;

@@ -3,6 +3,11 @@ package cmu.pasta.fray.benchmark.sctbench.cs.origin;
 
 import java.util.concurrent.locks.ReentrantLock;
 
+/**
+ * Bug: the reader can see `data1Value` from the first stage without the matching
+ * `data2Value` update from the second stage because the two stages use different locks.
+ * Observe it when the benchmark prints `Bug found!` and then reaches `assert false`.
+ */
 public class Twostage100Bad {
   static int iTThreads = 99;  
   static int iRThreads = 1;

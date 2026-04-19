@@ -26,6 +26,16 @@ public class ReplayMonitor {
 
     // ---- Sync events (monitor enter/exit, thread lifecycle, wait/notify, park/unpark) ----
 
+    private static void awaitSyncTurn(int eventType, Object lock, int currentSiteId) {
+        long tid = Thread.currentThread().getId();
+        int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+        if (roleId == -1) return;
+
+        BirthId birthId = IdentityMapper.getBirthId(lock, null, currentSiteId);
+        int packedType = BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
+        ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, currentSiteId);
+    }
+
     public static void checkSync(int eventType, Object lock, int currentSiteId) {
         if (isInside.get()) return;
         if (lock == null && eventType != BinarySchema.Event.THREAD_PARK
@@ -55,21 +65,58 @@ public class ReplayMonitor {
         }
     }
 
+    public static void replayObjectWait(Object lock, int waitSiteId, int wakeupSiteId) throws InterruptedException {
+        if (isInside.get() || lock == null) return;
+        isInside.set(true);
+        try {
+            awaitSyncTurn(BinarySchema.Event.THREAD_WAIT, lock, waitSiteId);
+            awaitSyncTurn(BinarySchema.Event.THREAD_WAKEUP, null, wakeupSiteId);
+        } finally {
+            isInside.set(false);
+        }
+    }
+
+    public static void replayObjectWait(Object lock, long timeout, int waitSiteId, int wakeupSiteId) throws InterruptedException {
+        replayObjectWait(lock, waitSiteId, wakeupSiteId);
+    }
+
+    public static void replayObjectWait(Object lock, long timeout, int nanos, int waitSiteId, int wakeupSiteId) throws InterruptedException {
+        replayObjectWait(lock, waitSiteId, wakeupSiteId);
+    }
+
+    public static void replayObjectNotify(Object lock, int currentSiteId) {
+        if (isInside.get() || lock == null) return;
+        isInside.set(true);
+        try {
+            awaitSyncTurn(BinarySchema.Event.THREAD_NOTIFY, lock, currentSiteId);
+        } finally {
+            isInside.set(false);
+        }
+    }
+
+    public static void replayObjectNotifyAll(Object lock, int currentSiteId) {
+        if (isInside.get() || lock == null) return;
+        isInside.set(true);
+        try {
+            awaitSyncTurn(BinarySchema.Event.THREAD_NOTIFY_ALL, lock, currentSiteId);
+        } finally {
+            isInside.set(false);
+        }
+    }
+
     public static void replayLock(Lock lock, int currentSiteId) {
         if (isInside.get() || lock == null) {
-            if (lock != null) lock.lock();
             return;
         }
         isInside.set(true);
         try {
             long tid = Thread.currentThread().getId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-            if (roleId == -1) { lock.lock(); return; }
+            if (roleId == -1) return;
 
             BirthId birthId = IdentityMapper.getBirthId(lock, null, currentSiteId);
             int packedType = BinarySchema.packType(BinarySchema.Event.MONITOR_ENTER, BinarySchema.Flags.NONE);
             ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, currentSiteId);
-            lock.lock();
         } finally {
             isInside.set(false);
         }
@@ -77,19 +124,17 @@ public class ReplayMonitor {
 
     public static void replayUnlock(Lock lock, int currentSiteId) {
         if (isInside.get() || lock == null) {
-            if (lock != null) lock.unlock();
             return;
         }
         isInside.set(true);
         try {
             long tid = Thread.currentThread().getId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-            if (roleId == -1) { lock.unlock(); return; }
+            if (roleId == -1) return;
 
             BirthId birthId = IdentityMapper.getBirthId(lock, null, currentSiteId);
             int packedType = BinarySchema.packType(BinarySchema.Event.MONITOR_EXIT, BinarySchema.Flags.NONE);
             ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, currentSiteId);
-            lock.unlock();
         } finally {
             isInside.set(false);
         }
@@ -109,10 +154,9 @@ public class ReplayMonitor {
     }
 
     // ---- Condition await variants ----
-    // Pattern: awaitTurn for THREAD_WAIT, then let the real await() run.
-    // The underlying lock is released by condition.await() naturally; when the
-    // thread is signalled it re-acquires the lock inside await(), which unblocks
-    // as soon as the trace-ordered MONITOR_EXIT of the signalling thread fires.
+    // Replay follows the captured trace order directly. ReentrantLock and
+    // Condition operations are not executed physically because the trace already
+    // encodes the synchronization order they established during capture.
 
     private static void conditionAwaitTurn(Condition condition, int currentSiteId) {
         long tid = Thread.currentThread().getId();
@@ -123,68 +167,79 @@ public class ReplayMonitor {
         ReplayCoordinator.awaitTurn(roleId, packedType, conditionBirth.siteId, conditionBirth.count, currentSiteId);
     }
 
-    public static void replayAwait(Condition condition, int currentSiteId) throws InterruptedException {
+    private static void conditionWakeupTurn(Condition condition, int wakeupSiteId) {
+        long tid = Thread.currentThread().getId();
+        int roleId = IdentityMapper.getRoleIdBySite(tid, wakeupSiteId);
+        if (roleId == -1) return;
+
+        BirthId birthId = IdentityMapper.getBirthId(null, null, wakeupSiteId);
+        int packedType = BinarySchema.packType(BinarySchema.Event.THREAD_WAKEUP, BinarySchema.Flags.NONE);
+        ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, wakeupSiteId);
+    }
+
+    public static void replayAwait(Condition condition, int currentSiteId, int wakeupSiteId) throws InterruptedException {
         if (isInside.get() || condition == null) {
-            if (condition != null) condition.await();
             return;
         }
         isInside.set(true);
         try {
             conditionAwaitTurn(condition, currentSiteId);
-            condition.await();
+            conditionWakeupTurn(condition, wakeupSiteId);
         } finally {
             isInside.set(false);
         }
     }
 
-    public static void replayAwaitUninterruptibly(Condition condition, int currentSiteId) {
+    public static void replayAwaitUninterruptibly(Condition condition, int currentSiteId, int wakeupSiteId) {
         if (isInside.get() || condition == null) {
-            if (condition != null) condition.awaitUninterruptibly();
             return;
         }
         isInside.set(true);
         try {
             conditionAwaitTurn(condition, currentSiteId);
-            condition.awaitUninterruptibly();
+            conditionWakeupTurn(condition, wakeupSiteId);
         } finally {
             isInside.set(false);
         }
     }
 
-    public static long replayAwaitNanos(Condition condition, long nanosTimeout, int currentSiteId) throws InterruptedException {
+    public static long replayAwaitNanos(Condition condition, long nanosTimeout, int currentSiteId, int wakeupSiteId) throws InterruptedException {
         if (isInside.get() || condition == null) {
-            return condition != null ? condition.awaitNanos(nanosTimeout) : 0L;
+            return 1L;
         }
         isInside.set(true);
         try {
             conditionAwaitTurn(condition, currentSiteId);
-            return condition.awaitNanos(nanosTimeout);
+            conditionWakeupTurn(condition, wakeupSiteId);
+            return 1L;
         } finally {
             isInside.set(false);
         }
     }
 
-    public static boolean replayAwaitUntil(Condition condition, Date deadline, int currentSiteId) throws InterruptedException {
+    public static boolean replayAwaitUntil(Condition condition, Date deadline, int currentSiteId, int wakeupSiteId) throws InterruptedException {
         if (isInside.get() || condition == null) {
-            return condition != null && condition.awaitUntil(deadline);
+            return true;
         }
         isInside.set(true);
         try {
             conditionAwaitTurn(condition, currentSiteId);
-            return condition.awaitUntil(deadline);
+            conditionWakeupTurn(condition, wakeupSiteId);
+            return true;
         } finally {
             isInside.set(false);
         }
     }
 
-    public static boolean replayAwaitTimed(Condition condition, long time, TimeUnit unit, int currentSiteId) throws InterruptedException {
+    public static boolean replayAwaitTimed(Condition condition, long time, TimeUnit unit, int currentSiteId, int wakeupSiteId) throws InterruptedException {
         if (isInside.get() || condition == null) {
-            return condition != null && condition.await(time, unit);
+            return true;
         }
         isInside.set(true);
         try {
             conditionAwaitTurn(condition, currentSiteId);
-            return condition.await(time, unit);
+            conditionWakeupTurn(condition, wakeupSiteId);
+            return true;
         } finally {
             isInside.set(false);
         }
@@ -192,7 +247,6 @@ public class ReplayMonitor {
 
     public static void replaySignal(Condition condition, int currentSiteId) {
         if (isInside.get() || condition == null) {
-            if (condition != null) condition.signal();
             return;
         }
         isInside.set(true);
@@ -204,7 +258,6 @@ public class ReplayMonitor {
                 int packedType = BinarySchema.packType(BinarySchema.Event.THREAD_NOTIFY, BinarySchema.Flags.NONE);
                 ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, currentSiteId);
             }
-            condition.signal();
         } finally {
             isInside.set(false);
         }
@@ -212,7 +265,6 @@ public class ReplayMonitor {
 
     public static void replaySignalAll(Condition condition, int currentSiteId) {
         if (isInside.get() || condition == null) {
-            if (condition != null) condition.signalAll();
             return;
         }
         isInside.set(true);
@@ -224,7 +276,6 @@ public class ReplayMonitor {
                 int packedType = BinarySchema.packType(BinarySchema.Event.THREAD_NOTIFY_ALL, BinarySchema.Flags.NONE);
                 ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, currentSiteId);
             }
-            condition.signalAll();
         } finally {
             isInside.set(false);
         }

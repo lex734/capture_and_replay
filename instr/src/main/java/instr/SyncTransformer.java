@@ -384,6 +384,10 @@ public class SyncTransformer implements ClassFileTransformer {
                 // Matches CaptureMonitor.logSync(int type, Object lock, int siteId)
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, monitorMethod,
                         "(ILjava/lang/Object;I)V", false);
+                if (isReplay) {
+                    mv.visitInsn(Opcodes.POP);
+                    return;
+                }
                 // Handle long/double array operations (category-2 values take 2 stack slots)
             } else if (opcode == Opcodes.LASTORE || opcode == Opcodes.DASTORE || opcode == Opcodes.LALOAD
                     || opcode == Opcodes.DALOAD) {
@@ -615,29 +619,44 @@ public class SyncTransformer implements ClassFileTransformer {
 
             if (isReplay && owner.equals("java/util/concurrent/locks/Condition")) {
                 if (name.equals("await") && descriptor.equals("()V")) {
+                    String wakeupSite0 = className + "." + methodName + "#" + instructionId++;
+                    int wakeupSiteId0 = SyncTransformer.registerSiteId(wakeupSite0);
                     mv.visitLdcInsn(siteId);
+                    mv.visitLdcInsn(wakeupSiteId0);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAwait",
-                            "(Ljava/util/concurrent/locks/Condition;I)V", false);
+                            "(Ljava/util/concurrent/locks/Condition;II)V", false);
                     return;
                 } else if (name.equals("awaitUninterruptibly") && descriptor.equals("()V")) {
+                    String wakeupSite1 = className + "." + methodName + "#" + instructionId++;
+                    int wakeupSiteId1 = SyncTransformer.registerSiteId(wakeupSite1);
                     mv.visitLdcInsn(siteId);
+                    mv.visitLdcInsn(wakeupSiteId1);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAwaitUninterruptibly",
-                            "(Ljava/util/concurrent/locks/Condition;I)V", false);
+                            "(Ljava/util/concurrent/locks/Condition;II)V", false);
                     return;
                 } else if (name.equals("awaitNanos") && descriptor.equals("(J)J")) {
+                    String wakeupSite2 = className + "." + methodName + "#" + instructionId++;
+                    int wakeupSiteId2 = SyncTransformer.registerSiteId(wakeupSite2);
                     mv.visitLdcInsn(siteId);
+                    mv.visitLdcInsn(wakeupSiteId2);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAwaitNanos",
-                            "(Ljava/util/concurrent/locks/Condition;JI)J", false);
+                            "(Ljava/util/concurrent/locks/Condition;JII)J", false);
                     return;
                 } else if (name.equals("awaitUntil") && descriptor.equals("(Ljava/util/Date;)Z")) {
+                    String wakeupSite3 = className + "." + methodName + "#" + instructionId++;
+                    int wakeupSiteId3 = SyncTransformer.registerSiteId(wakeupSite3);
                     mv.visitLdcInsn(siteId);
+                    mv.visitLdcInsn(wakeupSiteId3);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAwaitUntil",
-                            "(Ljava/util/concurrent/locks/Condition;Ljava/util/Date;I)Z", false);
+                            "(Ljava/util/concurrent/locks/Condition;Ljava/util/Date;II)Z", false);
                     return;
                 } else if (name.equals("await") && descriptor.equals("(JLjava/util/concurrent/TimeUnit;)Z")) {
+                    String wakeupSite4 = className + "." + methodName + "#" + instructionId++;
+                    int wakeupSiteId4 = SyncTransformer.registerSiteId(wakeupSite4);
                     mv.visitLdcInsn(siteId);
+                    mv.visitLdcInsn(wakeupSiteId4);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAwaitTimed",
-                            "(Ljava/util/concurrent/locks/Condition;JLjava/util/concurrent/TimeUnit;I)Z", false);
+                            "(Ljava/util/concurrent/locks/Condition;JLjava/util/concurrent/TimeUnit;II)Z", false);
                     return;
                 } else if (name.equals("signal") && descriptor.equals("()V")) {
                     mv.visitLdcInsn(siteId);
@@ -648,6 +667,44 @@ public class SyncTransformer implements ClassFileTransformer {
                     mv.visitLdcInsn(siteId);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replaySignalAll",
                             "(Ljava/util/concurrent/locks/Condition;I)V", false);
+                    return;
+                }
+            }
+
+            if (isReplay && owner.equals("java/lang/Object")) {
+                if (name.equals("wait") && descriptor.equals("()V")) {
+                    String wakeupSite = className + "." + methodName + "#" + instructionId++;
+                    int wakeupSiteId = SyncTransformer.registerSiteId(wakeupSite);
+                    mv.visitLdcInsn(siteId);
+                    mv.visitLdcInsn(wakeupSiteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayObjectWait",
+                            "(Ljava/lang/Object;II)V", false);
+                    return;
+                } else if (name.equals("wait") && descriptor.equals("(J)V")) {
+                    String wakeupSite = className + "." + methodName + "#" + instructionId++;
+                    int wakeupSiteId = SyncTransformer.registerSiteId(wakeupSite);
+                    mv.visitLdcInsn(siteId);
+                    mv.visitLdcInsn(wakeupSiteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayObjectWait",
+                            "(Ljava/lang/Object;JII)V", false);
+                    return;
+                } else if (name.equals("wait") && descriptor.equals("(JI)V")) {
+                    String wakeupSite = className + "." + methodName + "#" + instructionId++;
+                    int wakeupSiteId = SyncTransformer.registerSiteId(wakeupSite);
+                    mv.visitLdcInsn(siteId);
+                    mv.visitLdcInsn(wakeupSiteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayObjectWait",
+                            "(Ljava/lang/Object;JIII)V", false);
+                    return;
+                } else if (name.equals("notify") && descriptor.equals("()V")) {
+                    mv.visitLdcInsn(siteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayObjectNotify",
+                            "(Ljava/lang/Object;I)V", false);
+                    return;
+                } else if (name.equals("notifyAll") && descriptor.equals("()V")) {
+                    mv.visitLdcInsn(siteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayObjectNotifyAll",
+                            "(Ljava/lang/Object;I)V", false);
                     return;
                 }
             }
@@ -742,8 +799,18 @@ public class SyncTransformer implements ClassFileTransformer {
             } else if (owner.equals("java/util/concurrent/locks/ReentrantLock")
                     || owner.equals("java/util/concurrent/locks/Lock")) {
                 if (name.equals("lock")) {
+                    // Log MONITOR_ENTER AFTER the actual lock.lock() so the trace
+                    // reflects when the lock is held, not when the thread started waiting.
+                    // Without this, replay deadlocks: the coordinator advances past
+                    // MONITOR_ENTER expecting the next event, but the thread is still
+                    // blocked in lock.lock() because another thread holds the lock.
+                    int lockSlot = newLocal(Type.getObjectType("java/lang/Object"));
                     mv.visitInsn(Opcodes.DUP);
-                    logSyncCall(1, siteId); // MONITOR_ENTER
+                    mv.visitVarInsn(Opcodes.ASTORE, lockSlot);
+                    super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
+                    mv.visitVarInsn(Opcodes.ALOAD, lockSlot);
+                    logSyncCall(1, siteId); // MONITOR_ENTER, logged after lock is actually held
+                    return;
                 } else if (name.equals("unlock")) {
                     mv.visitInsn(Opcodes.DUP);
                     logSyncCall(2, siteId); // MONITOR_EXIT

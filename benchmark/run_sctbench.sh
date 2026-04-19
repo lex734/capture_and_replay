@@ -11,6 +11,7 @@ SCTBENCH_JAR=bms/SCTBench/build/libs/fray-benchmark-1.0-SNAPSHOT.jar
 OUT=output/capture-replay/sctbench
 CAPTURE_AGENT=../capture/target/trace-capture-agent.jar
 REPLAY_AGENT=../replay/target/trace-replay-agent.jar
+JAVA_CMD=${JAVA_CMD:-java}
 mkdir -p $OUT
 
 is_deadlock_benchmark() {
@@ -44,8 +45,9 @@ while IFS= read -r class; do
   echo "=== $class ==="
 
   # Capture
+  rm -f trace.bin
   capture_rc=0
-  $TIMEOUT_CMD 3s java -ea \
+  $TIMEOUT_CMD 3s "$JAVA_CMD" -ea \
     -javaagent:$CAPTURE_AGENT \
     -cp $SCTBENCH_JAR \
     "$class" \
@@ -93,7 +95,7 @@ while IFS= read -r class; do
 
   # Replay
   replay_rc=0
-  $TIMEOUT_CMD 3s java -ea \
+  $TIMEOUT_CMD 3s "$JAVA_CMD" -ea \
     -javaagent:$REPLAY_AGENT \
     -cp $SCTBENCH_JAR \
     "$class" \

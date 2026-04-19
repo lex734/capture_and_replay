@@ -166,7 +166,8 @@ public class ReplayCoordinator {
             // data2 stores the call-site; match against it
             return ((int) expected[6] == data);
         }
-        if (eventId == BinarySchema.Event.MONITOR_EXIT
+        if (eventId == BinarySchema.Event.MONITOR_ENTER
+                || eventId == BinarySchema.Event.MONITOR_EXIT
                 || eventId == BinarySchema.Event.THREAD_WAIT
                 || eventId == BinarySchema.Event.THREAD_NOTIFY
                 || eventId == BinarySchema.Event.THREAD_NOTIFY_ALL) {

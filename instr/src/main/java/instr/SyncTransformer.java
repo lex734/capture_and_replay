@@ -2,11 +2,12 @@ package instr;
 
 import java.lang.instrument.ClassFileTransformer;
 import java.security.ProtectionDomain;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.io.InputStream;
 import org.objectweb.asm.*;
 import org.objectweb.asm.commons.LocalVariablesSorter;
@@ -18,19 +19,42 @@ public class SyncTransformer implements ClassFileTransformer {
     public SyncTransformer()                    { this.extraExclude = null; }
     public SyncTransformer(String extraExclude) { this.extraExclude = extraExclude; }
 
-    // ---- Site ID registry (assigned at class-load/transform time, not runtime) ----
-    // This ensures site IDs are identical across capture and replay runs,
-    // regardless of thread scheduling during execution.
+    // ---- Site ID registry (derived from stable site strings) ----
+    // The same site string must map to the same numeric id across capture and
+    // replay, regardless of class transform order.
     private static final ConcurrentHashMap<String, Integer> siteRegistry = new ConcurrentHashMap<>();
-    private static final AtomicInteger siteIdCounter = new AtomicInteger(1);
+    private static final ConcurrentHashMap<Integer, String> siteIdOwners = new ConcurrentHashMap<>();
+
+    private static int deterministicSiteId(String siteString) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(siteString.getBytes(StandardCharsets.UTF_8));
+            int id = ((digest[0] & 0x7F) << 24)
+                    | ((digest[1] & 0xFF) << 16)
+                    | ((digest[2] & 0xFF) << 8)
+                    | (digest[3] & 0xFF);
+            return id == 0 ? 1 : id;
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to derive deterministic site id for " + siteString, e);
+        }
+    }
 
     public static int registerSiteId(String siteString) {
-        return siteRegistry.computeIfAbsent(siteString, k -> siteIdCounter.getAndIncrement());
+        return siteRegistry.computeIfAbsent(siteString, key -> {
+            int siteId = deterministicSiteId(key);
+            String existing = siteIdOwners.putIfAbsent(siteId, key);
+            if (existing != null && !existing.equals(key)) {
+                throw new IllegalStateException(
+                        "Deterministic site id collision for id=" + siteId
+                                + " between `" + existing + "` and `" + key + "`");
+            }
+            return siteId;
+        });
     }
 
     public static void resetSiteRegistry() {
         siteRegistry.clear();
-        siteIdCounter.set(1);
+        siteIdOwners.clear();
     }
 
     // ---- Global volatile field resolution ----
@@ -38,6 +62,7 @@ public class SyncTransformer implements ClassFileTransformer {
     // Populated as classes are transformed; on cache miss for cross-class
     // field accesses, reads the owner class's bytecode via the classloader.
     private static final ConcurrentHashMap<String, Set<String>> volatileFieldCache = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, Set<String>> finalFieldCache = new ConcurrentHashMap<>();
 
     /**
      * Resolves whether a field is volatile by checking the declaring (owner) class.
@@ -51,6 +76,14 @@ public class SyncTransformer implements ClassFileTransformer {
         }
         // Cache miss — read the owner class's bytecode to discover its volatile fields
         return resolveAndCache(loader, owner, fieldName);
+    }
+
+    static boolean isFieldFinal(ClassLoader loader, String owner, String fieldName) {
+        if (!finalFieldCache.containsKey(owner)) {
+            resolveAndCache(loader, owner, fieldName);
+        }
+        Set<String> fields = finalFieldCache.get(owner);
+        return fields != null && fields.contains(fieldName);
     }
 
     private static boolean resolveAndCache(ClassLoader loader, String owner, String fieldName) {
@@ -67,6 +100,7 @@ public class SyncTransformer implements ClassFileTransformer {
 
             ClassReader cr = new ClassReader(is);
             Set<String> volFields = ConcurrentHashMap.newKeySet();
+            Set<String> finFields = ConcurrentHashMap.newKeySet();
             cr.accept(new ClassVisitor(Opcodes.ASM9) {
                 @Override
                 public FieldVisitor visitField(int access, String name, String descriptor, String signature,
@@ -74,11 +108,15 @@ public class SyncTransformer implements ClassFileTransformer {
                     if ((access & Opcodes.ACC_VOLATILE) != 0) {
                         volFields.add(name);
                     }
+                    if ((access & Opcodes.ACC_FINAL) != 0) {
+                        finFields.add(name);
+                    }
                     return null;
                 }
             }, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG);
 
             volatileFieldCache.put(owner, volFields);
+            finalFieldCache.put(owner, finFields);
             return volFields.contains(fieldName);
         } catch (Exception e) {
             return false;
@@ -92,7 +130,7 @@ public class SyncTransformer implements ClassFileTransformer {
         if (className == null || className.startsWith("instr/") ||
                 className.startsWith("common/") || className.startsWith("capture/") ||
                 className.startsWith("replay/") || className.startsWith("java/") || className.startsWith("jdk/")
-                || className.startsWith("sun/")) {
+                || className.startsWith("sun/") || className.startsWith("com/sun/")) {
             return null;
         }
         if (extraExclude != null && className.startsWith(extraExclude)) {
@@ -545,6 +583,75 @@ public class SyncTransformer implements ClassFileTransformer {
             String siteString = className + "." + methodName + "#" + instructionId++;
             int siteId = SyncTransformer.registerSiteId(siteString);
 
+            if (isReplay && (owner.equals("java/util/concurrent/locks/ReentrantLock")
+                    || owner.equals("java/util/concurrent/locks/Lock"))) {
+                if (name.equals("lock") && descriptor.equals("()V")) {
+                    mv.visitLdcInsn(siteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayLock",
+                            "(Ljava/util/concurrent/locks/Lock;I)V", false);
+                    return;
+                } else if (name.equals("unlock") && descriptor.equals("()V")) {
+                    mv.visitLdcInsn(siteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayUnlock",
+                            "(Ljava/util/concurrent/locks/Lock;I)V", false);
+                    return;
+                } else if (name.equals("newCondition") && descriptor.equals("()Ljava/util/concurrent/locks/Condition;")) {
+                    mv.visitLdcInsn(siteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayNewCondition",
+                            "(Ljava/util/concurrent/locks/Lock;I)Ljava/util/concurrent/locks/Condition;", false);
+                    return;
+                }
+            }
+
+            if (!isReplay && (owner.equals("java/util/concurrent/locks/ReentrantLock")
+                    || owner.equals("java/util/concurrent/locks/Lock"))) {
+                if (name.equals("newCondition") && descriptor.equals("()Ljava/util/concurrent/locks/Condition;")) {
+                    mv.visitLdcInsn(siteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "captureNewCondition",
+                            "(Ljava/util/concurrent/locks/Lock;I)Ljava/util/concurrent/locks/Condition;", false);
+                    return;
+                }
+            }
+
+            if (isReplay && owner.equals("java/util/concurrent/locks/Condition")) {
+                if (name.equals("await") && descriptor.equals("()V")) {
+                    mv.visitLdcInsn(siteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAwait",
+                            "(Ljava/util/concurrent/locks/Condition;I)V", false);
+                    return;
+                } else if (name.equals("awaitUninterruptibly") && descriptor.equals("()V")) {
+                    mv.visitLdcInsn(siteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAwaitUninterruptibly",
+                            "(Ljava/util/concurrent/locks/Condition;I)V", false);
+                    return;
+                } else if (name.equals("awaitNanos") && descriptor.equals("(J)J")) {
+                    mv.visitLdcInsn(siteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAwaitNanos",
+                            "(Ljava/util/concurrent/locks/Condition;JI)J", false);
+                    return;
+                } else if (name.equals("awaitUntil") && descriptor.equals("(Ljava/util/Date;)Z")) {
+                    mv.visitLdcInsn(siteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAwaitUntil",
+                            "(Ljava/util/concurrent/locks/Condition;Ljava/util/Date;I)Z", false);
+                    return;
+                } else if (name.equals("await") && descriptor.equals("(JLjava/util/concurrent/TimeUnit;)Z")) {
+                    mv.visitLdcInsn(siteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAwaitTimed",
+                            "(Ljava/util/concurrent/locks/Condition;JLjava/util/concurrent/TimeUnit;I)Z", false);
+                    return;
+                } else if (name.equals("signal") && descriptor.equals("()V")) {
+                    mv.visitLdcInsn(siteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replaySignal",
+                            "(Ljava/util/concurrent/locks/Condition;I)V", false);
+                    return;
+                } else if (name.equals("signalAll") && descriptor.equals("()V")) {
+                    mv.visitLdcInsn(siteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replaySignalAll",
+                            "(Ljava/util/concurrent/locks/Condition;I)V", false);
+                    return;
+                }
+            }
+
             if (owner.equals("java/util/concurrent/locks/LockSupport")) {
                 if (name.equals("park")) {
                     if (descriptor.equals("(Ljava/lang/Object;)V")) {
@@ -631,6 +738,36 @@ public class SyncTransformer implements ClassFileTransformer {
                 } else if (name.equals("notify") || name.equals("notifyAll")) {
                     mv.visitInsn(Opcodes.DUP);
                     logSyncCall(name.equals("notify") ? 16 : 17, siteId);
+                }
+            } else if (owner.equals("java/util/concurrent/locks/ReentrantLock")
+                    || owner.equals("java/util/concurrent/locks/Lock")) {
+                if (name.equals("lock")) {
+                    mv.visitInsn(Opcodes.DUP);
+                    logSyncCall(1, siteId); // MONITOR_ENTER
+                } else if (name.equals("unlock")) {
+                    mv.visitInsn(Opcodes.DUP);
+                    logSyncCall(2, siteId); // MONITOR_EXIT
+                }
+            } else if (owner.equals("java/util/concurrent/locks/Condition")) {
+                if (name.startsWith("await")) {
+                    // Pop any args into locals so the receiver is on top for DUP.
+                    Type[] argTypes = Type.getArgumentTypes(descriptor);
+                    int[] argSlots = new int[argTypes.length];
+                    for (int i = argTypes.length - 1; i >= 0; i--) {
+                        argSlots[i] = newLocal(argTypes[i]);
+                        mv.visitVarInsn(argTypes[i].getOpcode(Opcodes.ISTORE), argSlots[i]);
+                    }
+                    mv.visitInsn(Opcodes.DUP);
+                    logSyncCall(15, siteId); // THREAD_WAIT
+                    for (int i = 0; i < argTypes.length; i++) {
+                        mv.visitVarInsn(argTypes[i].getOpcode(Opcodes.ILOAD), argSlots[i]);
+                    }
+                } else if (name.equals("signal")) {
+                    mv.visitInsn(Opcodes.DUP);
+                    logSyncCall(16, siteId); // THREAD_NOTIFY
+                } else if (name.equals("signalAll")) {
+                    mv.visitInsn(Opcodes.DUP);
+                    logSyncCall(17, siteId); // THREAD_NOTIFY_ALL
                 }
             }
 
@@ -1017,7 +1154,8 @@ public class SyncTransformer implements ClassFileTransformer {
             return (owner.equals("java/lang/Thread") && (name.equals("join") || name.equals("sleep"))) ||
                     (owner.equals("java/lang/Object") && name.equals("wait")) ||
                     (owner.equals("java/util/concurrent/locks/LockSupport") &&
-                            (name.equals("park") || name.equals("parkNanos") || name.equals("parkUntil")));
+                            (name.equals("park") || name.equals("parkNanos") || name.equals("parkUntil"))) ||
+                    (owner.equals("java/util/concurrent/locks/Condition") && name.startsWith("await"));
         }
 
         // Classify atomic method name → event type, or -1 to skip non-atomic methods
@@ -1053,6 +1191,19 @@ public class SyncTransformer implements ClassFileTransformer {
         @Override
         public void visitFieldInsn(int opcode, String owner, String name, String descriptor) {
             if (!superInitCalled) {
+                super.visitFieldInsn(opcode, owner, name, descriptor);
+                return;
+            }
+            // Skip compiler-generated synthetic fields (e.g. $assertionsDisabled) and
+            // all final fields. Java 21 forbids writing final fields via reflection, so
+            // routing them through the monitor crashes class init. Final fields also
+            // can't race, so there's no value in tracking them.
+            if (name.startsWith("$")) {
+                super.visitFieldInsn(opcode, owner, name, descriptor);
+                return;
+            }
+            if ((opcode == Opcodes.PUTFIELD || opcode == Opcodes.PUTSTATIC)
+                    && SyncTransformer.isFieldFinal(loader, owner, name)) {
                 super.visitFieldInsn(opcode, owner, name, descriptor);
                 return;
             }

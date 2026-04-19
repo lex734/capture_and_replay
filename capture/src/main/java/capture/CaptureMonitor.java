@@ -4,6 +4,8 @@ import common.TraceLogger;
 import common.BinarySchema;
 import common.IdentityMapper;
 import common.IdentityMapper.BirthId;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
 public class CaptureMonitor {
@@ -107,6 +109,21 @@ public class CaptureMonitor {
       } finally {
         captureOrderLock.unlock();
       }
+    } finally {
+      isInside.set(false);
+    }
+  }
+
+  public static Condition captureNewCondition(Lock lock, int siteId) {
+    if (lock == null) return null;
+    Condition condition = lock.newCondition();
+    if (condition == null || isInside.get()) return condition;
+    isInside.set(true);
+    try {
+      // Register the condition at its creation site so capture and replay
+      // resolve the same BirthId for later await/signal operations.
+      IdentityMapper.registerAllocation(condition, siteId);
+      return condition;
     } finally {
       isInside.set(false);
     }
@@ -405,12 +422,34 @@ public class CaptureMonitor {
   public static void logFieldWriteInt(int value, Object owner, int currentSiteId,
                                       boolean isVolatile, boolean isStatic,
                                       String fieldName, String ownerName) {
-    if (isInside.get()) return;
+    if (isInside.get()) {
+      try {
+        java.lang.reflect.Field f = findField(ownerName, fieldName);
+        Class<?> t = f.getType();
+        if      (t == int.class)     f.setInt(owner, value);
+        else if (t == boolean.class) f.setBoolean(owner, value != 0);
+        else if (t == byte.class)    f.setByte(owner, (byte) value);
+        else if (t == short.class)   f.setShort(owner, (short) value);
+        else if (t == char.class)    f.setChar(owner, (char) value);
+      } catch (ReflectiveOperationException ignored) {}
+      return;
+    }
     isInside.set(true);
     try {
       long tid = Thread.currentThread().getId();
       int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-      if (roleId == -1) return;
+      if (roleId == -1) {
+        try {
+          java.lang.reflect.Field f = findField(ownerName, fieldName);
+          Class<?> t = f.getType();
+          if      (t == int.class)     f.setInt(owner, value);
+          else if (t == boolean.class) f.setBoolean(owner, value != 0);
+          else if (t == byte.class)    f.setByte(owner, (byte) value);
+          else if (t == short.class)   f.setShort(owner, (short) value);
+          else if (t == char.class)    f.setChar(owner, (char) value);
+        } catch (ReflectiveOperationException ignored) {}
+        return;
+      }
       BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
       int fieldId    = IdentityMapper.getFieldId(birthId, fieldName, ownerName);
       int flags      = (isVolatile ? BinarySchema.Flags.IS_VOLATILE : 0)
@@ -444,12 +483,20 @@ public class CaptureMonitor {
   public static void logFieldWriteFloat(float value, Object owner, int currentSiteId,
                                         boolean isVolatile, boolean isStatic,
                                         String fieldName, String ownerName) {
-    if (isInside.get()) return;
+    if (isInside.get()) {
+      try { findField(ownerName, fieldName).setFloat(owner, value); }
+      catch (ReflectiveOperationException ignored) {}
+      return;
+    }
     isInside.set(true);
     try {
       long tid = Thread.currentThread().getId();
       int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-      if (roleId == -1) return;
+      if (roleId == -1) {
+        try { findField(ownerName, fieldName).setFloat(owner, value); }
+        catch (ReflectiveOperationException ignored) {}
+        return;
+      }
       BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
       int fieldId    = IdentityMapper.getFieldId(birthId, fieldName, ownerName);
       int flags      = (isVolatile ? BinarySchema.Flags.IS_VOLATILE : 0)
@@ -476,12 +523,20 @@ public class CaptureMonitor {
   public static void logFieldWriteLong(long value, Object owner, int currentSiteId,
                                        boolean isVolatile, boolean isStatic,
                                        String fieldName, String ownerName) {
-    if (isInside.get()) return;
+    if (isInside.get()) {
+      try { findField(ownerName, fieldName).setLong(owner, value); }
+      catch (ReflectiveOperationException ignored) {}
+      return;
+    }
     isInside.set(true);
     try {
       long tid = Thread.currentThread().getId();
       int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-      if (roleId == -1) return;
+      if (roleId == -1) {
+        try { findField(ownerName, fieldName).setLong(owner, value); }
+        catch (ReflectiveOperationException ignored) {}
+        return;
+      }
       BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
       int fieldId    = IdentityMapper.getFieldId(birthId, fieldName, ownerName);
       int flags      = (isVolatile ? BinarySchema.Flags.IS_VOLATILE : 0)
@@ -508,12 +563,20 @@ public class CaptureMonitor {
   public static void logFieldWriteDouble(double value, Object owner, int currentSiteId,
                                          boolean isVolatile, boolean isStatic,
                                          String fieldName, String ownerName) {
-    if (isInside.get()) return;
+    if (isInside.get()) {
+      try { findField(ownerName, fieldName).setDouble(owner, value); }
+      catch (ReflectiveOperationException ignored) {}
+      return;
+    }
     isInside.set(true);
     try {
       long tid = Thread.currentThread().getId();
       int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-      if (roleId == -1) return;
+      if (roleId == -1) {
+        try { findField(ownerName, fieldName).setDouble(owner, value); }
+        catch (ReflectiveOperationException ignored) {}
+        return;
+      }
       BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
       int fieldId    = IdentityMapper.getFieldId(birthId, fieldName, ownerName);
       int flags      = (isVolatile ? BinarySchema.Flags.IS_VOLATILE : 0)
@@ -540,12 +603,20 @@ public class CaptureMonitor {
   public static void logFieldWriteObj(Object value, Object owner, int currentSiteId,
                                       boolean isVolatile, boolean isStatic,
                                       String fieldName, String ownerName) {
-    if (isInside.get()) return;
+    if (isInside.get()) {
+      try { findField(ownerName, fieldName).set(owner, value); }
+      catch (ReflectiveOperationException ignored) {}
+      return;
+    }
     isInside.set(true);
     try {
       long tid = Thread.currentThread().getId();
       int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-      if (roleId == -1) return;
+      if (roleId == -1) {
+        try { findField(ownerName, fieldName).set(owner, value); }
+        catch (ReflectiveOperationException ignored) {}
+        return;
+      }
       BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
       int fieldId    = IdentityMapper.getFieldId(birthId, fieldName, ownerName);
       int flags      = (isVolatile ? BinarySchema.Flags.IS_VOLATILE : 0)

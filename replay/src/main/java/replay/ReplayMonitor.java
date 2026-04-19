@@ -4,6 +4,11 @@ import common.BinarySchema;
 import common.IdentityMapper;
 import common.IdentityMapper.BirthId;
 
+import java.util.Date;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
+
 /**
  * Replay-side counterpart to CaptureMonitor.
  *
@@ -45,6 +50,181 @@ public class ReplayMonitor {
                     // seq, roleId, getEventName(eventType),
                     // lock != null ? lock.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(lock)) : "null",
                     // currentSiteId));
+        } finally {
+            isInside.set(false);
+        }
+    }
+
+    public static void replayLock(Lock lock, int currentSiteId) {
+        if (isInside.get() || lock == null) {
+            if (lock != null) lock.lock();
+            return;
+        }
+        isInside.set(true);
+        try {
+            long tid = Thread.currentThread().getId();
+            int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+            if (roleId == -1) { lock.lock(); return; }
+
+            BirthId birthId = IdentityMapper.getBirthId(lock, null, currentSiteId);
+            int packedType = BinarySchema.packType(BinarySchema.Event.MONITOR_ENTER, BinarySchema.Flags.NONE);
+            ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, currentSiteId);
+            lock.lock();
+        } finally {
+            isInside.set(false);
+        }
+    }
+
+    public static void replayUnlock(Lock lock, int currentSiteId) {
+        if (isInside.get() || lock == null) {
+            if (lock != null) lock.unlock();
+            return;
+        }
+        isInside.set(true);
+        try {
+            long tid = Thread.currentThread().getId();
+            int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+            if (roleId == -1) { lock.unlock(); return; }
+
+            BirthId birthId = IdentityMapper.getBirthId(lock, null, currentSiteId);
+            int packedType = BinarySchema.packType(BinarySchema.Event.MONITOR_EXIT, BinarySchema.Flags.NONE);
+            ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, currentSiteId);
+            lock.unlock();
+        } finally {
+            isInside.set(false);
+        }
+    }
+
+    public static Condition replayNewCondition(Lock lock, int currentSiteId) {
+        if (lock == null) return null;
+        Condition condition = lock.newCondition();
+        if (isInside.get() || condition == null) return condition;
+        isInside.set(true);
+        try {
+            IdentityMapper.registerAllocation(condition, currentSiteId);
+            return condition;
+        } finally {
+            isInside.set(false);
+        }
+    }
+
+    // ---- Condition await variants ----
+    // Pattern: awaitTurn for THREAD_WAIT, then let the real await() run.
+    // The underlying lock is released by condition.await() naturally; when the
+    // thread is signalled it re-acquires the lock inside await(), which unblocks
+    // as soon as the trace-ordered MONITOR_EXIT of the signalling thread fires.
+
+    private static void conditionAwaitTurn(Condition condition, int currentSiteId) {
+        long tid = Thread.currentThread().getId();
+        int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+        if (roleId == -1) return;
+        BirthId conditionBirth = IdentityMapper.getBirthId(condition, null, currentSiteId);
+        int packedType = BinarySchema.packType(BinarySchema.Event.THREAD_WAIT, BinarySchema.Flags.NONE);
+        ReplayCoordinator.awaitTurn(roleId, packedType, conditionBirth.siteId, conditionBirth.count, currentSiteId);
+    }
+
+    public static void replayAwait(Condition condition, int currentSiteId) throws InterruptedException {
+        if (isInside.get() || condition == null) {
+            if (condition != null) condition.await();
+            return;
+        }
+        isInside.set(true);
+        try {
+            conditionAwaitTurn(condition, currentSiteId);
+            condition.await();
+        } finally {
+            isInside.set(false);
+        }
+    }
+
+    public static void replayAwaitUninterruptibly(Condition condition, int currentSiteId) {
+        if (isInside.get() || condition == null) {
+            if (condition != null) condition.awaitUninterruptibly();
+            return;
+        }
+        isInside.set(true);
+        try {
+            conditionAwaitTurn(condition, currentSiteId);
+            condition.awaitUninterruptibly();
+        } finally {
+            isInside.set(false);
+        }
+    }
+
+    public static long replayAwaitNanos(Condition condition, long nanosTimeout, int currentSiteId) throws InterruptedException {
+        if (isInside.get() || condition == null) {
+            return condition != null ? condition.awaitNanos(nanosTimeout) : 0L;
+        }
+        isInside.set(true);
+        try {
+            conditionAwaitTurn(condition, currentSiteId);
+            return condition.awaitNanos(nanosTimeout);
+        } finally {
+            isInside.set(false);
+        }
+    }
+
+    public static boolean replayAwaitUntil(Condition condition, Date deadline, int currentSiteId) throws InterruptedException {
+        if (isInside.get() || condition == null) {
+            return condition != null && condition.awaitUntil(deadline);
+        }
+        isInside.set(true);
+        try {
+            conditionAwaitTurn(condition, currentSiteId);
+            return condition.awaitUntil(deadline);
+        } finally {
+            isInside.set(false);
+        }
+    }
+
+    public static boolean replayAwaitTimed(Condition condition, long time, TimeUnit unit, int currentSiteId) throws InterruptedException {
+        if (isInside.get() || condition == null) {
+            return condition != null && condition.await(time, unit);
+        }
+        isInside.set(true);
+        try {
+            conditionAwaitTurn(condition, currentSiteId);
+            return condition.await(time, unit);
+        } finally {
+            isInside.set(false);
+        }
+    }
+
+    public static void replaySignal(Condition condition, int currentSiteId) {
+        if (isInside.get() || condition == null) {
+            if (condition != null) condition.signal();
+            return;
+        }
+        isInside.set(true);
+        try {
+            long tid = Thread.currentThread().getId();
+            int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+            if (roleId != -1) {
+                BirthId birthId = IdentityMapper.getBirthId(condition, null, currentSiteId);
+                int packedType = BinarySchema.packType(BinarySchema.Event.THREAD_NOTIFY, BinarySchema.Flags.NONE);
+                ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, currentSiteId);
+            }
+            condition.signal();
+        } finally {
+            isInside.set(false);
+        }
+    }
+
+    public static void replaySignalAll(Condition condition, int currentSiteId) {
+        if (isInside.get() || condition == null) {
+            if (condition != null) condition.signalAll();
+            return;
+        }
+        isInside.set(true);
+        try {
+            long tid = Thread.currentThread().getId();
+            int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+            if (roleId != -1) {
+                BirthId birthId = IdentityMapper.getBirthId(condition, null, currentSiteId);
+                int packedType = BinarySchema.packType(BinarySchema.Event.THREAD_NOTIFY_ALL, BinarySchema.Flags.NONE);
+                ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, currentSiteId);
+            }
+            condition.signalAll();
         } finally {
             isInside.set(false);
         }
@@ -499,12 +679,34 @@ public class ReplayMonitor {
     public static void checkFieldWriteInt(int value, Object owner, int currentSiteId,
                                           boolean isVolatile, boolean isStatic,
                                           String fieldName, String ownerName) {
-        if (isInside.get()) return;
+        if (isInside.get()) {
+            try {
+                java.lang.reflect.Field f = findField(ownerName, fieldName);
+                Class<?> t = f.getType();
+                if      (t == int.class)     f.setInt(owner, value);
+                else if (t == boolean.class) f.setBoolean(owner, value != 0);
+                else if (t == byte.class)    f.setByte(owner, (byte) value);
+                else if (t == short.class)   f.setShort(owner, (short) value);
+                else if (t == char.class)    f.setChar(owner, (char) value);
+            } catch (ReflectiveOperationException ignored) {}
+            return;
+        }
         isInside.set(true);
         try {
             long tid = Thread.currentThread().getId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-            if (roleId == -1) return;
+            if (roleId == -1) {
+                try {
+                    java.lang.reflect.Field f = findField(ownerName, fieldName);
+                    Class<?> t = f.getType();
+                    if      (t == int.class)     f.setInt(owner, value);
+                    else if (t == boolean.class) f.setBoolean(owner, value != 0);
+                    else if (t == byte.class)    f.setByte(owner, (byte) value);
+                    else if (t == short.class)   f.setShort(owner, (short) value);
+                    else if (t == char.class)    f.setChar(owner, (char) value);
+                } catch (ReflectiveOperationException ignored) {}
+                return;
+            }
 
             BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
             int fieldId = IdentityMapper.getFieldId(birthId, fieldName, ownerName);
@@ -535,12 +737,20 @@ public class ReplayMonitor {
     public static void checkFieldWriteFloat(float value, Object owner, int currentSiteId,
                                             boolean isVolatile, boolean isStatic,
                                             String fieldName, String ownerName) {
-        if (isInside.get()) return;
+        if (isInside.get()) {
+            try { findField(ownerName, fieldName).setFloat(owner, value); }
+            catch (ReflectiveOperationException ignored) {}
+            return;
+        }
         isInside.set(true);
         try {
             long tid = Thread.currentThread().getId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-            if (roleId == -1) return;
+            if (roleId == -1) {
+                try { findField(ownerName, fieldName).setFloat(owner, value); }
+                catch (ReflectiveOperationException ignored) {}
+                return;
+            }
 
             BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
             int fieldId = IdentityMapper.getFieldId(birthId, fieldName, ownerName);
@@ -565,12 +775,20 @@ public class ReplayMonitor {
     public static void checkFieldWriteLong(long value, Object owner, int currentSiteId,
                                            boolean isVolatile, boolean isStatic,
                                            String fieldName, String ownerName) {
-        if (isInside.get()) return;
+        if (isInside.get()) {
+            try { findField(ownerName, fieldName).setLong(owner, value); }
+            catch (ReflectiveOperationException ignored) {}
+            return;
+        }
         isInside.set(true);
         try {
             long tid = Thread.currentThread().getId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-            if (roleId == -1) return;
+            if (roleId == -1) {
+                try { findField(ownerName, fieldName).setLong(owner, value); }
+                catch (ReflectiveOperationException ignored) {}
+                return;
+            }
 
             BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
             int fieldId = IdentityMapper.getFieldId(birthId, fieldName, ownerName);
@@ -595,12 +813,20 @@ public class ReplayMonitor {
     public static void checkFieldWriteDouble(double value, Object owner, int currentSiteId,
                                              boolean isVolatile, boolean isStatic,
                                              String fieldName, String ownerName) {
-        if (isInside.get()) return;
+        if (isInside.get()) {
+            try { findField(ownerName, fieldName).setDouble(owner, value); }
+            catch (ReflectiveOperationException ignored) {}
+            return;
+        }
         isInside.set(true);
         try {
             long tid = Thread.currentThread().getId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-            if (roleId == -1) return;
+            if (roleId == -1) {
+                try { findField(ownerName, fieldName).setDouble(owner, value); }
+                catch (ReflectiveOperationException ignored) {}
+                return;
+            }
 
             BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
             int fieldId = IdentityMapper.getFieldId(birthId, fieldName, ownerName);
@@ -625,12 +851,20 @@ public class ReplayMonitor {
     public static void checkFieldWriteObj(Object value, Object owner, int currentSiteId,
                                           boolean isVolatile, boolean isStatic,
                                           String fieldName, String ownerName) {
-        if (isInside.get()) return;
+        if (isInside.get()) {
+            try { findField(ownerName, fieldName).set(owner, value); }
+            catch (ReflectiveOperationException ignored) {}
+            return;
+        }
         isInside.set(true);
         try {
             long tid = Thread.currentThread().getId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-            if (roleId == -1) return;
+            if (roleId == -1) {
+                try { findField(ownerName, fieldName).set(owner, value); }
+                catch (ReflectiveOperationException ignored) {}
+                return;
+            }
 
             BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
             int fieldId = IdentityMapper.getFieldId(birthId, fieldName, ownerName);

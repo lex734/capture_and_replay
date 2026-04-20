@@ -1,6 +1,7 @@
 package common;
 
 import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
@@ -23,10 +24,13 @@ public class IdentityMapper {
     private static final ConcurrentHashMap<String, Integer> instanceFieldToId = new ConcurrentHashMap<>();
 
     // Identity tracking for heap-allocated objects.
-    // Pool strings are tracked separately in poolStringToId and never enter objToId,
-    // which avoids WeakHashMap's equals()-based key lookup conflating a pool string
-    // with a heap string of the same content.
-    private static final Map<Object, BirthId> objToId = Collections.synchronizedMap(new WeakHashMap<>());
+    // IdentityHashMap uses == / System.identityHashCode() for key lookup, so it never
+    // calls the object's own hashCode() — this avoids NPEs when getBirthId is called
+    // on a partially-constructed object whose hashCode() reads an uninitialised field.
+    // Pool strings are tracked separately in poolStringToId: the same string content
+    // must map to the same BirthId across capture and replay runs (where the interned
+    // object reference may differ), which requires content-keyed lookup, not identity.
+    private static final Map<Object, BirthId> objToId = Collections.synchronizedMap(new IdentityHashMap<>());
     private static final Map<BirthId, Object> idToObj = Collections.synchronizedMap(new WeakHashMap<>());
     private static final ConcurrentHashMap<Integer, AtomicInteger> siteCounters = new ConcurrentHashMap<>();
     // Per-role-per-site counters: key = (roleId << 32) | siteId.
@@ -133,9 +137,9 @@ public class IdentityMapper {
      * If the object is null (Static), it returns the GLOBAL BirthId (Site 0).
      *
      * For String objects the intern-check MUST happen before objToId is consulted.
-     * WeakHashMap uses equals() for key lookup, so a pool string stored in objToId
-     * would match any heap string with identical content, collapsing two distinct
-     * objects onto the same BirthId. By routing pool strings exclusively to
+     * Pool strings must be keyed by content (not identity) so that the same literal
+     * resolves to the same BirthId across capture and replay, where the interned
+     * object reference may differ. By routing pool strings exclusively to
      * poolStringToId we keep the two spaces completely separate.
      */
     public static BirthId getBirthId(Object obj, String ownerName, int currentInstructionSiteId) {

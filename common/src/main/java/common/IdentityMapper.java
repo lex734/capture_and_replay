@@ -4,6 +4,8 @@ import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.WeakHashMap;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -32,12 +34,13 @@ public class IdentityMapper {
     // object reference may differ), which requires content-keyed lookup, not identity.
     private static final Map<Object, BirthId> objToId = Collections.synchronizedMap(new IdentityHashMap<>());
     private static final Map<BirthId, Object> idToObj = Collections.synchronizedMap(new WeakHashMap<>());
-    private static final ConcurrentHashMap<Integer, AtomicInteger> siteCounters = new ConcurrentHashMap<>();
-    // Per-role-per-site counters: key = (roleId << 32) | siteId.
+    private static final ConcurrentHashMap<Long, AtomicInteger> siteCounters = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<Long, Boolean> ignoredSites = new ConcurrentHashMap<>();
+    // Per-role-per-site counters: key = exact (roleId, siteId) pair.
     // Used by registerAllocation so that each role's Nth object at a given site
     // always gets the same birth count across capture and replay runs,
     // independent of how other roles interleave their allocations.
-    private static final ConcurrentHashMap<Long, AtomicInteger> roleSiteCounters = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<RoleSiteKey, AtomicInteger> roleSiteCounters = new ConcurrentHashMap<>();
 
     // Pool string literals (from LDC): keyed by string content so every reference
     // to the same literal resolves to the same BirthId.PoolString across runs.
@@ -45,12 +48,35 @@ public class IdentityMapper {
 
     private static final ConcurrentHashMap<Long, Integer> preAssignedRoles = new ConcurrentHashMap<>();
 
+    private static final class RoleSiteKey {
+        private final int roleId;
+        private final long siteId;
+
+        private RoleSiteKey(int roleId, long siteId) {
+            this.roleId = roleId;
+            this.siteId = siteId;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (!(o instanceof RoleSiteKey)) return false;
+            RoleSiteKey other = (RoleSiteKey) o;
+            return roleId == other.roleId && siteId == other.siteId;
+        }
+
+        @Override
+        public int hashCode() {
+            long h = (roleId * 31L) + siteId;
+            return (int) (h ^ (h >>> 32));
+        }
+    }
+
 
     public abstract static class BirthId {
-        public final int siteId;
+        public final long siteId;
         public final int count;
 
-        private BirthId(int siteId, int count) {
+        private BirthId(long siteId, int count) {
             this.siteId = siteId;
             this.count = count;
         }
@@ -65,7 +91,7 @@ public class IdentityMapper {
          */
         public static final class Heap extends BirthId {
             public final int creatorRoleId;
-            public Heap(int creatorRoleId, int siteId, int count) {
+            public Heap(int creatorRoleId, long siteId, int count) {
                 super(siteId, count);
                 this.creatorRoleId = creatorRoleId;
             }
@@ -80,7 +106,10 @@ public class IdentityMapper {
             }
 
             @Override
-            public int hashCode() { return (creatorRoleId * 31 + siteId) * 31 + count; }
+            public int hashCode() {
+                long h = (creatorRoleId * 31L + siteId) * 31L + count;
+                return (int) (h ^ (h >>> 32));
+            }
         }
 
         /**
@@ -90,7 +119,7 @@ public class IdentityMapper {
          * PoolString(siteId) never collide in idToObj even when siteId matches.
          */
         public static final class PoolString extends BirthId {
-            public PoolString(int contentSiteId) { super(contentSiteId, 0); }
+            public PoolString(long contentSiteId) { super(contentSiteId, 0); }
 
             @Override
             public boolean equals(Object o) {
@@ -99,7 +128,7 @@ public class IdentityMapper {
             }
 
             @Override
-            public int hashCode() { return siteId; }
+            public int hashCode() { return (int) (siteId ^ (siteId >>> 32)); }
         }
 
         // Static constant representing the "Global/Static" birthplace
@@ -109,27 +138,43 @@ public class IdentityMapper {
     /**
      * Maps a thread ID to a logical Role ID.
      */
-    public static int getRoleIdBySite(long tid, int siteId) {
-        Thread current = Thread.currentThread();
-        String name = current.getName();
+    public static int getRoleIdBySite(long tid, long siteId) {
+        return getRoleIdForThread(Thread.currentThread(), tid, siteId);
+    }
 
-        // JVM infrastructure threads — never assign roles to these,
-        // they are non-deterministic across runs and should not be replayed
-        if (name.startsWith("Finalizer")
-                || name.startsWith("Reference Handler")
-                || name.startsWith("Signal Dispatcher")
-                || name.startsWith("Notification Thread")
-                || name.startsWith("Common-Cleaner")
-                || name.startsWith("ForkJoinPool.commonPool")
-                || name.startsWith("ForkJoinPool-")
-                || current.isDaemon() && current.getThreadGroup() != null
-                        && "system".equals(current.getThreadGroup().getName())) {
+    public static int getRoleIdForThread(Thread thread, long siteId) {
+        return getRoleIdForThread(thread, thread.getId(), siteId);
+    }
+
+    private static int getRoleIdForThread(Thread thread, long tid, long siteId) {
+        if (isIgnoredSite(siteId)) {
+            return -1;
+        }
+        if (shouldSkipThread(thread)) {
             return -1; // sentinel: caller should skip logging for this thread
         }
         Integer preAssigned = preAssignedRoles.get(tid);
         int roleId = tidToRoleId.computeIfAbsent(tid, k -> roleCounter.getAndIncrement());
         if (preAssigned != null) return preAssigned;
         return roleId;
+    }
+
+    public static boolean shouldSkipThread(Thread thread) {
+        String name = thread.getName();
+
+        // JVM / benchmark infrastructure threads — never assign roles to these,
+        // they are non-deterministic across runs and should not be replayed.
+        return name.startsWith("Finalizer")
+                || name.startsWith("Reference Handler")
+                || name.startsWith("Signal Dispatcher")
+                || name.startsWith("Notification Thread")
+                || name.startsWith("Common-Cleaner")
+                || name.startsWith("ForkJoinPool.commonPool")
+                || name.startsWith("ForkJoinPool-")
+                || name.equals("MonitorTimer")
+                || name.endsWith(" monitor")
+                || thread.isDaemon() && thread.getThreadGroup() != null
+                        && "system".equals(thread.getThreadGroup().getName());
     }
 
     /**
@@ -142,9 +187,18 @@ public class IdentityMapper {
      * object reference may differ. By routing pool strings exclusively to
      * poolStringToId we keep the two spaces completely separate.
      */
-    public static BirthId getBirthId(Object obj, String ownerName, int currentInstructionSiteId) {
+    public static BirthId getBirthId(Object obj, String ownerName, long currentInstructionSiteId) {
         if (obj == null) {
             return BirthId.GLOBAL;
+        }
+
+        BirthId groovyReflectionId = stableGroovyReflectionId(obj);
+        if (groovyReflectionId != null) {
+            synchronized (objToId) {
+                objToId.put(obj, groovyReflectionId);
+                idToObj.put(groovyReflectionId, obj);
+            }
+            return groovyReflectionId;
         }
 
         if (obj instanceof String) {
@@ -167,10 +221,12 @@ public class IdentityMapper {
             // Object was never passed through registerAllocation — lazy-register it.
             // Use per-role-per-site counters for the same reason as registerAllocation.
             long tid = Thread.currentThread().getId();
-            int roleId = getRoleIdBySite(tid, currentInstructionSiteId);
+            int roleId = isIgnoredSite(currentInstructionSiteId)
+                    ? -1
+                    : getRoleIdBySite(tid, currentInstructionSiteId);
             AtomicInteger counter;
             if (roleId >= 0) {
-                long key = ((long) roleId << 32) | (currentInstructionSiteId & 0xFFFFFFFFL);
+                RoleSiteKey key = new RoleSiteKey(roleId, currentInstructionSiteId);
                 counter = roleSiteCounters.computeIfAbsent(key, k -> new AtomicInteger(1));
             } else {
                 counter = siteCounters.computeIfAbsent(currentInstructionSiteId, k -> new AtomicInteger(1));
@@ -178,6 +234,22 @@ public class IdentityMapper {
             BirthId.Heap newId = new BirthId.Heap(roleId, currentInstructionSiteId, counter.getAndIncrement());
             objToId.put(obj, newId);
             idToObj.put(newId, obj);
+
+            // Temporary debug logging for lazy registrations. Enable with -Didentity.lazylog=true
+            if (Boolean.getBoolean("identity.lazylog")) {
+                String threadName = Thread.currentThread().getName();
+                System.err.println(String.format(
+                    "[LAZY-REGISTER] tid=%d thread=%s role=%d site=%d owner=%s objClass=%s",
+                    tid, threadName, roleId, currentInstructionSiteId,
+                    ownerName == null ? "<null>" : ownerName, obj.getClass().getName()));
+                StackTraceElement[] st = Thread.currentThread().getStackTrace();
+                // skip first 3 frames (getStackTrace, this block, caller) and print a few frames
+                for (int i = 3; i < Math.min(st.length, 10); i++) {
+                    System.err.println("    at " + st[i]);
+                }
+                System.err.flush();
+            }
+
             return newId;
         }
     }
@@ -188,16 +260,38 @@ public class IdentityMapper {
      * class name.
      */
     public static int getFieldId(BirthId birthId, String fieldName, String ownerClassName) {
+        String key;
         if (birthId.siteId == 0) {
             // This is a static field. We map it by ClassName + FieldName.
             // This ensures every thread in the JVM gets the same ID for "MyClass.myVar".
-            String key = ownerClassName + "#" + fieldName;
-            return staticFieldToId.computeIfAbsent(key, k -> fieldCounter.getAndIncrement());
+            key = "S:" + ownerClassName + "#" + fieldName;
         } else {
             // This is an instance field. We map it by the Object's Birth Site + Field Name.
-            String key = birthId.siteId + ":" + fieldName;
-            return instanceFieldToId.computeIfAbsent(key, k -> fieldCounter.getAndIncrement());
+            key = "I:" + ownerClassName + "#" + birthId.siteId + ":" + fieldName;
         }
+        int id = key.hashCode();
+        return id != 0 ? id : 1;
+    }
+
+    public static int getCreatorRoleId(BirthId birthId) {
+        return birthId instanceof BirthId.Heap ? ((BirthId.Heap) birthId).creatorRoleId : -1;
+    }
+
+    /**
+     * Non-static heap objects created outside a managed role are runtime
+     * bookkeeping from the replay system's perspective.  Static fields also use
+     * creatorRole=-1 via BirthId.GLOBAL, so keep site 0 events replayable.
+     */
+    public static boolean shouldSkipObjectEvent(BirthId birthId, boolean isStatic) {
+        return !isStatic && birthId.siteId != 0 && getCreatorRoleId(birthId) == -1;
+    }
+
+    public static void registerIgnoredSite(long siteId) {
+        if (siteId != 0L) ignoredSites.put(siteId, Boolean.TRUE);
+    }
+
+    public static boolean isIgnoredSite(long siteId) {
+        return ignoredSites.containsKey(siteId);
     }
 
     /**
@@ -206,23 +300,98 @@ public class IdentityMapper {
      * order at that site. This ensures the same object gets the same BirthId in
      * both capture and replay runs, regardless of access order.
      */
-    public static void registerAllocation(Object obj, int siteId) {
+    public static void registerAllocation(Object obj, long siteId) {
         if (obj == null) return;
+        BirthId stableId = stableGroovyReflectionId(obj);
+        if (stableId != null) {
+            synchronized (objToId) {
+                objToId.put(obj, stableId);
+                idToObj.put(stableId, obj);
+            }
+            return;
+        }
         long tid = Thread.currentThread().getId();
-        int roleId = getRoleIdBySite(tid, siteId);
+        int roleId = isIgnoredSite(siteId) ? -1 : getRoleIdBySite(tid, siteId);
         synchronized (objToId) {
             if (objToId.containsKey(obj)) return; // already registered
             AtomicInteger counter;
             if (roleId >= 0) {
                 // Per-role-per-site counter: role=2's Nth object at site S always
                 // gets count=N, independent of allocations by other roles.
-                long key = ((long) roleId << 32) | (siteId & 0xFFFFFFFFL);
+                RoleSiteKey key = new RoleSiteKey(roleId, siteId);
                 counter = roleSiteCounters.computeIfAbsent(key, k -> new AtomicInteger(1));
             } else {
                 // Infrastructure / unregistered thread — fall back to global counter.
                 counter = siteCounters.computeIfAbsent(siteId, k -> new AtomicInteger(1));
             }
             BirthId.Heap id = new BirthId.Heap(roleId, siteId, counter.getAndIncrement());
+            objToId.put(obj, id);
+            idToObj.put(id, obj);
+            // Optional debug logging for eager registrations. Enable with -Didentity.alloclog=true
+            if (Boolean.getBoolean("identity.alloclog")) {
+                String threadName = Thread.currentThread().getName();
+                System.err.println(String.format(
+                    "[EAGER-REGISTER] tid=%d thread=%s role=%d site=%d objClass=%s",
+                    tid, threadName, roleId, siteId, obj.getClass().getName()));
+                StackTraceElement[] st = Thread.currentThread().getStackTrace();
+                for (int i = 3; i < Math.min(st.length, 10); i++) {
+                    System.err.println("    at " + st[i]);
+                }
+                System.err.flush();
+            }
+        }
+    }
+
+    private static BirthId stableGroovyReflectionId(Object obj) {
+        String name = obj.getClass().getName();
+        String namespace = null;
+        if (name.equals("org.codehaus.groovy.reflection.CachedMethod")
+                || name.startsWith("org.codehaus.groovy.reflection.GeneratedMetaMethod")) {
+            namespace = "groovy.CachedMethod";
+        } else if (name.equals("org.codehaus.groovy.reflection.CachedField")) {
+            namespace = "groovy.CachedField";
+        } else if (name.equals("org.codehaus.groovy.reflection.CachedConstructor")) {
+            namespace = "groovy.CachedConstructor";
+        }
+        return namespace == null ? null : new BirthId.Heap(-1,
+                stableSiteId("stable-class-wrapper:" + namespace), 0);
+    }
+
+    private static long stableSiteId(String key) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(key.getBytes(StandardCharsets.UTF_8));
+            long id = ((long) (digest[0] & 0x7F) << 56)
+                    | ((long) (digest[1] & 0xFF) << 48)
+                    | ((long) (digest[2] & 0xFF) << 40)
+                    | ((long) (digest[3] & 0xFF) << 32)
+                    | ((long) (digest[4] & 0xFF) << 24)
+                    | ((long) (digest[5] & 0xFF) << 16)
+                    | ((long) (digest[6] & 0xFF) << 8)
+                    | (long) (digest[7] & 0xFF);
+            return id == 0L ? 1L : id;
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to derive stable object id for " + key, e);
+        }
+    }
+
+    /**
+     * Groovy's reflection cache creates ClassInfo/CachedClass objects lazily as
+     * runtime code asks about Java classes.  The exact cache warm-up order can
+     * differ between capture and replay, so constructor-count birth ids are too
+     * brittle for these wrappers.  Collapse each wrapper kind to one stable
+     * identity so cache warm-up bookkeeping does not make replay diverge.
+     */
+    public static void registerStableClassWrapper(Object obj, Class<?> wrappedClass, String namespace) {
+        if (obj == null || wrappedClass == null || namespace == null) return;
+        BirthId.Heap id = new BirthId.Heap(-1,
+                stableSiteId("stable-class-wrapper:" + namespace), 0);
+        synchronized (objToId) {
+            BirthId existing = objToId.get(obj);
+            if (existing != null && existing.siteId == id.siteId && existing.count == id.count
+                    && getCreatorRoleId(existing) == id.creatorRoleId) {
+                return;
+            }
             objToId.put(obj, id);
             idToObj.put(id, obj);
         }
@@ -237,7 +406,7 @@ public class IdentityMapper {
      * identical content (e.g. new String("foo")) gets its own distinct BirthId
      * through the normal registerAllocation path.
      */
-    public static void registerPoolString(String str, int contentSiteId) {
+    public static void registerPoolString(String str, long contentSiteId) {
         if (str == null) return;
         poolStringToId.computeIfAbsent(str, k -> {
             BirthId.PoolString id = new BirthId.PoolString(contentSiteId);
@@ -246,7 +415,7 @@ public class IdentityMapper {
         });
     }
 
-    public static Object resolveByBirthId(int creatorRoleId, int valueSiteId, int valueCount) {
+    public static Object resolveByBirthId(int creatorRoleId, long valueSiteId, int valueCount) {
         return idToObj.get(new BirthId.Heap(creatorRoleId, valueSiteId, valueCount));
     }
 
@@ -275,6 +444,7 @@ public class IdentityMapper {
         poolStringToId.clear();
         siteCounters.clear();
         roleSiteCounters.clear();
+        ignoredSites.clear();
         // System.out.println("[IdentityMapper] All maps cleared for new trace.");
     }
 }

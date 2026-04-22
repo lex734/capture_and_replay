@@ -7,7 +7,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 
 public class BinarySchema {
-    public static final int RECORD_SIZE = 48;
+    public static final int RECORD_SIZE = 88;
 
     // LongAdder uses per-thread striped counters internally — near-zero contention
     // compared to AtomicLong.incrementAndGet() under high concurrency.
@@ -54,6 +54,7 @@ public class BinarySchema {
         // boolean/witness return determines control flow and reference identity can
         // differ across runs.  Non-CAS atomics execute natively under total order.
         public static final int ATOMIC_CAS = 28;
+        public static final int COLLECTION_OP = 29;
         public static final int CLASS_INIT_END = 24;
         public static final int EXCEPTION_THROW = 25;
         public static final int NONDETERMINISTIC_INT = 26;  // int / boolean / float (stored as raw int bits)
@@ -105,13 +106,14 @@ public class BinarySchema {
     }
 
 
-    public static void write(long seq, long roleId, int packedType, int objSite, int objCount, int data1, int data2, int data3, int data4) {
-        write(seq, roleId, packedType, objSite, objCount, data1, data2, data3, data4, 0);
+    public static void write(long seq, long roleId, int packedType, long objSite, int objCount, long data1, long data2, long data3, long data4) {
+        write(seq, roleId, packedType, objSite, objCount, data1, data2, data3, data4, 0, 0);
     }
 
     /**
-     * Full write with packed creator roles stored in the 4 bytes at pos+44
-     * (currently unused padding within RECORD_SIZE=48).
+     * Full write. objCreatorRole stores the creator role for objSite/objCount
+     * when those columns describe a heap BirthId. creatorRoles is currently used
+     * by object atomics to pack return/post-op value creator roles.
      *
      * creatorRoles packs two 16-bit role IDs:
      *   bits 31-16 = creator role of the return-value object (data1/data2)
@@ -120,7 +122,18 @@ public class BinarySchema {
      * with the correct creator role when per-role birth counts are in use.
      * All other events write 0 here via the 9-param overload.
      */
-    public static void write(long seq, long roleId, int packedType, int objSite, int objCount, int data1, int data2, int data3, int data4, int creatorRoles) {
+    public static void write(long seq, long roleId, int packedType, long objSite, int objCount, long data1, long data2, long data3, long data4, int creatorRoles) {
+        write(seq, roleId, packedType, objSite, objCount, data1, data2, data3, data4, 0, creatorRoles);
+    }
+
+    public static void write(long seq, long roleId, int packedType, long objSite, int objCount, long data1, long data2, long data3, long data4, int objCreatorRole, int creatorRoles) {
+        write(seq, roleId, packedType, objSite, objCount, data1, data2, data3, data4,
+                objCreatorRole, creatorRoles, 0L, 0L);
+    }
+
+    public static void write(long seq, long roleId, int packedType, long objSite, int objCount,
+                             long data1, long data2, long data3, long data4,
+                             int objCreatorRole, int creatorRoles, long data5, long data6) {
         long slot = allocateSlot();
         if (buffer == null || slot >= maxAllowedEvents)
             return;
@@ -134,22 +147,25 @@ public class BinarySchema {
         buffer.putLong(pos, seq); // packed epoch<<32 | localSeq
         buffer.putLong(pos + 8, roleId);
         buffer.putInt(pos + 16, packedType);
-        buffer.putInt(pos + 20, objSite);
-        buffer.putInt(pos + 24, objCount);
-        buffer.putInt(pos + 28, data1);
-        buffer.putInt(pos + 32, data2);
-        buffer.putInt(pos + 36, data3);
-        buffer.putInt(pos + 40, data4);
-        buffer.putInt(pos + 44, creatorRoles);
+        buffer.putInt(pos + 20, objCount);
+        buffer.putInt(pos + 24, objCreatorRole);
+        buffer.putInt(pos + 28, creatorRoles);
+        buffer.putLong(pos + 32, objSite);
+        buffer.putLong(pos + 40, data1);
+        buffer.putLong(pos + 48, data2);
+        buffer.putLong(pos + 56, data3);
+        buffer.putLong(pos + 64, data4);
+        buffer.putLong(pos + 72, data5);
+        buffer.putLong(pos + 80, data6);
     }
 
-    public static void write(long seq, long roleId, int packedType, int objSite, int objCount, int data) {
+    public static void write(long seq, long roleId, int packedType, long objSite, int objCount, long data) {
         // Store single-payload events in data1 (expected[5]) and leave data2=0.
         // This makes single-value payloads unambiguous and consistent with
         // multi-word atomic records that use data1/data2.
         write(seq, roleId, packedType, objSite, objCount, data, 0);
     }
-    public static void write(long seq, long roleId, int packedType, int objSite, int objCount, int data1, int data2) {
+    public static void write(long seq, long roleId, int packedType, long objSite, int objCount, long data1, long data2) {
         write(seq, roleId, packedType, objSite, objCount, data1, data2, 0, 0);
     }
 

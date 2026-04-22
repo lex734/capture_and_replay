@@ -1,23 +1,13 @@
 package org.apache.derby.impl.services.reflect;
 
-import static org.powermock.api.mockito.PowerMockito.mockStatic;
-
 import org.apache.derby.iapi.error.StandardException;
 import org.apache.derby.iapi.services.locks.Lockable;
 import org.apache.derby.iapi.services.locks.ShExQual;
-import org.apache.derby.iapi.services.monitor.Monitor;
-import org.apache.derby.iapi.util.IdUtil;
 import org.apache.derby.impl.services.locks.LockOperator;
 import org.apache.derby.impl.services.locks.SinglePool;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.mockito.Mockito;
-import org.powermock.core.classloader.annotations.PrepareForTest;
-import org.powermock.modules.junit4.PowerMockRunner;
 
+import edu.illinois.jacontebe.Helpers;
 import edu.illinois.jacontebe.framework.Reporter;
-import edu.illinois.jacontebe.monitors.DeadlockMonitor;
 
 /**
  * Bug URL: https://issues.apache.org/jira/browse/DERBY-764
@@ -28,8 +18,6 @@ import edu.illinois.jacontebe.monitors.DeadlockMonitor;
  * 
  */
 
-@RunWith(PowerMockRunner.class)
-@PrepareForTest({ Monitor.class, IdUtil.class })
 public class Derby764 {
 
     private static class Thread1 extends Thread {
@@ -57,28 +45,19 @@ public class Derby764 {
     private static SinglePool factory;
     private static LockOperator operator;
 
-    public static void main(String[] args) throws StandardException, InterruptedException {
+    public static void main(String[] args) throws Exception {
         factory = new SinglePool();
 
-        // Prepare mock methods and instances to make sure
-        // the program goes along the expected path.
-        mockStatic(Monitor.class);
-        Mockito.when(Monitor.getServiceModule(Mockito.any(ReflectClassesJava2.class), Mockito.anyString()))
-                .thenReturn(factory);
         String classpath = "org/class";
 
-        mockStatic(IdUtil.class);
-        Mockito.when(IdUtil.parseDbClassPath(classpath)).thenReturn(
-                new String[1][1]);
         DatabaseClasses parent = new ReflectClassesJava2();
-        updateLoader = new UpdateLoader(classpath, parent, false, false);
+        updateLoader = newUpdateLoaderForHarness(classpath, parent, factory);
         Object qualifier = ShExQual.EX;
         Lockable classloaderLock = new ClassLoaderLock(updateLoader);
         operator = new LockOperator(factory, classloaderLock, qualifier);
         operator.lock();
         Reporter.reportStart("derby764", 0, "deadlock");
-        // DeadlockMonitor monitor = new DeadlockMonitor();
-        // monitor.start();
+        startDeadlockMonitor();
 
         // If test comes to this line, it means no deadlock happens.So we need
         // to report the failure of bug reproduction.
@@ -88,6 +67,39 @@ public class Derby764 {
 
         }
         Reporter.reportEnd(false);
+    }
+
+    private static UpdateLoader newUpdateLoaderForHarness(String classpath,
+            DatabaseClasses parent, SinglePool factory) throws Exception {
+        sun.misc.Unsafe unsafe = unsafe();
+        UpdateLoader loader = (UpdateLoader) unsafe.allocateInstance(UpdateLoader.class);
+        setField(loader, "normalizeToUpper", Boolean.FALSE);
+        setField(loader, "parent", parent);
+        setField(loader, "lf", factory);
+        setField(loader, "compat", factory.createCompatibilitySpace(loader));
+        setField(loader, "myLoader", Derby764.class.getClassLoader());
+        setField(loader, "classLoaderLock", new ClassLoaderLock(loader));
+        setField(loader, "jarList", new JarLoader[0]);
+        setField(loader, "thisClasspath", classpath);
+        setField(loader, "initDone", Boolean.FALSE);
+        setField(loader, "needReload", Boolean.FALSE);
+        return loader;
+    }
+
+    private static sun.misc.Unsafe unsafe() throws Exception {
+        java.lang.reflect.Field field = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
+        field.setAccessible(true);
+        return (sun.misc.Unsafe) field.get(null);
+    }
+
+    private static void setField(Object target, String name, Object value) throws Exception {
+        java.lang.reflect.Field field = target.getClass().getDeclaredField(name);
+        field.setAccessible(true);
+        field.set(target, value);
+    }
+
+    private static void startDeadlockMonitor() {
+        Helpers.startDeadlockMonitor();
     }
 
     private static void run() throws InterruptedException {

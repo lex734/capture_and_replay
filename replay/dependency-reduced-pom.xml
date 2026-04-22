@@ -20,6 +20,12 @@
               <goal>shade</goal>
             </goals>
             <configuration>
+              <relocations>
+                <relocation>
+                  <pattern>org.objectweb.asm</pattern>
+                  <shadedPattern>agent.shaded.org.objectweb.asm</shadedPattern>
+                </relocation>
+              </relocations>
               <transformers>
                 <transformer>
                   <manifestEntries>

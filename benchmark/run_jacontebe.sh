@@ -12,13 +12,66 @@ JPF_SCRIPTS=$JACONTEBE_DIR/testplans.alt/jpfscripts
 OUT=output/capture-replay/jacontebe
 CAPTURE_AGENT=../capture/target/trace-capture-agent.jar
 REPLAY_AGENT=../replay/target/trace-replay-agent.jar
+
+# JaConTeBe uses old libraries (Mockito 1.9.5 / CGLib) that require Java 11.
+# The agents are compiled for Java 11 (class file version 55).
+JAVA=/Library/Java/JavaVirtualMachines/amazon-corretto-11.jdk/Contents/Home/bin/java
+RUN_TIMEOUT=${JACONTEBE_TIMEOUT:-45s}
 mkdir -p $OUT
 
+# Returns true if any recognized concurrency bug signal appears in the output files.
+# Covers signals from both the JaConTeBe harness and our capture/replay agents.
 has_bug_signal() {
   local stdout_file="$1"
   local stderr_file="$2"
 
-  grep -Eqs "AssertionError|Bug [Ff]ound!|Deadlock detected|RuntimeException: deadlock" \
+  grep -Eqs \
+    "AssertionError|\
+Bug [Ff]ound!|\
+Finished test: Bug has been reproduced successfully|\
+Deadlock detected|\
+RuntimeException: deadlock|\
+Detected suspicious forever waiting|\
+Program has been forced to exit from" \
+    "$stdout_file" "$stderr_file"
+}
+
+bug_reason() {
+  local stdout_file="$1"
+  local stderr_file="$2"
+
+  if grep -Eq "Finished test: Bug has been reproduced successfully" "$stdout_file" "$stderr_file"; then
+    echo "bug-success"
+  elif grep -q "AssertionError" "$stderr_file"; then
+    echo "assertion"
+  elif grep -Eq "Bug [Ff]ound!" "$stdout_file" "$stderr_file"; then
+    echo "bug-message"
+  elif grep -Eq "Program has been forced to exit from endless loop" "$stdout_file" "$stderr_file"; then
+    echo "endless-loop"
+  elif grep -Eq "Program has been forced to exit from forever waiting|Detected suspicious forever waiting" "$stdout_file" "$stderr_file"; then
+    echo "forever-waiting"
+  elif grep -Eq "Program has been forced to exit from deadlock|Deadlock detected|RuntimeException: deadlock" "$stdout_file" "$stderr_file"; then
+    echo "deadlock"
+  else
+    echo "bug-signal"
+  fi
+}
+
+has_infra_error() {
+  local stdout_file="$1"
+  local stderr_file="$2"
+
+  grep -Eqs \
+    "VerifyError|\
+ClassFormatError|\
+UnsupportedClassVersionError|\
+NoClassDefFoundError|\
+NoSuchMethodError|\
+IllegalAccessError|\
+LinkageError|\
+Unable to initialize main class|\
+Deterministic site id collision|\
+\[Agent\] Fatal error" \
     "$stdout_file" "$stderr_file"
 }
 
@@ -37,9 +90,9 @@ while IFS= read -r bench; do
     continue
   fi
 
-  # Parse target and classpath from .jpf file
-  target=$(grep '^target' "$jpf_file" | sed 's/target *= *//')
-  raw_cp=$(grep '^classpath' "$jpf_file" | sed 's/classpath *= *//')
+  # Parse target and classpath from .jpf file (strip \r for CRLF files)
+  target=$(grep '^target' "$jpf_file" | tr -d '\r' | sed 's/target *= *//')
+  raw_cp=$(grep '^classpath' "$jpf_file" | tr -d '\r' | sed 's/classpath *= *//')
 
   # Resolve ./source -> build dir, ./versions.alt -> lib dir (absolute paths)
   abs_build=$(cd "$build_dir" && pwd)
@@ -55,7 +108,7 @@ while IFS= read -r bench; do
 
   # Capture
   capture_rc=0
-  $TIMEOUT_CMD 10s java -ea \
+  $TIMEOUT_CMD "$RUN_TIMEOUT" $JAVA -ea \
     -javaagent:$CAPTURE_AGENT \
     -cp "$classpath" \
     "$target" \
@@ -65,21 +118,31 @@ while IFS= read -r bench; do
   capture_bug_reason=""
   if has_bug_signal "$dir/capture.stdout" "$dir/capture.stderr"; then
     capture_bug=true
-    if grep -q "AssertionError" "$dir/capture.stderr"; then
-      capture_bug_reason="assertion"
-    elif grep -Eq "Bug [Ff]ound!" "$dir/capture.stdout" "$dir/capture.stderr"; then
-      capture_bug_reason="bug-message"
-    else
-      capture_bug_reason="deadlock-signal"
-    fi
+    capture_bug_reason=$(bug_reason "$dir/capture.stdout" "$dir/capture.stderr")
   fi
 
   if [ $capture_rc -eq 124 ]; then
-    echo "TIMEOUT (capture) — $bench" | tee "$dir/result.txt"
-    continue
-  elif [ $capture_rc -ne 0 ] && [ "$capture_bug" != true ]; then
-    echo "CAPTURE ERROR (exit $capture_rc with no recognized bug signal) — $bench" | tee "$dir/result.txt"
-    continue
+    if [ "$capture_bug" = true ]; then
+      : # timed out but bug was already triggered — proceed to replay
+    elif has_infra_error "$dir/capture.stdout" "$dir/capture.stderr"; then
+      echo "CAPTURE ERROR (instrumentation/runtime error before timeout) — $bench" | tee "$dir/result.txt"
+      continue
+    elif [ -f trace.bin ]; then
+      # Timed out with no explicit bug signal but trace.bin was written — the
+      # program froze (likely deadlocked) before the watchdog could print its
+      # signal.  Proceed to replay: if replay reproduces a bug signal the
+      # capture did capture the bug; otherwise record as timeout.
+      capture_bug=true
+      capture_bug_reason="timeout-with-trace"
+    else
+      echo "TIMEOUT (capture) — $bench" | tee "$dir/result.txt"
+      continue
+    fi
+  elif [ $capture_rc -ne 0 ]; then
+    if [ "$capture_bug" != true ]; then
+      echo "CAPTURE ERROR (exit $capture_rc with no recognized bug signal) — $bench" | tee "$dir/result.txt"
+      continue
+    fi
   fi
 
   if [ -f trace.bin ]; then
@@ -94,7 +157,7 @@ while IFS= read -r bench; do
 
   # Replay
   replay_rc=0
-  $TIMEOUT_CMD 10s java -ea \
+  $TIMEOUT_CMD "$RUN_TIMEOUT" $JAVA -ea \
     -javaagent:$REPLAY_AGENT \
     -cp "$classpath" \
     "$target" \
@@ -104,28 +167,34 @@ while IFS= read -r bench; do
   replay_bug_reason=""
   if has_bug_signal "$dir/replay.stdout" "$dir/replay.stderr"; then
     replay_bug=true
-    if grep -q "AssertionError" "$dir/replay.stderr"; then
-      replay_bug_reason="assertion"
-    elif grep -Eq "Bug [Ff]ound!" "$dir/replay.stdout" "$dir/replay.stderr"; then
-      replay_bug_reason="bug-message"
-    else
-      replay_bug_reason="deadlock-signal"
-    fi
+    replay_bug_reason=$(bug_reason "$dir/replay.stdout" "$dir/replay.stderr")
   fi
 
   # Record outcome
-  if [ $replay_rc -eq 124 ]; then
-    echo "TIMEOUT (replay) — $bench" | tee "$dir/result.txt"
-  elif [ "$replay_bug" = true ]; then
+  if [ "$replay_bug" = true ]; then
     if [ "$capture_bug" = true ]; then
       echo "BUG REPRODUCED ($replay_bug_reason) — $bench" | tee "$dir/result.txt"
     else
       echo "UNEXPECTED BUG SIGNAL on replay ($replay_bug_reason) — $bench" | tee "$dir/result.txt"
     fi
+  elif [ $replay_rc -eq 124 ]; then
+    if has_infra_error "$dir/replay.stdout" "$dir/replay.stderr"; then
+      echo "REPLAY ERROR (instrumentation/runtime error before timeout) — $bench" | tee "$dir/result.txt"
+    else
+      echo "TIMEOUT (replay) — $bench" | tee "$dir/result.txt"
+    fi
   elif [ $replay_rc -ne 0 ]; then
-    echo "REPLAY ERROR (exit $replay_rc with no recognized bug signal) — $bench" | tee "$dir/result.txt"
+    if has_infra_error "$dir/replay.stdout" "$dir/replay.stderr"; then
+      echo "REPLAY ERROR (instrumentation/runtime error) — $bench" | tee "$dir/result.txt"
+    else
+      echo "REPLAY ERROR (exit $replay_rc with no recognized bug signal) — $bench" | tee "$dir/result.txt"
+    fi
   else
-    if [ "$capture_bug" = true ]; then
+    if [ "$capture_bug_reason" = "timeout-with-trace" ]; then
+      # Replay completed cleanly — the trace didn't reproduce the bug, meaning
+      # the capture timeout was a genuine timeout, not a captured deadlock.
+      echo "TIMEOUT (capture) — $bench" | tee "$dir/result.txt"
+    elif [ "$capture_bug" = true ]; then
       echo "BUG NOT REPRODUCED — $bench" | tee "$dir/result.txt"
     else
       echo "No bug triggered — $bench" | tee "$dir/result.txt"

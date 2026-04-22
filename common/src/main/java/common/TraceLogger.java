@@ -17,7 +17,7 @@ public class TraceLogger {
     }
 
     // for synchronization events such as MONITOR_ENTER, MONITOR_EXIT
-    public static void logSync(int eventType, Object lock, int currentSiteId) {
+    public static void logSync(int eventType, Object lock, long currentSiteId) {
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         if (roleId == -1) return;
@@ -28,8 +28,8 @@ public class TraceLogger {
         // in data1. This lets the replay coordinator enforce causality: the child's
         // events must be ordered AFTER the parent's THREAD_START, not before.
         if (eventType == BinarySchema.Event.THREAD_START && lock instanceof Thread) {
-            long childTid = ((Thread) lock).getId();
-            int childRoleId = IdentityMapper.getRoleIdBySite(childTid, currentSiteId);
+            int childRoleId = IdentityMapper.getRoleIdForThread((Thread) lock, currentSiteId);
+            if (childRoleId == -1) return;
             long seq = nextSeq();
             // System.out.println(String.format(
                     // "[SYNC]   seq=%d role=%d  %-24s lock=%s  site=%d  childRole=%d",
@@ -37,7 +37,8 @@ public class TraceLogger {
                     // lock.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(lock)),
                     // currentSiteId, childRoleId));
             BinarySchema.write(seq, (long) roleId, ((eventType & 0xFF) | (BinarySchema.Flags.NONE << 8)),
-                    birthId.siteId, birthId.count, childRoleId, currentSiteId);
+                    birthId.siteId, birthId.count, childRoleId, currentSiteId, 0, 0,
+                    IdentityMapper.getCreatorRoleId(birthId), 0);
             return;
         }
 
@@ -50,10 +51,10 @@ public class TraceLogger {
                 //         : "null",
                 // currentSiteId));
         BinarySchema.write(seq, (long) roleId, ((eventType & 0xFF) | (BinarySchema.Flags.NONE << 8)), birthId.siteId,
-                birthId.count, currentSiteId);
+                birthId.count, currentSiteId, 0, 0, 0, IdentityMapper.getCreatorRoleId(birthId), 0);
     }
 
-    public static void logField(int eventType, Object owner, int currentSiteId, boolean isVolatile, boolean isStatic,
+    public static void logField(int eventType, Object owner, long currentSiteId, boolean isVolatile, boolean isStatic,
             String fieldName, String ownerName) {
         long tid = Thread.currentThread().getId();
 
@@ -88,17 +89,19 @@ public class TraceLogger {
 
         // 7. Write to Binary Log
         // Data field contains the fieldId (the unique coordinate for this variable)
-        BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, fieldId);
+        BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, fieldId, 0, 0, 0,
+                IdentityMapper.getCreatorRoleId(birthId), 0);
     }
 
     // for array access events
-    public static void logArray(int eventType, Object array, int index, int currentSiteId) {
+    public static void logArray(int eventType, Object array, int index, long currentSiteId) {
         long tid = Thread.currentThread().getId();
 
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         if (roleId == -1) return;
 
         BirthId birthId = IdentityMapper.getBirthId(array, null, currentSiteId);
+        if (IdentityMapper.shouldSkipObjectEvent(birthId, false)) return;
 
         long seq = nextSeq();
         String eventName = (eventType == BinarySchema.Event.ARRAY_READ) ? "ARRAY_READ" : "ARRAY_WRITE";
@@ -111,27 +114,28 @@ public class TraceLogger {
                 // index, currentSiteId));
 
         BinarySchema.write(seq, roleId, ((eventType & 0xFF) | (BinarySchema.Flags.NONE << 8)), birthId.siteId,
-                birthId.count, index);
+                birthId.count, index, 0, 0, 0, IdentityMapper.getCreatorRoleId(birthId), 0);
     }
 
     // ---- Unified atomic loggers ----
     // All atomic operations capture WHERE (receiver + index) and WHAT (value).
     //
     // Binary record layout — ARRAY atomics (IS_ARRAY_ATOMIC flag set):
-    // packedType upper 16 bits = receiver BirthId.siteId (which allocation site)
-    // objSite = receiver BirthId.count (which instance)
-    // objCount = array index (WHERE within the array)
-    // data = value (WHAT was written/read)
+    // objSite = receiver BirthId.siteId
+    // objCount = receiver BirthId.count
+    // objCreatorRole = receiver BirthId.creatorRoleId
+    // data5 = array index (WHERE within the array)
+    // data1/data2/... = captured value(s), depending on primitive/object kind
     //
     // Binary record layout — SCALAR atomics (no flag):
     // objSite = receiver BirthId.siteId
     // objCount = receiver BirthId.count
-    // data = value (int, lo-32-of-long, or value BirthId.siteId for Object)
+    // objCreatorRole = receiver BirthId.creatorRoleId
+    // data1/data2/... = captured value(s), depending on primitive/object kind
 
-    private static int packAtomicArrayType(int eventType, int receiverSiteId) {
+    private static int packAtomicArrayType(int eventType) {
         return (eventType & 0xFF)
-                | (BinarySchema.Flags.IS_ARRAY_ATOMIC << 8)
-                | ((receiverSiteId & 0xFFFF) << 16);
+                | (BinarySchema.Flags.IS_ARRAY_ATOMIC << 8);
     }
 
     /**
@@ -144,7 +148,7 @@ public class TraceLogger {
      * @param receiver     the atomic object instance
      * @param index        array element index, or -1 for scalar atomics
      */
-    public static void logAtomicInt(int returnValue, int postOpValue, Object receiver, int index, int eventType, int currentSiteId) {
+    public static void logAtomicInt(int returnValue, int postOpValue, Object receiver, int index, int eventType, long currentSiteId) {
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         if (roleId == -1) return;
@@ -169,20 +173,21 @@ public class TraceLogger {
 
         // data1 = postOpValue (write-back value for RMW replay), data2 = returnValue
         if (isArray) {
-            int packedType = packAtomicArrayType(eventType, birthId.siteId);
-            BinarySchema.write(seq, (long) roleId, packedType, birthId.count, index, postOpValue, returnValue);
+            int packedType = packAtomicArrayType(eventType);
+            BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count,
+                    postOpValue, returnValue, 0, 0, IdentityMapper.getCreatorRoleId(birthId), 0, index, 0);
         } else {
             int packedType = BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
-            BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, postOpValue, returnValue);
+            BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count,
+                    postOpValue, returnValue, 0, 0, IdentityMapper.getCreatorRoleId(birthId), 0);
         }
     }
 
     /**
      * Atomic logger for long values.
-     * Array atomics: stores index + low 32 bits of long value.
-     * Scalar atomics: stores full receiver BirthId + low 32 bits of long value.
+     * Stores full 64-bit return/post-op values in data1/data2.
      */
-    public static void logAtomicLong(long longValue, long postOpValue, Object receiver, int index, int eventType, int currentSiteId) {
+    public static void logAtomicLong(long longValue, long postOpValue, Object receiver, int index, int eventType, long currentSiteId) {
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         if (roleId == -1) return;
@@ -206,13 +211,13 @@ public class TraceLogger {
         // }
 
         if (isArray) {
-            int packedType = packAtomicArrayType(eventType, birthId.siteId);
-            BinarySchema.write(seq, (long) roleId, packedType, birthId.count, index, (int) (longValue >> 32),
-                    (int) longValue, (int) (postOpValue >> 32), (int) postOpValue);
+            int packedType = packAtomicArrayType(eventType);
+            BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count,
+                    longValue, postOpValue, 0, 0, IdentityMapper.getCreatorRoleId(birthId), 0, index, 0);
         } else {
             int packedType = BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
-            BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, (int) (longValue >> 32),
-                    (int) longValue, (int) (postOpValue >> 32), (int) postOpValue);
+            BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count,
+                    longValue, postOpValue, 0, 0, IdentityMapper.getCreatorRoleId(birthId), 0);
         }
     }
 
@@ -221,7 +226,7 @@ public class TraceLogger {
      * Array atomics: stores index + value's BirthId.siteId.
      * Scalar atomics: stores receiver BirthId + value's BirthId.siteId.
      */
-    public static void logAtomicObj(Object objValue, Object postOpValue, Object receiver, int index, int eventType, int currentSiteId) {
+    public static void logAtomicObj(Object objValue, Object postOpValue, Object receiver, int index, int eventType, long currentSiteId) {
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         if (roleId == -1) return;
@@ -262,22 +267,24 @@ public class TraceLogger {
                          |  (Math.max(0, postOpCreatorRole) & 0xFFFF);
 
         if (isArray) {
-            int packedType = packAtomicArrayType(eventType, receiverBirth.siteId);
-            BinarySchema.write(seq, (long) roleId, packedType, receiverBirth.count, index, valueBirth.siteId,
-                    valueBirth.count, postOpValueBirth.siteId, postOpValueBirth.count, creatorRoles);
+            int packedType = packAtomicArrayType(eventType);
+            BinarySchema.write(seq, (long) roleId, packedType, receiverBirth.siteId, receiverBirth.count,
+                    valueBirth.siteId, valueBirth.count, postOpValueBirth.siteId, postOpValueBirth.count,
+                    IdentityMapper.getCreatorRoleId(receiverBirth), creatorRoles, index, 0);
         } else {
             int packedType = BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
             BinarySchema.write(seq, (long) roleId, packedType, receiverBirth.siteId, receiverBirth.count,
-                    valueBirth.siteId, valueBirth.count, postOpValueBirth.siteId, postOpValueBirth.count, creatorRoles);
+                    valueBirth.siteId, valueBirth.count, postOpValueBirth.siteId, postOpValueBirth.count,
+                    IdentityMapper.getCreatorRoleId(receiverBirth), creatorRoles);
         }
     }
 
     /**
      * Logs a nondeterministic int-sized return value (int, boolean).
-     * Stored as: objSite=0, objCount=siteId, data2=value.
+     * Stored as: objSite=siteId, objCount=0, data1=value.
      * The call site (siteId) is the unique key for matching during replay.
      */
-    public static void logNondetInt(int value, int siteId) {
+    public static void logNondetInt(int value, long siteId) {
         long seq = nextSeq();
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
@@ -286,13 +293,13 @@ public class TraceLogger {
         System.out.println(String.format(
                 "[NONDET] epoch=%d seq=%d role=%d  nondet_int=%d  site=%d",
                 seq >>> 32, seq & 0xFFFFFFFFL, roleId, value, siteId));
-        BinarySchema.write(seq, (long) roleId, packedType, 0, siteId, value);
+        BinarySchema.write(seq, (long) roleId, packedType, siteId, 0, value);
     }
 
     /**
      * Logs a nondeterministic float return value (stored as raw int bits).
      */
-    public static void logNondetFloat(float value, int siteId) {
+    public static void logNondetFloat(float value, long siteId) {
         long seq = nextSeq();
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
@@ -302,14 +309,14 @@ public class TraceLogger {
         System.out.println(String.format(
                 "[NONDET] epoch=%d seq=%d role=%d  nondet_float=%f  site=%d",
                 seq >>> 32, seq & 0xFFFFFFFFL, roleId, value, siteId));
-        BinarySchema.write(seq, (long) roleId, packedType, 0, siteId, bits);
+        BinarySchema.write(seq, (long) roleId, packedType, siteId, 0, bits);
     }
 
     /**
      * Logs a nondeterministic long return value (long, System time).
-     * Stored as: objSite=0, objCount=siteId, data1=hi32, data2=lo32.
+     * Stored as: objSite=siteId, objCount=0, data1=value.
      */
-    public static void logNondetLong(long value, int siteId) {
+    public static void logNondetLong(long value, long siteId) {
         long seq = nextSeq();
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
@@ -318,13 +325,13 @@ public class TraceLogger {
         System.out.println(String.format(
                 "[NONDET] epoch=%d seq=%d role=%d  nondet_long=%d  site=%d",
                 seq >>> 32, seq & 0xFFFFFFFFL, roleId, value, siteId));
-        BinarySchema.write(seq, (long) roleId, packedType, 0, siteId, (int) (value >> 32), (int) value);
+        BinarySchema.write(seq, (long) roleId, packedType, siteId, 0, value);
     }
 
     /**
      * Logs a nondeterministic double return value (stored as raw long bits).
      */
-    public static void logNondetDouble(double value, int siteId) {
+    public static void logNondetDouble(double value, long siteId) {
         long seq = nextSeq();
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
@@ -334,10 +341,10 @@ public class TraceLogger {
         System.out.println(String.format(
                 "[NONDET] epoch=%d seq=%d role=%d  nondet_double=%f  site=%d",
                 seq >>> 32, seq & 0xFFFFFFFFL, roleId, value, siteId));
-        BinarySchema.write(seq, (long) roleId, packedType, 0, siteId, (int) (bits >> 32), (int) bits);
+        BinarySchema.write(seq, (long) roleId, packedType, siteId, 0, bits);
     }
 
-    public static void logException(Object exception, int siteId) {
+    public static void logException(Object exception, long siteId) {
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
         if (roleId == -1) return;
@@ -351,7 +358,7 @@ public class TraceLogger {
 
         BinarySchema.write(seq, (long) roleId,
                 BinarySchema.packType(BinarySchema.Event.EXCEPTION_THROW, BinarySchema.Flags.NONE),
-                birthId.siteId, birthId.count, siteId);
+                birthId.siteId, birthId.count, siteId, 0, 0, 0, IdentityMapper.getCreatorRoleId(birthId), 0);
     }
 
     // Helper method to get event name for sync events

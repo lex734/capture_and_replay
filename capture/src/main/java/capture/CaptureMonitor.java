@@ -23,6 +23,10 @@ public class CaptureMonitor {
   // Field ops use the same lock so fields and atomics share one total order.
   static final ReentrantLock captureOrderLock = new ReentrantLock();
 
+  private static boolean shouldIgnoreCurrentRole(long siteId) {
+    return !IdentityMapper.shouldTraceCurrentThread(siteId);
+  }
+
   public static void logSync(int eventType, Object lock, long siteId) {
     if (isInside.get()) return;
     if (lock == null && eventType != BinarySchema.Event.THREAD_PARK
@@ -31,6 +35,7 @@ public class CaptureMonitor {
         && eventType != BinarySchema.Event.THREAD_YIELD
         && eventType != BinarySchema.Event.CLASS_INIT_BEGIN
         && eventType != BinarySchema.Event.CLASS_INIT_END) return;
+    if (shouldIgnoreCurrentRole(siteId)) return;
     isInside.set(true);
     try {
       TraceLogger.logSync(eventType, lock, siteId);
@@ -46,6 +51,7 @@ public class CaptureMonitor {
 
   public static int vectorSize(java.util.Vector<?> vector, long siteId) {
     if (isInside.get()) return vector.size();
+    if (shouldIgnoreCurrentRole(siteId)) return vector.size();
     isInside.set(true);
     captureOrderLock.lock();
     try {
@@ -60,6 +66,7 @@ public class CaptureMonitor {
 
   public static Object vectorElementAt(java.util.Vector<?> vector, int index, long siteId) {
     if (isInside.get()) return vector.elementAt(index);
+    if (shouldIgnoreCurrentRole(siteId)) return vector.elementAt(index);
     isInside.set(true);
     captureOrderLock.lock();
     try {
@@ -77,6 +84,10 @@ public class CaptureMonitor {
       vector.removeAllElements();
       return;
     }
+    if (shouldIgnoreCurrentRole(siteId)) {
+      vector.removeAllElements();
+      return;
+    }
     isInside.set(true);
     captureOrderLock.lock();
     try {
@@ -90,6 +101,7 @@ public class CaptureMonitor {
 
   public static java.util.Set<?> mapKeySet(java.util.Map<?, ?> map, long siteId) {
     if (isInside.get()) return map.keySet();
+    if (shouldIgnoreCurrentRole(siteId)) return map.keySet();
     isInside.set(true);
     captureOrderLock.lock();
     try {
@@ -105,6 +117,7 @@ public class CaptureMonitor {
 
   public static java.util.Set<?> mapEntrySet(java.util.Map<?, ?> map, long siteId) {
     if (isInside.get()) return map.entrySet();
+    if (shouldIgnoreCurrentRole(siteId)) return map.entrySet();
     isInside.set(true);
     captureOrderLock.lock();
     try {
@@ -121,6 +134,7 @@ public class CaptureMonitor {
   @SuppressWarnings({"unchecked", "rawtypes"})
   public static Object mapPut(java.util.Map map, Object key, Object value, long siteId) {
     if (isInside.get()) return map.put(key, value);
+    if (shouldIgnoreCurrentRole(siteId)) return map.put(key, value);
     isInside.set(true);
     captureOrderLock.lock();
     try {
@@ -136,6 +150,7 @@ public class CaptureMonitor {
   @SuppressWarnings({"unchecked", "rawtypes"})
   public static Object mapRemove(java.util.Map map, Object key, long siteId) {
     if (isInside.get()) return map.remove(key);
+    if (shouldIgnoreCurrentRole(siteId)) return map.remove(key);
     isInside.set(true);
     captureOrderLock.lock();
     try {
@@ -153,6 +168,10 @@ public class CaptureMonitor {
       map.clear();
       return;
     }
+    if (shouldIgnoreCurrentRole(siteId)) {
+      map.clear();
+      return;
+    }
     isInside.set(true);
     captureOrderLock.lock();
     try {
@@ -166,6 +185,7 @@ public class CaptureMonitor {
 
   public static java.util.Iterator<?> setIterator(java.util.Set<?> set, long siteId) {
     if (isInside.get()) return set.iterator();
+    if (shouldIgnoreCurrentRole(siteId)) return set.iterator();
     isInside.set(true);
     captureOrderLock.lock();
     try {
@@ -181,6 +201,7 @@ public class CaptureMonitor {
 
   public static boolean iteratorHasNext(java.util.Iterator<?> iterator, long siteId) {
     if (isInside.get()) return iterator.hasNext();
+    if (shouldIgnoreCurrentRole(siteId)) return iterator.hasNext();
     isInside.set(true);
     captureOrderLock.lock();
     try {
@@ -195,6 +216,7 @@ public class CaptureMonitor {
 
   public static Object iteratorNext(java.util.Iterator<?> iterator, long siteId) {
     if (isInside.get()) return iterator.next();
+    if (shouldIgnoreCurrentRole(siteId)) return iterator.next();
     isInside.set(true);
     captureOrderLock.lock();
     try {
@@ -208,6 +230,7 @@ public class CaptureMonitor {
 
   public static void logField(int eventType, Object owner, long siteId, boolean isVolatile, boolean isStatic, String fieldName, String ownerName) {
     if (isInside.get()) return;
+    if (shouldIgnoreCurrentRole(siteId)) return;
     isInside.set(true);
     try {
       TraceLogger.logField(eventType, owner, siteId, isVolatile, isStatic, fieldName, ownerName);
@@ -218,6 +241,7 @@ public class CaptureMonitor {
 
   public static void logAtomicInt(int intValue, int postOpValue, Object receiver, int index, int eventType, long siteId) {
     if (isInside.get()) return;
+    if (shouldIgnoreCurrentRole(siteId)) return;
     isInside.set(true);
     try {
       TraceLogger.logAtomicInt(intValue, postOpValue, receiver, index, eventType, siteId);
@@ -228,6 +252,7 @@ public class CaptureMonitor {
 
   public static void logAtomicLong(long longValue, long postOpValue, Object receiver, int index, int eventType, long siteId) {
     if (isInside.get()) return;
+    if (shouldIgnoreCurrentRole(siteId)) return;
     isInside.set(true);
     try {
       TraceLogger.logAtomicLong(longValue, postOpValue, receiver, index, eventType, siteId);
@@ -238,6 +263,7 @@ public class CaptureMonitor {
 
   public static void logAtomicObj(Object objValue, Object postOpValue, Object receiver, int index, int eventType, long siteId) {
     if (isInside.get()) return;
+    if (shouldIgnoreCurrentRole(siteId)) return;
     isInside.set(true);
     try {
       TraceLogger.logAtomicObj(objValue, postOpValue, receiver, index, eventType, siteId);
@@ -249,6 +275,7 @@ public class CaptureMonitor {
   public static void logException(Object exception, long siteId) {
     if (isInside.get()) return;
     if (exception == null) return;
+    if (shouldIgnoreCurrentRole(siteId)) return;
     isInside.set(true);
     try {
       TraceLogger.logException(exception, siteId);
@@ -259,6 +286,7 @@ public class CaptureMonitor {
 
   public static void logArray(int eventType, Object array, int index, long siteId) {
     if (isInside.get() || array == null) return;
+    if (shouldIgnoreCurrentRole(siteId)) return;
     isInside.set(true);
     try {
       long tid = Thread.currentThread().getId();
@@ -308,6 +336,7 @@ public class CaptureMonitor {
 
   public static void endAtomicCaptureInt(int returnValue, Object receiver, int index, int eventType, long siteId) {
     try {
+      if (shouldIgnoreCurrentRole(siteId)) return;
       isInside.set(true);
       try {
         // For RMW ops the return value may differ from the post-operation cell value
@@ -331,6 +360,7 @@ public class CaptureMonitor {
 
   public static void endAtomicCaptureLong(long returnValue, Object receiver, int index, int eventType, long siteId) {
     try {
+      if (shouldIgnoreCurrentRole(siteId)) return;
       isInside.set(true);
       try { 
         long postOpValue = returnValue;
@@ -351,6 +381,7 @@ public class CaptureMonitor {
 
   public static void endAtomicCaptureObj(Object returnValue, Object receiver, int index, int eventType, long siteId) {
     try {
+      if (shouldIgnoreCurrentRole(siteId)) return;
       isInside.set(true);
       try { 
         Object postOpValue = returnValue;
@@ -918,6 +949,7 @@ public class CaptureMonitor {
 
   public static void logNondetInt(int value, long siteId) {
     if (isInside.get()) return;
+    if (shouldIgnoreCurrentRole(siteId)) return;
     isInside.set(true);
     try {
       TraceLogger.logNondetInt(value, siteId);
@@ -928,6 +960,7 @@ public class CaptureMonitor {
 
   public static void logNondetFloat(float value, long siteId) {
     if (isInside.get()) return;
+    if (shouldIgnoreCurrentRole(siteId)) return;
     isInside.set(true);
     try {
       TraceLogger.logNondetFloat(value, siteId);
@@ -938,6 +971,7 @@ public class CaptureMonitor {
 
   public static void logNondetLong(long value, long siteId) {
     if (isInside.get()) return;
+    if (shouldIgnoreCurrentRole(siteId)) return;
     isInside.set(true);
     try {
       TraceLogger.logNondetLong(value, siteId);
@@ -948,6 +982,7 @@ public class CaptureMonitor {
 
   public static void logNondetDouble(double value, long siteId) {
     if (isInside.get()) return;
+    if (shouldIgnoreCurrentRole(siteId)) return;
     isInside.set(true);
     try {
       TraceLogger.logNondetDouble(value, siteId);

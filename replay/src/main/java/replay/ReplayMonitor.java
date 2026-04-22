@@ -23,6 +23,7 @@ import java.util.concurrent.locks.Lock;
  */
 public class ReplayMonitor {
     private static final ThreadLocal<Boolean> isInside = ThreadLocal.withInitial(() -> false);
+    private static final ThreadLocal<Boolean> atomicReplayActive = ThreadLocal.withInitial(() -> false);
 
     // ---- Sync events (monitor enter/exit, thread lifecycle, wait/notify, park/unpark) ----
 
@@ -527,7 +528,7 @@ public class ReplayMonitor {
                                         boolean isVolatile, boolean isStatic,
                                         String fieldName, String ownerName) {
         if (isInside.get()) {
-            try { return findField(ownerName, fieldName).getInt(owner); }
+            try { return readIntField(findField(ownerName, fieldName), owner); }
             catch (ReflectiveOperationException e) { return 0; }
         }
         isInside.set(true);
@@ -535,7 +536,7 @@ public class ReplayMonitor {
             long tid = Thread.currentThread().getId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) {
-                try { return findField(ownerName, fieldName).getInt(owner); }
+                try { return readIntField(findField(ownerName, fieldName), owner); }
                 catch (ReflectiveOperationException e) { return 0; }
             }
 
@@ -551,13 +552,7 @@ public class ReplayMonitor {
             int[] result = new int[1];
             ReplayCoordinator.awaitTurn(roleId, packedType, birthId, fieldId, () -> {
                 try {
-                    java.lang.reflect.Field f = findField(ownerName, fieldName);
-                    Class<?> t = f.getType();
-                    if      (t == int.class)     result[0] = f.getInt(owner);
-                    else if (t == boolean.class) result[0] = f.getBoolean(owner) ? 1 : 0;
-                    else if (t == byte.class)    result[0] = f.getByte(owner);
-                    else if (t == short.class)   result[0] = f.getShort(owner);
-                    else if (t == char.class)    result[0] = f.getChar(owner);
+                    result[0] = readIntField(findField(ownerName, fieldName), owner);
                 } catch (ReflectiveOperationException e) { throw new RuntimeException(e); }
             });
             long seq = ReplayCoordinator.getLastMatchedSeq();
@@ -1342,19 +1337,22 @@ public class ReplayMonitor {
         else if (comp == char.class)    ((char[])   array)[index] = (char) value;
     }
 
+    private static int readIntField(java.lang.reflect.Field f, Object owner)
+            throws ReflectiveOperationException {
+        Class<?> t = f.getType();
+        if      (t == boolean.class) return f.getBoolean(owner) ? 1 : 0;
+        else if (t == byte.class)    return f.getByte(owner);
+        else if (t == short.class)   return f.getShort(owner);
+        else if (t == char.class)    return f.getChar(owner);
+        return f.getInt(owner);
+    }
+
     private static int readRawIntField(String ownerName, String fieldName, Object owner) {
         try {
-            java.lang.reflect.Field f = findField(ownerName, fieldName);
-            Class<?> t = f.getType();
-            if      (t == int.class)     return f.getInt(owner);
-            else if (t == boolean.class) return f.getBoolean(owner) ? 1 : 0;
-            else if (t == byte.class)    return f.getByte(owner);
-            else if (t == short.class)   return f.getShort(owner);
-            else if (t == char.class)    return f.getChar(owner);
+            return readIntField(findField(ownerName, fieldName), owner);
         } catch (ReflectiveOperationException e) {
             return 0;
         }
-        return 0;
     }
 
     private static float readRawFloatField(String ownerName, String fieldName, Object owner) {
@@ -1467,6 +1465,7 @@ public class ReplayMonitor {
     public static void beginAtomicReplay(Object receiver, int index, int eventType, long currentSiteId) {
         if (isInside.get()) return;
         isInside.set(true);
+        atomicReplayActive.set(false);
         try {
             long tid = Thread.currentThread().getId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
@@ -1488,6 +1487,7 @@ public class ReplayMonitor {
             }
             ReplayCoordinator.beginAtomicReplay(roleId, packedType, objSite, objCount,
                     IdentityMapper.getCreatorRoleId(receiverBirth), isArray ? index : Long.MIN_VALUE);
+            atomicReplayActive.set(true);
             // controlLock is now held — endAtomicReplay() will advance + release
         } finally {
             isInside.set(false); // clear before returning so native call proceeds normally
@@ -1499,6 +1499,10 @@ public class ReplayMonitor {
      * Must be called once after every successful beginAtomicReplay() call.
      */
     public static void endAtomicReplay() {
+        if (!atomicReplayActive.get()) {
+            return;
+        }
+        atomicReplayActive.set(false);
         ReplayCoordinator.endAtomicReplay();
     }
 

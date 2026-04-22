@@ -290,6 +290,9 @@ public class ReplayCoordinator {
             pendingRoles.remove(roleId);
             activeRoles.add(roleId);
             signalNext();
+        } else if (pendingRoles.remove(roleId)) {
+            activeRoles.add(roleId);
+            signalNext();
         }
     }
 
@@ -332,15 +335,13 @@ public class ReplayCoordinator {
                 && payloadMatches(expected, data);
         }
         // COLLECTION_OPs are used for many collection/iterator operations and
-        // allocation counting can differ due to lazy registration. Be tolerant
-        // of objCount mismatches for COLLECTION_OP: match by site (objSite)
-        // and creator role instead. This avoids spurious divergence when the
-        // same allocation site produced different per-role counts across runs.
+        // allocation identity can differ due to lazy registration of transient
+        // view/iterator wrappers inside library code. The ordering signal we
+        // care about is the role plus the collection-operation site payload.
+        // Do not require object identity for COLLECTION_OP.
         if (eventId == BinarySchema.Event.COLLECTION_OP) {
             return roleId      == (int) expected[1]
             && packedType  == (int) expected[2]
-            && objSite == expected[3]
-            && creatorMatches
             && payloadMatches(expected, data);
         }
 
@@ -455,6 +456,22 @@ public class ReplayCoordinator {
                     }
                     advanceIdxAndSignal();
                     return;
+                }
+
+                // Field reads in spin loops can appear with different fieldIds between
+                // capture and replay due to short-circuit evaluation differences (e.g.
+                // `a && b` skips `b` when `a` is false, so which fields get read varies
+                // with runtime values). When the same role presents a FIELD_READ at the
+                // same object site but a different fieldId, skip the stale trace event
+                // and re-anchor on the next synchronisation event.
+                if (roleId == (int) expected[1]
+                        && (expected[2] & 0xFF) == BinarySchema.Event.FIELD_READ
+                        && (packedType  & 0xFF) == BinarySchema.Event.FIELD_READ
+                        && objSite  == expected[3]
+                        && objCount == (int) expected[4]) {
+                    skippedCount.incrementAndGet();
+                    advanceIdxAndSignal();
+                    continue;
                 }
 
                 abortIfSameRoleDiverged(idx, expected, roleId, packedType, objSite, objCount, data, objCreatorRole);

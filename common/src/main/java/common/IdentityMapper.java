@@ -11,6 +11,18 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 // Uniquely identify objects that are on the heap across runs
 public class IdentityMapper {
+    /**
+     * Execution role semantics:
+     *   roleId > 0  : managed application/concurrency role, written to trace records.
+     *   roleId == 0 : global/static object coordinate only; never used as a live thread role.
+     *   roleId == -1: ignored execution context, never written as a trace role.
+     *
+     * BirthId.GLOBAL also uses creatorRoleId=-1 to identify static/global state.
+     * That is an object-coordinate sentinel, not a replayable execution role.
+     */
+    public static final int IGNORED_ROLE_ID = -1;
+    public static final int GLOBAL_ROLE_ID = 0;
+
     // --- ID Spaces ---
     // 0 is reserved for GLOBAL/STATIC scope
     private static final AtomicInteger roleCounter = new AtomicInteger(1);
@@ -132,7 +144,7 @@ public class IdentityMapper {
         }
 
         // Static constant representing the "Global/Static" birthplace
-        public static final BirthId GLOBAL = new Heap(-1, 0, 0);
+        public static final BirthId GLOBAL = new Heap(GLOBAL_ROLE_ID, 0, 0);
     }
 
     /**
@@ -148,15 +160,23 @@ public class IdentityMapper {
 
     private static int getRoleIdForThread(Thread thread, long tid, long siteId) {
         if (isIgnoredSite(siteId)) {
-            return -1;
+            return IGNORED_ROLE_ID;
         }
         if (shouldSkipThread(thread)) {
-            return -1; // sentinel: caller should skip logging for this thread
+            return IGNORED_ROLE_ID; // sentinel: caller should skip logging for this thread
         }
         Integer preAssigned = preAssignedRoles.get(tid);
         int roleId = tidToRoleId.computeIfAbsent(tid, k -> roleCounter.getAndIncrement());
         if (preAssigned != null) return preAssigned;
         return roleId;
+    }
+
+    public static boolean isIgnoredRole(int roleId) {
+        return roleId == IGNORED_ROLE_ID;
+    }
+
+    public static boolean shouldTraceCurrentThread(long siteId) {
+        return !isIgnoredRole(getRoleIdBySite(Thread.currentThread().getId(), siteId));
     }
 
     public static boolean shouldSkipThread(Thread thread) {
@@ -222,7 +242,7 @@ public class IdentityMapper {
             // Use per-role-per-site counters for the same reason as registerAllocation.
             long tid = Thread.currentThread().getId();
             int roleId = isIgnoredSite(currentInstructionSiteId)
-                    ? -1
+                    ? IGNORED_ROLE_ID
                     : getRoleIdBySite(tid, currentInstructionSiteId);
             AtomicInteger counter;
             if (roleId >= 0) {
@@ -274,16 +294,17 @@ public class IdentityMapper {
     }
 
     public static int getCreatorRoleId(BirthId birthId) {
-        return birthId instanceof BirthId.Heap ? ((BirthId.Heap) birthId).creatorRoleId : -1;
+        return birthId instanceof BirthId.Heap ? ((BirthId.Heap) birthId).creatorRoleId : IGNORED_ROLE_ID;
     }
 
     /**
      * Non-static heap objects created outside a managed role are runtime
-     * bookkeeping from the replay system's perspective.  Static fields also use
-     * creatorRole=-1 via BirthId.GLOBAL, so keep site 0 events replayable.
+     * bookkeeping from the replay system's perspective. Static/global
+     * coordinates use creatorRole=0 via BirthId.GLOBAL, so keep site 0 events
+     * replayable.
      */
     public static boolean shouldSkipObjectEvent(BirthId birthId, boolean isStatic) {
-        return !isStatic && birthId.siteId != 0 && getCreatorRoleId(birthId) == -1;
+        return !isStatic && birthId.siteId != 0 && getCreatorRoleId(birthId) == IGNORED_ROLE_ID;
     }
 
     public static void registerIgnoredSite(long siteId) {
@@ -311,7 +332,7 @@ public class IdentityMapper {
             return;
         }
         long tid = Thread.currentThread().getId();
-        int roleId = isIgnoredSite(siteId) ? -1 : getRoleIdBySite(tid, siteId);
+        int roleId = isIgnoredSite(siteId) ? IGNORED_ROLE_ID : getRoleIdBySite(tid, siteId);
         synchronized (objToId) {
             if (objToId.containsKey(obj)) return; // already registered
             AtomicInteger counter;
@@ -353,7 +374,7 @@ public class IdentityMapper {
         } else if (name.equals("org.codehaus.groovy.reflection.CachedConstructor")) {
             namespace = "groovy.CachedConstructor";
         }
-        return namespace == null ? null : new BirthId.Heap(-1,
+        return namespace == null ? null : new BirthId.Heap(IGNORED_ROLE_ID,
                 stableSiteId("stable-class-wrapper:" + namespace), 0);
     }
 
@@ -384,7 +405,7 @@ public class IdentityMapper {
      */
     public static void registerStableClassWrapper(Object obj, Class<?> wrappedClass, String namespace) {
         if (obj == null || wrappedClass == null || namespace == null) return;
-        BirthId.Heap id = new BirthId.Heap(-1,
+        BirthId.Heap id = new BirthId.Heap(IGNORED_ROLE_ID,
                 stableSiteId("stable-class-wrapper:" + namespace), 0);
         synchronized (objToId) {
             BirthId existing = objToId.get(obj);
@@ -424,7 +445,7 @@ public class IdentityMapper {
         Integer preAssigned = preAssignedRoles.get(tid);
         if (preAssigned != null) return preAssigned;
         Integer roleId = tidToRoleId.get(tid);
-        return roleId != null ? roleId : -1;
+        return roleId != null ? roleId : IGNORED_ROLE_ID;
     }
 
     public static void preAssignRole(long tid, int roleId) {

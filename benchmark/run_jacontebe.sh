@@ -13,10 +13,17 @@ OUT=output/capture-replay/jacontebe
 CAPTURE_AGENT=../capture/target/trace-capture-agent.jar
 REPLAY_AGENT=../replay/target/trace-replay-agent.jar
 
-# JaConTeBe uses old libraries (Mockito 1.9.5 / CGLib) that require Java 11.
-# The agents are compiled for Java 11 (class file version 55).
+# JaConTeBe should run on JDK 11.
 JAVA=/Library/Java/JavaVirtualMachines/amazon-corretto-11.jdk/Contents/Home/bin/java
 RUN_TIMEOUT=${JACONTEBE_TIMEOUT:-45s}
+JAVA_OPEN_FLAGS=(
+  --add-opens java.base/java.lang=ALL-UNNAMED
+  --add-opens java.base/java.util=ALL-UNNAMED
+  --add-opens java.base/java.io=ALL-UNNAMED
+  --add-opens java.base/java.util.concurrent=ALL-UNNAMED
+  --add-opens java.base/java.util.concurrent.atomic=ALL-UNNAMED
+  --add-opens java.base/java.lang.reflect=ALL-UNNAMED
+)
 mkdir -p $OUT
 
 # Returns true if any recognized concurrency bug signal appears in the output files.
@@ -106,10 +113,15 @@ while IFS= read -r bench; do
 
   echo "=== $bench ($target) ==="
 
+  # Each benchmark must produce its own fresh trace. Otherwise a leftover
+  # root trace.bin from a previous benchmark can be mistaken for this run.
+  rm -f trace.bin
+
   # Capture
   capture_rc=0
   $TIMEOUT_CMD "$RUN_TIMEOUT" $JAVA -ea \
     -javaagent:$CAPTURE_AGENT \
+    "${JAVA_OPEN_FLAGS[@]}" \
     -cp "$classpath" \
     "$target" \
     > "$dir/capture.stdout" 2> "$dir/capture.stderr" || capture_rc=$?
@@ -155,10 +167,22 @@ while IFS= read -r bench; do
     continue
   fi
 
+  # If capture completed normally but did not reproduce the bug, do not spend
+  # replay time on a trace that we already know is not the target schedule.
+  if [ "$capture_bug" != true ]; then
+    echo "No bug triggered — $bench" | tee "$dir/result.txt"
+    continue
+  fi
+
+  # Replay should consume the exact trace archived for this benchmark, even if
+  # some later step or earlier run touched the root trace.bin.
+  cp "$dir/trace.bin" trace.bin
+
   # Replay
   replay_rc=0
   $TIMEOUT_CMD "$RUN_TIMEOUT" $JAVA -ea \
     -javaagent:$REPLAY_AGENT \
+    "${JAVA_OPEN_FLAGS[@]}" \
     -cp "$classpath" \
     "$target" \
     > "$dir/replay.stdout" 2> "$dir/replay.stderr" || replay_rc=$?

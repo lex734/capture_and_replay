@@ -62,9 +62,122 @@ public class SyncTransformer implements ClassFileTransformer {
         });
     }
 
+    private static boolean isGroovyBootstrapClass(String className) {
+        return className.startsWith("org/codehaus/groovy/")
+                || className.startsWith("groovy/lang/")
+                || className.startsWith("groovy/util/")
+                || className.startsWith("groovyjarjarasm/");
+    }
+
+    private static boolean isLog4jBenchmarkClass(String className) {
+        return className.equals("org/apache/log4j/helpers/Test54325")
+                || className.equals("org/apache/log4j/Test38137")
+                || className.equals("org/apache/log4j/Test50463");
+    }
+
+    private static boolean isLog4jLibraryClass(String className) {
+        return className.startsWith("org/apache/log4j/")
+                && !isLog4jBenchmarkClass(className);
+    }
+
+    private static boolean isDependencyClass(String className) {
+        return className.startsWith("java/")
+                || className.startsWith("javax/")
+                || className.startsWith("jdk/")
+                || className.startsWith("sun/")
+                || className.startsWith("com/sun/")
+                || isGroovyBootstrapClass(className)
+                || isLog4jLibraryClass(className)
+                || className.startsWith("org/apache/tools/ant/")
+                || className.startsWith("org/apache/lucene/analysis/")
+                || className.startsWith("org/apache/lucene/index/IndexFileDeleter")
+                || className.startsWith("org/apache/lucene/index/ConcurrentMergeScheduler")
+                || className.startsWith("org/apache/lucene/util/_TestUtil293")
+                || className.startsWith("org/objectweb/asm/")
+                || className.startsWith("junit/")
+                || className.startsWith("capture/")
+                || className.startsWith("replay/")
+                || className.startsWith("common/")
+                || className.startsWith("instr/")
+                || className.startsWith("coring/")
+                || className.startsWith("edu/illinois/jacontebe/")
+                || className.startsWith("edu/illinois/jacontebe/monitors/");
+    }
+
     private static boolean isReplayIrrelevantGroovySite(String siteString) {
-        return siteString.startsWith("org/codehaus/groovy/reflection/")
-                || siteString.startsWith("org/codehaus/groovy/runtime/metaclass/");
+        int memberSep = siteString.indexOf('.');
+        String owner = memberSep >= 0 ? siteString.substring(0, memberSep) : siteString;
+        return owner.startsWith("org/codehaus/groovy/reflection/")
+                || owner.startsWith("org/codehaus/groovy/runtime/metaclass/")
+                || owner.startsWith("groovy/lang/Meta")
+                || (isGeneratedGroovyScriptClass(owner)
+                    && (siteString.contains(".<clinit>#")
+                        || siteString.contains("#throw_")));
+    }
+
+    private static boolean isGeneratedGroovyScriptClass(String className) {
+        int slash = className.lastIndexOf('/');
+        String simpleName = slash >= 0 ? className.substring(slash + 1) : className;
+        return simpleName.matches("Script\\d+(\\$.*)?");
+    }
+
+    private static boolean isGeneratedGroovyScriptSource(String sourceFile) {
+        return sourceFile != null && sourceFile.matches("Script\\d+\\.groovy");
+    }
+
+    private static boolean isGeneratedGroovyScriptOwned(String className, String sourceFile) {
+        return isGeneratedGroovyScriptClass(className)
+                || isGeneratedGroovyScriptSource(sourceFile);
+    }
+
+    private static boolean shouldInstrumentClinit(String className, String sourceFile) {
+        return !isDependencyClass(className)
+                && !isGeneratedGroovyScriptOwned(className, sourceFile);
+    }
+
+    private static boolean shouldSkipBootstrapFieldTraffic(String currentClass, String fieldOwner) {
+        return isGroovyBootstrapClass(currentClass) && isGroovyBootstrapClass(fieldOwner);
+    }
+
+    private static boolean shouldSkipGeneratedScriptFieldTraffic(String currentClass, String currentSourceFile,
+                                                                 String fieldOwner) {
+        return isGeneratedGroovyScriptOwned(currentClass, currentSourceFile)
+                && (isGeneratedGroovyScriptClass(fieldOwner) || isGroovyBootstrapClass(fieldOwner));
+    }
+
+    private static boolean shouldSkipDependencyFieldTraffic(String currentClass, String fieldOwner) {
+        return isDependencyClass(currentClass) || isDependencyClass(fieldOwner);
+    }
+
+    private static boolean shouldSkipGroovyServletInitFieldTraffic(String currentClass, String methodName) {
+        return currentClass.startsWith("groovy/servlet/")
+                && ("<init>".equals(methodName) || "<clinit>".equals(methodName));
+    }
+
+    private static boolean shouldSkipGroovyServletTraffic(String currentClass) {
+        return currentClass.startsWith("groovy/servlet/");
+    }
+
+    private static boolean shouldSkipLucene1544SetupTraffic(String currentClass, String methodName) {
+        return currentClass.equals("org/apache/lucene/Test1544")
+                && ("setUp".equals(methodName)
+                    || "<init>".equals(methodName)
+                    || "tearDown".equals(methodName)
+                    || "createIndex".equals(methodName)
+                    || "getWriter".equals(methodName));
+    }
+
+    private static boolean shouldSkipLuceneBootstrapTraffic(String currentClass, String methodName) {
+        return (currentClass.equals("org/apache/lucene/index/IndexWriter")
+                    && ("<init>".equals(methodName) || "init".equals(methodName)))
+                || (currentClass.equals("org/apache/lucene/index/IndexFileDeleter")
+                    && "<init>".equals(methodName));
+    }
+
+    private static boolean shouldSkipExceptionTraffic(String currentClass, String sourceFile) {
+        return isGeneratedGroovyScriptOwned(currentClass, sourceFile)
+                || shouldSkipGroovyServletTraffic(currentClass)
+                || isDependencyClass(currentClass);
     }
 
     public static void resetSiteRegistry() {
@@ -286,6 +399,7 @@ public class SyncTransformer implements ClassFileTransformer {
         private final String monitorClass;
         private final String monitorMethod;
         private final boolean isReplay = "REPLAY".equals(System.getProperty("tool.mode"));
+        private String sourceFile;
 
         public SyncClassVisitor(ClassVisitor cv, String className, ClassLoader loader) {
             super(Opcodes.ASM9, cv);
@@ -308,6 +422,12 @@ public class SyncTransformer implements ClassFileTransformer {
         }
 
         @Override
+        public void visitSource(String source, String debug) {
+            this.sourceFile = source;
+            super.visitSource(source, debug);
+        }
+
+        @Override
         public MethodVisitor visitMethod(int access, String name, String descriptor, String signature,
                 String[] exceptions) {
             boolean isStaticMethod = (access & Opcodes.ACC_STATIC) != 0;
@@ -317,13 +437,16 @@ public class SyncTransformer implements ClassFileTransformer {
             MethodVisitor mv = super.visitMethod(emittedAccess, name, descriptor, signature, exceptions);
 
             if (name.equals("<clinit>")) {
-                MethodVisitor synced = new SyncMethodVisitor(emittedAccess, descriptor, mv, name, name, loader,
+                if (!SyncTransformer.shouldInstrumentClinit(className, sourceFile)) {
+                    return new JSRInlinerAdapter(mv, emittedAccess, name, descriptor, signature, exceptions);
+                }
+                MethodVisitor synced = new SyncMethodVisitor(emittedAccess, descriptor, mv, className, name, sourceFile, loader,
                         isSynchronizedMethod, isStaticMethod);
                 MethodVisitor clinit = new ClinitMethodVisitor(synced, className, monitorClass, monitorMethod);
                 return new JSRInlinerAdapter(clinit, emittedAccess, name, descriptor, signature, exceptions);
             }
 
-            MethodVisitor synced = new SyncMethodVisitor(emittedAccess, descriptor, mv, className, name, loader,
+            MethodVisitor synced = new SyncMethodVisitor(emittedAccess, descriptor, mv, className, name, sourceFile, loader,
                     isSynchronizedMethod, isStaticMethod);
             return new JSRInlinerAdapter(synced, emittedAccess, name, descriptor, signature, exceptions);
         }
@@ -333,6 +456,7 @@ public class SyncTransformer implements ClassFileTransformer {
         private final String className;
         private final String methodName;
         private final String methodDescriptor;
+        private final String sourceFile;
         private final ClassLoader loader;
         private int instructionId = 0;
 
@@ -362,6 +486,37 @@ public class SyncTransformer implements ClassFileTransformer {
 
         private boolean isArrayStore(int opcode) {
             return opcode >= Opcodes.IASTORE && opcode <= Opcodes.SASTORE;
+        }
+
+        private boolean shouldSkipNonBenchmarkArrayTraffic(int opcode) {
+            if (!SyncTransformer.isGeneratedGroovyScriptOwned(className, sourceFile)
+                    && !SyncTransformer.isDependencyClass(className)
+                    && !SyncTransformer.isGroovyBootstrapClass(className)
+                    && !SyncTransformer.shouldSkipGroovyServletTraffic(className)
+                    && !SyncTransformer.shouldSkipLucene1544SetupTraffic(className, methodName)
+                    && !SyncTransformer.shouldSkipLuceneBootstrapTraffic(className, methodName)) {
+                return false;
+            }
+            return isArrayLoad(opcode)
+                    || isArrayStore(opcode)
+                    || opcode == Opcodes.LALOAD
+                    || opcode == Opcodes.DALOAD
+                    || opcode == Opcodes.LASTORE
+                    || opcode == Opcodes.DASTORE;
+        }
+
+        private boolean shouldSkipCollectionTraffic() {
+            return SyncTransformer.isGeneratedGroovyScriptOwned(className, sourceFile)
+                    || SyncTransformer.isDependencyClass(className)
+                    || SyncTransformer.shouldSkipGroovyServletTraffic(className)
+                    || SyncTransformer.shouldSkipGroovyServletInitFieldTraffic(className, methodName)
+                    || SyncTransformer.shouldSkipLucene1544SetupTraffic(className, methodName)
+                    || SyncTransformer.shouldSkipLuceneBootstrapTraffic(className, methodName);
+        }
+
+        private boolean shouldSkipAtomicTraffic() {
+            return SyncTransformer.isGeneratedGroovyScriptOwned(className, sourceFile)
+                    || SyncTransformer.isDependencyClass(className);
         }
 
         // ---- Allocation tracking ----
@@ -486,11 +641,12 @@ public class SyncTransformer implements ClassFileTransformer {
         }
 
         public SyncMethodVisitor(int access, String descriptor, MethodVisitor mv, String className, String methodName,
-                ClassLoader loader, boolean isSynchronizedMethod, boolean isStaticMethod) {
+                String sourceFile, ClassLoader loader, boolean isSynchronizedMethod, boolean isStaticMethod) {
             super(Opcodes.ASM9, access, descriptor, mv);
             this.className = className;
             this.methodName = methodName;
             this.methodDescriptor = descriptor;
+            this.sourceFile = sourceFile;
             this.loader = loader;
             this.isSynchronizedMethod = isSynchronizedMethod;
             this.isStaticMethod = isStaticMethod;
@@ -503,7 +659,7 @@ public class SyncTransformer implements ClassFileTransformer {
         @Override
         public void visitCode() {
             super.visitCode();
-            if (isSynchronizedMethod) {
+            if (isSynchronizedMethod && !SyncTransformer.isDependencyClass(className)) {
                 emitSynchronizedMethodSync(1, "sync_enter");
             }
         }
@@ -523,24 +679,36 @@ public class SyncTransformer implements ClassFileTransformer {
                 super.visitInsn(opcode);
                 return;
             }
+            if (shouldSkipNonBenchmarkArrayTraffic(opcode)) {
+                super.visitInsn(opcode);
+                return;
+            }
             // Handle explicit/implicit throws — log before the throw so the
             // coordinator sees EXCEPTION_THROW in the right sequence position.
             if (opcode == Opcodes.ATHROW) {
-                String logMethod = isReplay ? "checkException" : "logException";
-                String siteString = className + "." + methodName + "#throw_" + instructionId++;
-                long siteId = SyncTransformer.registerSiteId(siteString);
-                // Stack: [..., exception]
-                mv.visitInsn(Opcodes.DUP);       // [..., exception, exception]
-                mv.visitLdcInsn(siteId);          // [..., exception, exception, siteId]
-                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, logMethod,
-                        "(Ljava/lang/Object;J)V", false);
-                // Stack restored to [..., exception]; ATHROW executes below via super.visitInsn
+                if (!SyncTransformer.shouldSkipExceptionTraffic(className, sourceFile)) {
+                    String logMethod = isReplay ? "checkException" : "logException";
+                    String siteString = className + "." + methodName + "#throw_" + instructionId++;
+                    long siteId = SyncTransformer.registerSiteId(siteString);
+                    // Stack: [..., exception]
+                    mv.visitInsn(Opcodes.DUP);       // [..., exception, exception]
+                    mv.visitLdcInsn(siteId);          // [..., exception, exception, siteId]
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, logMethod,
+                            "(Ljava/lang/Object;J)V", false);
+                    // Stack restored to [..., exception]; ATHROW executes below via super.visitInsn
+                }
             }
-            if (isSynchronizedMethod && ((opcode >= Opcodes.IRETURN && opcode <= Opcodes.RETURN) || opcode == Opcodes.ATHROW)) {
+            if (isSynchronizedMethod
+                    && !SyncTransformer.isDependencyClass(className)
+                    && ((opcode >= Opcodes.IRETURN && opcode <= Opcodes.RETURN) || opcode == Opcodes.ATHROW)) {
                 emitSynchronizedMethodSync(2, "sync_exit");
             }
             // Handle Intrinsic Locks
             if (opcode == Opcodes.MONITORENTER || opcode == Opcodes.MONITOREXIT) {
+                if (SyncTransformer.isDependencyClass(className)) {
+                    super.visitInsn(opcode);
+                    return;
+                }
                 String monitorMethod = isReplay ? "checkSync" : "logSync";
                 int eventType = (opcode == Opcodes.MONITORENTER) ? 1 : 2;
                 String siteString = className + "." + methodName + "#" + instructionId++;
@@ -554,10 +722,6 @@ public class SyncTransformer implements ClassFileTransformer {
                 // Matches CaptureMonitor.logSync(int type, Object lock, int siteId)
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, monitorMethod,
                         "(ILjava/lang/Object;J)V", false);
-                if (isReplay) {
-                    mv.visitInsn(Opcodes.POP);
-                    return;
-                }
                 // Handle long/double array operations (category-2 values take 2 stack slots)
             } else if (opcode == Opcodes.LASTORE || opcode == Opcodes.DASTORE || opcode == Opcodes.LALOAD
                     || opcode == Opcodes.DALOAD) {
@@ -967,7 +1131,7 @@ public class SyncTransformer implements ClassFileTransformer {
                 mv.visitLdcInsn(siteId);
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, monitorMethod,
                         "(Ljava/lang/Object;J)V", false);
-            } else if (owner.equals("java/util/Vector")) {
+            } else if (owner.equals("java/util/Vector") && !shouldSkipCollectionTraffic()) {
                 if (name.equals("size") && descriptor.equals("()I")) {
                     mv.visitLdcInsn(siteId);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "vectorSize",
@@ -984,7 +1148,7 @@ public class SyncTransformer implements ClassFileTransformer {
                             "(Ljava/util/Vector;J)V", false);
                     return;
                 }
-            } else if (owner.equals("java/util/Map")) {
+            } else if (owner.equals("java/util/Map") && !shouldSkipCollectionTraffic()) {
                 if (name.equals("keySet") && descriptor.equals("()Ljava/util/Set;")) {
                     mv.visitLdcInsn(siteId);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "mapKeySet",
@@ -1011,14 +1175,14 @@ public class SyncTransformer implements ClassFileTransformer {
                             "(Ljava/util/Map;J)V", false);
                     return;
                 }
-            } else if (owner.equals("java/util/Set")) {
+            } else if (owner.equals("java/util/Set") && !shouldSkipCollectionTraffic()) {
                 if (name.equals("iterator") && descriptor.equals("()Ljava/util/Iterator;")) {
                     mv.visitLdcInsn(siteId);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "setIterator",
                             "(Ljava/util/Set;J)Ljava/util/Iterator;", false);
                     return;
                 }
-            } else if (owner.equals("java/util/Iterator")) {
+            } else if (owner.equals("java/util/Iterator") && !shouldSkipCollectionTraffic()) {
                 if (name.equals("hasNext") && descriptor.equals("()Z")) {
                     mv.visitLdcInsn(siteId);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "iteratorHasNext",
@@ -1108,6 +1272,10 @@ public class SyncTransformer implements ClassFileTransformer {
             // Detect atomic classes — save receiver + args BEFORE the call,
             // execute the call, then log with full context (WHERE + WHAT).
             if (owner.startsWith("java/util/concurrent/atomic/Atomic")) {
+                if (shouldSkipAtomicTraffic()) {
+                    super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
+                    return;
+                }
                 int atomicEventType = classifyAtomicOp(name);
                 if (atomicEventType != -1) {
                     boolean isArrayAtomic = isAtomicArrayClass(owner);
@@ -1548,6 +1716,34 @@ public class SyncTransformer implements ClassFileTransformer {
                 super.visitFieldInsn(opcode, owner, name, descriptor);
                 return;
             }
+            if (SyncTransformer.shouldSkipLuceneBootstrapTraffic(className, methodName)) {
+                super.visitFieldInsn(opcode, owner, name, descriptor);
+                return;
+            }
+            if (SyncTransformer.shouldSkipLucene1544SetupTraffic(className, methodName)) {
+                super.visitFieldInsn(opcode, owner, name, descriptor);
+                return;
+            }
+            if (SyncTransformer.shouldSkipGroovyServletTraffic(className)) {
+                super.visitFieldInsn(opcode, owner, name, descriptor);
+                return;
+            }
+            if (SyncTransformer.shouldSkipGroovyServletInitFieldTraffic(className, methodName)) {
+                super.visitFieldInsn(opcode, owner, name, descriptor);
+                return;
+            }
+            if (SyncTransformer.shouldSkipDependencyFieldTraffic(className, owner)) {
+                super.visitFieldInsn(opcode, owner, name, descriptor);
+                return;
+            }
+            if (SyncTransformer.shouldSkipBootstrapFieldTraffic(className, owner)) {
+                super.visitFieldInsn(opcode, owner, name, descriptor);
+                return;
+            }
+            if (SyncTransformer.shouldSkipGeneratedScriptFieldTraffic(className, sourceFile, owner)) {
+                super.visitFieldInsn(opcode, owner, name, descriptor);
+                return;
+            }
             // Skip compiler-generated synthetic fields (e.g. $assertionsDisabled) and
             // all final fields. Java 21 forbids writing final fields via reflection, so
             // routing them through the monitor crashes class init. Final fields also
@@ -1556,8 +1752,7 @@ public class SyncTransformer implements ClassFileTransformer {
                 super.visitFieldInsn(opcode, owner, name, descriptor);
                 return;
             }
-            if ((opcode == Opcodes.PUTFIELD || opcode == Opcodes.PUTSTATIC)
-                    && SyncTransformer.isFieldFinal(loader, owner, name)) {
+            if (SyncTransformer.isFieldFinal(loader, owner, name)) {
                 super.visitFieldInsn(opcode, owner, name, descriptor);
                 return;
             }

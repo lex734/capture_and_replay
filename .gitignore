@@ -8,3 +8,9 @@ target/
 *.html
 *.pyc
 *.hprof
+*.dat
+*.groovy
+*.lck
+*.cfs
+*.gen
+*.ctrl

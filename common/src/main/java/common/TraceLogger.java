@@ -20,8 +20,9 @@ public class TraceLogger {
     public static void logSync(int eventType, Object lock, long currentSiteId) {
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-        if (roleId == -1) return;
+        if (IdentityMapper.isIgnoredRole(roleId)) return;
         BirthId birthId = IdentityMapper.getBirthId(lock, null, currentSiteId);
+        if (IdentityMapper.shouldSkipObjectEvent(birthId, false)) return;
         String eventName = getEventName(eventType);
 
         // For THREAD_START, eagerly pre-assign the child thread's roleId and store it
@@ -29,7 +30,7 @@ public class TraceLogger {
         // events must be ordered AFTER the parent's THREAD_START, not before.
         if (eventType == BinarySchema.Event.THREAD_START && lock instanceof Thread) {
             int childRoleId = IdentityMapper.getRoleIdForThread((Thread) lock, currentSiteId);
-            if (childRoleId == -1) return;
+            if (IdentityMapper.isIgnoredRole(childRoleId)) return;
             long seq = nextSeq();
             // System.out.println(String.format(
                     // "[SYNC]   seq=%d role=%d  %-24s lock=%s  site=%d  childRole=%d",
@@ -60,11 +61,12 @@ public class TraceLogger {
 
         // 2. Get the role (Who is doing this)
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-        if (roleId == -1) return;
+        if (IdentityMapper.isIgnoredRole(roleId)) return;
 
         // 3. Get the BirthId
         // For statics (owner == null), IdentityMapper returns BirthId.GLOBAL (0, 0)
         BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
+        if (IdentityMapper.shouldSkipObjectEvent(birthId, isStatic)) return;
 
         // 4. Get the FieldId
         // Consistent ID for the same field across all threads
@@ -98,7 +100,7 @@ public class TraceLogger {
         long tid = Thread.currentThread().getId();
 
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-        if (roleId == -1) return;
+        if (IdentityMapper.isIgnoredRole(roleId)) return;
 
         BirthId birthId = IdentityMapper.getBirthId(array, null, currentSiteId);
         if (IdentityMapper.shouldSkipObjectEvent(birthId, false)) return;
@@ -151,9 +153,10 @@ public class TraceLogger {
     public static void logAtomicInt(int returnValue, int postOpValue, Object receiver, int index, int eventType, long currentSiteId) {
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-        if (roleId == -1) return;
+        if (IdentityMapper.isIgnoredRole(roleId)) return;
 
         BirthId birthId = IdentityMapper.getBirthId(receiver, null, currentSiteId);
+        if (IdentityMapper.shouldSkipObjectEvent(birthId, false)) return;
         boolean isArray = (index >= 0);
 
         long seq = nextSeq();
@@ -190,9 +193,10 @@ public class TraceLogger {
     public static void logAtomicLong(long longValue, long postOpValue, Object receiver, int index, int eventType, long currentSiteId) {
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-        if (roleId == -1) return;
+        if (IdentityMapper.isIgnoredRole(roleId)) return;
 
         BirthId birthId = IdentityMapper.getBirthId(receiver, null, currentSiteId);
+        if (IdentityMapper.shouldSkipObjectEvent(birthId, false)) return;
         boolean isArray = (index >= 0);
 
         long seq = nextSeq();
@@ -229,9 +233,10 @@ public class TraceLogger {
     public static void logAtomicObj(Object objValue, Object postOpValue, Object receiver, int index, int eventType, long currentSiteId) {
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-        if (roleId == -1) return;
+        if (IdentityMapper.isIgnoredRole(roleId)) return;
 
         BirthId receiverBirth = IdentityMapper.getBirthId(receiver, null, currentSiteId);
+        if (IdentityMapper.shouldSkipObjectEvent(receiverBirth, false)) return;
         BirthId valueBirth = IdentityMapper.getBirthId(objValue, null, currentSiteId);
         BirthId postOpValueBirth = IdentityMapper.getBirthId(postOpValue, null, currentSiteId);
         boolean isArray = (index >= 0);
@@ -285,10 +290,10 @@ public class TraceLogger {
      * The call site (siteId) is the unique key for matching during replay.
      */
     public static void logNondetInt(int value, long siteId) {
-        long seq = nextSeq();
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
-        if (roleId == -1) return;
+        if (IdentityMapper.isIgnoredRole(roleId)) return;
+        long seq = nextSeq();
         int packedType = BinarySchema.packType(BinarySchema.Event.NONDETERMINISTIC_INT, BinarySchema.Flags.NONE);
         System.out.println(String.format(
                 "[NONDET] epoch=%d seq=%d role=%d  nondet_int=%d  site=%d",
@@ -300,10 +305,10 @@ public class TraceLogger {
      * Logs a nondeterministic float return value (stored as raw int bits).
      */
     public static void logNondetFloat(float value, long siteId) {
-        long seq = nextSeq();
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
-        if (roleId == -1) return;
+        if (IdentityMapper.isIgnoredRole(roleId)) return;
+        long seq = nextSeq();
         int bits = Float.floatToRawIntBits(value);
         int packedType = BinarySchema.packType(BinarySchema.Event.NONDETERMINISTIC_INT, BinarySchema.Flags.NONE);
         System.out.println(String.format(
@@ -317,10 +322,10 @@ public class TraceLogger {
      * Stored as: objSite=siteId, objCount=0, data1=value.
      */
     public static void logNondetLong(long value, long siteId) {
-        long seq = nextSeq();
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
-        if (roleId == -1) return;
+        if (IdentityMapper.isIgnoredRole(roleId)) return;
+        long seq = nextSeq();
         int packedType = BinarySchema.packType(BinarySchema.Event.NONDETERMINISTIC_LONG, BinarySchema.Flags.NONE);
         System.out.println(String.format(
                 "[NONDET] epoch=%d seq=%d role=%d  nondet_long=%d  site=%d",
@@ -332,10 +337,10 @@ public class TraceLogger {
      * Logs a nondeterministic double return value (stored as raw long bits).
      */
     public static void logNondetDouble(double value, long siteId) {
-        long seq = nextSeq();
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
-        if (roleId == -1) return;
+        if (IdentityMapper.isIgnoredRole(roleId)) return;
+        long seq = nextSeq();
         long bits = Double.doubleToRawLongBits(value);
         int packedType = BinarySchema.packType(BinarySchema.Event.NONDETERMINISTIC_LONG, BinarySchema.Flags.NONE);
         System.out.println(String.format(
@@ -347,9 +352,10 @@ public class TraceLogger {
     public static void logException(Object exception, long siteId) {
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
-        if (roleId == -1) return;
+        if (IdentityMapper.isIgnoredRole(roleId)) return;
 
         BirthId birthId = IdentityMapper.getBirthId(exception, null, siteId);
+        if (IdentityMapper.shouldSkipObjectEvent(birthId, false)) return;
         long seq = nextSeq();
         String className = exception.getClass().getName();
         // System.out.println(String.format(

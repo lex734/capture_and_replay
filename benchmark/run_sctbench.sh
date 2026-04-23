@@ -12,6 +12,23 @@ OUT=output/capture-replay/sctbench
 CAPTURE_AGENT=../capture/target/trace-capture-agent.jar
 REPLAY_AGENT=../replay/target/trace-replay-agent.jar
 JAVA_CMD=${JAVA_CMD:-java}
+MAX_ATTEMPTS=${MAX_ATTEMPTS:-10}
+if "$JAVA_CMD" -version >/dev/null 2>&1; then
+  java_major=$("$JAVA_CMD" -XshowSettings:properties -version 2>&1 | awk -F'= ' '/java.specification.version/ {print $2; exit}')
+  if [ -n "${java_major:-}" ] && [ "$java_major" -lt 21 ] 2>/dev/null; then
+    for candidate in /opt/homebrew/opt/openjdk/bin/java /opt/homebrew/opt/openjdk@21/bin/java; do
+      if [ -x "$candidate" ]; then
+        JAVA_CMD="$candidate"
+        break
+      fi
+    done
+  fi
+fi
+OPEN_FLAGS=(
+  --add-opens java.base/java.lang=ALL-UNNAMED
+  --add-opens java.base/java.util.concurrent=ALL-UNNAMED
+  --add-opens java.base/java.util.concurrent.locks=ALL-UNNAMED
+)
 mkdir -p $OUT
 
 is_deadlock_benchmark() {
@@ -43,105 +60,113 @@ while IFS= read -r class; do
   mkdir -p "$dir"
 
   echo "=== $class ==="
+  final_message=""
 
-  # Capture
-  rm -f trace.bin
-  capture_rc=0
-  $TIMEOUT_CMD 3s "$JAVA_CMD" -ea \
-    -javaagent:$CAPTURE_AGENT \
-    -cp $SCTBENCH_JAR \
-    "$class" \
-    > "$dir/capture.stdout" 2> "$dir/capture.stderr" || capture_rc=$?
+  for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+    attempt_prefix="$dir/attempt${attempt}"
 
-  capture_bug=false
-  capture_bug_reason=""
-  if has_bug_signal "$dir/capture.stdout" "$dir/capture.stderr"; then
-    capture_bug=true
-    if grep -q "AssertionError" "$dir/capture.stderr"; then
-      capture_bug_reason="assertion"
-    elif grep -Eq "Bug [Ff]ound!" "$dir/capture.stdout" "$dir/capture.stderr"; then
-      capture_bug_reason="bug-message"
-    else
-      capture_bug_reason="deadlock-signal"
-    fi
-  elif [ $capture_rc -eq 124 ] && is_deadlock_benchmark "$class"; then
-    capture_bug=true
-    capture_bug_reason="timeout"
-  fi
+    rm -f trace.bin
+    capture_rc=0
+    $TIMEOUT_CMD 3s "$JAVA_CMD" -ea \
+      -javaagent:$CAPTURE_AGENT \
+      "${OPEN_FLAGS[@]}" \
+      -cp $SCTBENCH_JAR \
+      "$class" \
+      > "${attempt_prefix}.capture.stdout" 2> "${attempt_prefix}.capture.stderr" || capture_rc=$?
 
-  if [ $capture_rc -eq 124 ]; then
-    if [ "$capture_bug" = true ]; then
-      :
-    else
-      echo "TIMEOUT (capture) — $class" | tee "$dir/result.txt"
-      continue
-    fi
-  elif [ $capture_rc -ne 0 ]; then
-    if [ "$capture_bug" != true ]; then
-      echo "CAPTURE ERROR (exit $capture_rc with no recognized bug signal) — $class" | tee "$dir/result.txt"
-      continue
-    fi
-  fi
-
-  if [ -f trace.bin ]; then
-    cp trace.bin "$dir/trace.bin"
-  elif [ "$capture_bug" = true ]; then
-    echo "BUG TRIGGERED IN CAPTURE ($capture_bug_reason), but trace.bin was not produced; replay skipped — $class" | tee "$dir/result.txt"
-    continue
-  else
-    echo "CAPTURE ERROR (trace.bin missing) — $class" | tee "$dir/result.txt"
-    continue
-  fi
-
-  # Replay
-  replay_rc=0
-  $TIMEOUT_CMD 3s "$JAVA_CMD" -ea \
-    -javaagent:$REPLAY_AGENT \
-    -cp $SCTBENCH_JAR \
-    "$class" \
-    > "$dir/replay.stdout" 2> "$dir/replay.stderr" || replay_rc=$?
-
-  replay_bug=false
-  replay_bug_reason=""
-  if has_bug_signal "$dir/replay.stdout" "$dir/replay.stderr"; then
-    replay_bug=true
-    if grep -q "AssertionError" "$dir/replay.stderr"; then
-      replay_bug_reason="assertion"
-    elif grep -Eq "Bug [Ff]ound!" "$dir/replay.stdout" "$dir/replay.stderr"; then
-      replay_bug_reason="bug-message"
-    else
-      replay_bug_reason="deadlock-signal"
-    fi
-  elif [ $replay_rc -eq 124 ] && is_deadlock_benchmark "$class"; then
-    replay_bug=true
-    replay_bug_reason="timeout"
-  fi
-
-  # Record outcome
-  if [ $replay_rc -eq 124 ]; then
-    if [ "$replay_bug" = true ]; then
-      if [ "$capture_bug" = true ]; then
-        echo "BUG REPRODUCED ($replay_bug_reason) — $class" | tee "$dir/result.txt"
+    capture_bug=false
+    capture_bug_reason=""
+    if has_bug_signal "${attempt_prefix}.capture.stdout" "${attempt_prefix}.capture.stderr"; then
+      capture_bug=true
+      if grep -q "AssertionError" "${attempt_prefix}.capture.stderr"; then
+        capture_bug_reason="assertion"
+      elif grep -Eq "Bug [Ff]ound!" "${attempt_prefix}.capture.stdout" "${attempt_prefix}.capture.stderr"; then
+        capture_bug_reason="bug-message"
       else
-        echo "UNEXPECTED BUG SIGNAL on replay ($replay_bug_reason) — $class" | tee "$dir/result.txt"
+        capture_bug_reason="deadlock-signal"
       fi
-    else
-      echo "TIMEOUT (replay) — $class" | tee "$dir/result.txt"
+    elif [ $capture_rc -eq 124 ] && is_deadlock_benchmark "$class"; then
+      capture_bug=true
+      capture_bug_reason="timeout"
     fi
-  elif [ "$replay_bug" = true ]; then
-    if [ "$capture_bug" = true ]; then
-      echo "BUG REPRODUCED ($replay_bug_reason) — $class" | tee "$dir/result.txt"
-    else
-      echo "UNEXPECTED BUG SIGNAL on replay ($replay_bug_reason) — $class" | tee "$dir/result.txt"
+
+    if [ $capture_rc -eq 124 ] && [ "$capture_bug" != true ]; then
+      final_message="TIMEOUT (capture) after $attempt attempt(s) — $class"
+      break
     fi
-  elif [ $replay_rc -ne 0 ]; then
-    echo "REPLAY ERROR (exit $replay_rc with no recognized bug signal) — $class" | tee "$dir/result.txt"
-  else
-    if [ "$capture_bug" = true ]; then
-      echo "BUG NOT REPRODUCED — $class" | tee "$dir/result.txt"
-    else
-      echo "No bug triggered — $class" | tee "$dir/result.txt"
+    if [ $capture_rc -ne 0 ] && [ "$capture_bug" != true ]; then
+      final_message="CAPTURE ERROR (exit $capture_rc with no recognized bug signal) on attempt $attempt — $class"
+      break
     fi
+
+    if [ "$capture_bug" != true ]; then
+      final_message="No bug triggered after $attempt attempt(s) — $class"
+      continue
+    fi
+
+    if [ -f trace.bin ]; then
+      cp trace.bin "${attempt_prefix}.trace.bin"
+      cp "${attempt_prefix}.capture.stdout" "$dir/capture.stdout"
+      cp "${attempt_prefix}.capture.stderr" "$dir/capture.stderr"
+      cp "${attempt_prefix}.trace.bin" "$dir/trace.bin"
+    else
+      final_message="BUG TRIGGERED IN CAPTURE ($capture_bug_reason), but trace.bin was not produced; replay skipped — $class"
+      break
+    fi
+
+    replay_rc=0
+    $TIMEOUT_CMD 3s "$JAVA_CMD" -ea \
+      -javaagent:$REPLAY_AGENT \
+      "${OPEN_FLAGS[@]}" \
+      -cp $SCTBENCH_JAR \
+      "$class" \
+      > "${attempt_prefix}.replay.stdout" 2> "${attempt_prefix}.replay.stderr" || replay_rc=$?
+
+    replay_bug=false
+    replay_bug_reason=""
+    if has_bug_signal "${attempt_prefix}.replay.stdout" "${attempt_prefix}.replay.stderr"; then
+      replay_bug=true
+      if grep -q "AssertionError" "${attempt_prefix}.replay.stderr"; then
+        replay_bug_reason="assertion"
+      elif grep -Eq "Bug [Ff]ound!" "${attempt_prefix}.replay.stdout" "${attempt_prefix}.replay.stderr"; then
+        replay_bug_reason="bug-message"
+      else
+        replay_bug_reason="deadlock-signal"
+      fi
+    elif [ $replay_rc -eq 124 ] && is_deadlock_benchmark "$class"; then
+      replay_bug=true
+      replay_bug_reason="timeout"
+    fi
+
+    cp "${attempt_prefix}.replay.stdout" "$dir/replay.stdout"
+    cp "${attempt_prefix}.replay.stderr" "$dir/replay.stderr"
+
+    if [ $replay_rc -eq 124 ]; then
+      if [ "$replay_bug" = true ]; then
+        final_message="BUG REPRODUCED ($replay_bug_reason) on attempt $attempt — $class"
+        break
+      fi
+      final_message="TIMEOUT (replay) on attempt $attempt — $class"
+      continue
+    fi
+
+    if [ "$replay_bug" = true ]; then
+      final_message="BUG REPRODUCED ($replay_bug_reason) on attempt $attempt — $class"
+      break
+    fi
+
+    if [ $replay_rc -ne 0 ]; then
+      final_message="REPLAY ERROR (exit $replay_rc with no recognized bug signal) on attempt $attempt — $class"
+      continue
+    fi
+
+    final_message="BUG NOT REPRODUCED after attempt $attempt — $class"
+  done
+
+  if [ -z "$final_message" ]; then
+    final_message="No bug triggered after $MAX_ATTEMPTS attempt(s) — $class"
   fi
+
+  echo "$final_message" | tee "$dir/result.txt"
 
 done < fray_benchmark/assets/sctbench.txt

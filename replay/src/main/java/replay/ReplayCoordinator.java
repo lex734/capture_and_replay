@@ -474,6 +474,18 @@ public class ReplayCoordinator {
                     continue;
                 }
 
+                // Some deadlock-style SCTBench cases spin on plain field reads until
+                // the failure condition becomes true, then throw. Replay may observe
+                // extra same-role reads before the expected EXCEPTION_THROW, so give
+                // the schedule time to converge instead of aborting immediately.
+                if (roleId == (int) expected[1]
+                        && (expected[2] & 0xFF) == BinarySchema.Event.EXCEPTION_THROW
+                        && (packedType & 0xFF) == BinarySchema.Event.FIELD_READ) {
+                    abortIfStalled(idx, expected, roleId, packedType, objSite, objCount, data, objCreatorRole);
+                    myTurn.await(100, TimeUnit.MILLISECONDS);
+                    continue;
+                }
+
                 abortIfSameRoleDiverged(idx, expected, roleId, packedType, objSite, objCount, data, objCreatorRole);
                 abortIfStalled(idx, expected, roleId, packedType, objSite, objCount, data, objCreatorRole);
                 System.err.println(String.format("[WAIT]  idx=%-4d expects role=%d type=%d  got role=%d type=%d",

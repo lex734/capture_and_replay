@@ -2,6 +2,7 @@
 set -uo pipefail
 
 TIMEOUT_CMD=$(command -v gtimeout || command -v timeout || true)
+STDBUF_CMD=$(command -v stdbuf || true)
 if [ -z "$TIMEOUT_CMD" ]; then
   echo "ERROR: neither gtimeout nor timeout found. Install with: brew install coreutils"
   exit 1
@@ -72,6 +73,18 @@ has_verify_error() {
     "$stdout_file" "$stderr_file"
 }
 
+run_timed_java() {
+  local timeout_value="$1"
+  shift
+
+  if [ -n "$STDBUF_CMD" ]; then
+    "$TIMEOUT_CMD" --foreground --kill-after=1s "$timeout_value" \
+      "$STDBUF_CMD" -oL -eL "$@"
+  else
+    "$TIMEOUT_CMD" --foreground --kill-after=1s "$timeout_value" "$@"
+  fi
+}
+
 while IFS= read -r class; do
   [ -z "$class" ] && continue
   dir="$OUT/${class##*.}"   # use simple class name as directory
@@ -85,7 +98,7 @@ while IFS= read -r class; do
 
     rm -f trace.bin
     capture_rc=0
-    $TIMEOUT_CMD "$CAPTURE_TIMEOUT" "$JAVA_CMD" -ea \
+    run_timed_java "$CAPTURE_TIMEOUT" "$JAVA_CMD" -ea \
       -javaagent:$CAPTURE_AGENT \
       "${OPEN_FLAGS[@]}" \
       -cp $SCTBENCH_JAR \
@@ -143,7 +156,7 @@ while IFS= read -r class; do
     fi
 
     replay_rc=0
-    $TIMEOUT_CMD "$REPLAY_TIMEOUT" "$JAVA_CMD" -ea \
+    run_timed_java "$REPLAY_TIMEOUT" "$JAVA_CMD" -ea \
       -javaagent:$REPLAY_AGENT \
       "${OPEN_FLAGS[@]}" \
       -cp $SCTBENCH_JAR \

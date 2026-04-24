@@ -3,4 +3,5 @@ instr/Agent.class
 instr/SyncTransformer$SyncMethodVisitor.class
 instr/SyncTransformer$ClinitMethodVisitor.class
 instr/SyncTransformer.class
+instr/SyncTransformer$2.class
 instr/SyncTransformer$SyncClassVisitor.class

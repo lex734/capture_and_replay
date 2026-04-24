@@ -2,6 +2,10 @@ package capture;
 
 import common.TraceLogger;
 import common.BinarySchema;
+import common.IdentityMapper;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
 
 public class CaptureMonitor {
   private static final ThreadLocal<Boolean> isInside = ThreadLocal.withInitial(() -> false);
@@ -19,6 +23,151 @@ public class CaptureMonitor {
       TraceLogger.logSync(eventType, lock, siteId);
     } finally {
         isInside.set(false);
+    }
+  }
+
+  public static void captureThreadStart(Thread thread, int siteId) {
+    if (thread == null) return;
+    if (isInside.get()) {
+      thread.start();
+      return;
+    }
+    isInside.set(true);
+    try {
+      thread.start();
+      TraceLogger.logSync(BinarySchema.Event.THREAD_START, thread, siteId);
+    } finally {
+      isInside.set(false);
+    }
+  }
+
+  public static void captureLock(Lock lock, int siteId) {
+    if (lock == null) return;
+    if (isInside.get()) {
+      lock.lock();
+      return;
+    }
+    isInside.set(true);
+    try {
+      lock.lock();
+      TraceLogger.logSync(BinarySchema.Event.MONITOR_ENTER, lock, siteId);
+    } finally {
+      isInside.set(false);
+    }
+  }
+
+  public static void captureUnlock(Lock lock, int siteId) {
+    if (lock == null) return;
+    if (isInside.get()) {
+      lock.unlock();
+      return;
+    }
+    isInside.set(true);
+    try {
+      lock.unlock();
+      TraceLogger.logSync(BinarySchema.Event.MONITOR_EXIT, lock, siteId);
+    } finally {
+      isInside.set(false);
+    }
+  }
+
+  public static Condition captureNewCondition(Lock lock, int siteId) {
+    if (lock == null) return null;
+    Condition condition = lock.newCondition();
+    if (condition == null || isInside.get()) return condition;
+    isInside.set(true);
+    try {
+      IdentityMapper.registerAllocation(condition, siteId);
+      return condition;
+    } finally {
+      isInside.set(false);
+    }
+  }
+
+  public static void logConditionAwait(Condition condition, int siteId) {
+    if (condition == null || isInside.get()) return;
+    isInside.set(true);
+    try {
+      TraceLogger.logSync(BinarySchema.Event.THREAD_WAIT, condition, siteId);
+    } finally {
+      isInside.set(false);
+    }
+  }
+
+  public static void logConditionSignal(Condition condition, int siteId) {
+    if (condition == null || isInside.get()) return;
+    isInside.set(true);
+    try {
+      TraceLogger.logSync(BinarySchema.Event.THREAD_NOTIFY, condition, siteId);
+    } finally {
+      isInside.set(false);
+    }
+  }
+
+  public static void logConditionSignalAll(Condition condition, int siteId) {
+    if (condition == null || isInside.get()) return;
+    isInside.set(true);
+    try {
+      TraceLogger.logSync(BinarySchema.Event.THREAD_NOTIFY_ALL, condition, siteId);
+    } finally {
+      isInside.set(false);
+    }
+  }
+
+  public static void captureAwait(Condition condition, int siteId) throws InterruptedException {
+    logConditionAwait(condition, siteId);
+    condition.await();
+  }
+
+  public static void captureAwaitUninterruptibly(Condition condition, int siteId) {
+    logConditionAwait(condition, siteId);
+    condition.awaitUninterruptibly();
+  }
+
+  public static long captureAwaitNanos(Condition condition, long nanosTimeout, int siteId) throws InterruptedException {
+    logConditionAwait(condition, siteId);
+    return condition.awaitNanos(nanosTimeout);
+  }
+
+  public static boolean captureAwaitUntil(Condition condition, java.util.Date deadline, int siteId)
+      throws InterruptedException {
+    logConditionAwait(condition, siteId);
+    return condition.awaitUntil(deadline);
+  }
+
+  public static boolean captureAwaitTimed(Condition condition, long time, TimeUnit unit, int siteId)
+      throws InterruptedException {
+    logConditionAwait(condition, siteId);
+    return condition.await(time, unit);
+  }
+
+  public static void captureSignal(Condition condition, int siteId) {
+    if (condition == null) return;
+    if (isInside.get()) {
+      condition.signal();
+      return;
+    }
+    isInside.set(true);
+    try {
+      condition.signal();
+      TraceLogger.logSync(BinarySchema.Event.THREAD_NOTIFY, condition, siteId);
+    } finally {
+      isInside.set(false);
+    }
+  }
+
+  public static void captureSignalAll(Condition condition, int siteId) {
+    if (condition == null) return;
+    if (isInside.get()) {
+      condition.signalAll();
+      return;
+    }
+    isInside.set(true);
+    try {
+      condition.signalAll();
+      TraceLogger.logSync(BinarySchema.Event.THREAD_NOTIFY_ALL, condition, siteId);
+    } finally {
+      isInside.set(false);
     }
   }
 

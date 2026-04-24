@@ -396,6 +396,16 @@ public class SyncTransformer implements ClassFileTransformer {
                         mv.visitVarInsn(Opcodes.ILOAD, idxLocal);
                         mv.visitLdcInsn(siteId);
                         mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkArray" + typeSuffix, checkDesc, false);
+                        // For object arrays, the verifier tracks the natural AALOAD type
+                        // (for example ObjType) through the local. The replay helper
+                        // returns Object, and replacing the stack value with that erases
+                        // the concrete type and can trigger VerifyError at the next typed
+                        // use. Keep the natural typed value on replay for object arrays
+                        // and use the helper only for ordering/divergence side effects.
+                        if (isObjOp) {
+                            mv.visitInsn(Opcodes.POP);
+                            mv.visitVarInsn(valLoadOp, valLocal);
+                        }
                         // Stack: [result]
                     } else {
                         // Stack: [array, index, value]
@@ -414,7 +424,11 @@ public class SyncTransformer implements ClassFileTransformer {
                         mv.visitVarInsn(valStoreOp, resultLocal);
                         mv.visitVarInsn(Opcodes.ALOAD, arrLocal);
                         mv.visitVarInsn(Opcodes.ILOAD, idxLocal);
-                        mv.visitVarInsn(valLoadOp, resultLocal);
+                        if (isObjOp) {
+                            mv.visitVarInsn(valLoadOp, valLocal);
+                        } else {
+                            mv.visitVarInsn(valLoadOp, resultLocal);
+                        }
                         super.visitInsn(opcode); // actual XASTORE
                     }
                     return;
@@ -526,6 +540,85 @@ public class SyncTransformer implements ClassFileTransformer {
             String siteString = className + "." + methodName + "#" + instructionId++;
             int siteId = SyncTransformer.registerSiteId(siteString);
 
+            if (isReplay && (owner.equals("java/util/concurrent/locks/ReentrantLock")
+                    || owner.equals("java/util/concurrent/locks/Lock"))) {
+                if (name.equals("lock") && descriptor.equals("()V")) {
+                    mv.visitLdcInsn(siteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayLock",
+                            "(Ljava/util/concurrent/locks/Lock;I)V", false);
+                    return;
+                } else if (name.equals("unlock") && descriptor.equals("()V")) {
+                    mv.visitLdcInsn(siteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayUnlock",
+                            "(Ljava/util/concurrent/locks/Lock;I)V", false);
+                    return;
+                } else if (name.equals("newCondition") && descriptor.equals("()Ljava/util/concurrent/locks/Condition;")) {
+                    mv.visitLdcInsn(siteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayNewCondition",
+                            "(Ljava/util/concurrent/locks/Lock;I)Ljava/util/concurrent/locks/Condition;", false);
+                    return;
+                }
+            }
+
+            if (!isReplay && (owner.equals("java/util/concurrent/locks/ReentrantLock")
+                    || owner.equals("java/util/concurrent/locks/Lock"))) {
+                if (name.equals("lock") && descriptor.equals("()V")) {
+                    mv.visitLdcInsn(siteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "captureLock",
+                            "(Ljava/util/concurrent/locks/Lock;I)V", false);
+                    return;
+                } else if (name.equals("unlock") && descriptor.equals("()V")) {
+                    mv.visitLdcInsn(siteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "captureUnlock",
+                            "(Ljava/util/concurrent/locks/Lock;I)V", false);
+                    return;
+                } else if (name.equals("newCondition") && descriptor.equals("()Ljava/util/concurrent/locks/Condition;")) {
+                    mv.visitLdcInsn(siteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "captureNewCondition",
+                            "(Ljava/util/concurrent/locks/Lock;I)Ljava/util/concurrent/locks/Condition;", false);
+                    return;
+                }
+            }
+
+            if (isReplay && owner.equals("java/util/concurrent/locks/Condition")) {
+                if (name.equals("await") && descriptor.equals("()V")) {
+                    mv.visitLdcInsn(siteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAwait",
+                            "(Ljava/util/concurrent/locks/Condition;I)V", false);
+                    return;
+                } else if (name.equals("awaitUninterruptibly") && descriptor.equals("()V")) {
+                    mv.visitLdcInsn(siteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAwaitUninterruptibly",
+                            "(Ljava/util/concurrent/locks/Condition;I)V", false);
+                    return;
+                } else if (name.equals("awaitNanos") && descriptor.equals("(J)J")) {
+                    mv.visitLdcInsn(siteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAwaitNanos",
+                            "(Ljava/util/concurrent/locks/Condition;JI)J", false);
+                    return;
+                } else if (name.equals("awaitUntil") && descriptor.equals("(Ljava/util/Date;)Z")) {
+                    mv.visitLdcInsn(siteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAwaitUntil",
+                            "(Ljava/util/concurrent/locks/Condition;Ljava/util/Date;I)Z", false);
+                    return;
+                } else if (name.equals("await") && descriptor.equals("(JLjava/util/concurrent/TimeUnit;)Z")) {
+                    mv.visitLdcInsn(siteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAwaitTimed",
+                            "(Ljava/util/concurrent/locks/Condition;JLjava/util/concurrent/TimeUnit;I)Z", false);
+                    return;
+                } else if (name.equals("signal") && descriptor.equals("()V")) {
+                    mv.visitLdcInsn(siteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replaySignal",
+                            "(Ljava/util/concurrent/locks/Condition;I)V", false);
+                    return;
+                } else if (name.equals("signalAll") && descriptor.equals("()V")) {
+                    mv.visitLdcInsn(siteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replaySignalAll",
+                            "(Ljava/util/concurrent/locks/Condition;I)V", false);
+                    return;
+                }
+            }
+
             if (owner.equals("java/util/concurrent/locks/LockSupport")) {
                 if (name.equals("park")) {
                     if (descriptor.equals("(Ljava/lang/Object;)V")) {
@@ -536,14 +629,15 @@ public class SyncTransformer implements ClassFileTransformer {
                     logSyncCall(3, siteId); // THREAD_PARK
                 } else if (name.equals("parkNanos") || name.equals("parkUntil")) {
                     if (descriptor.startsWith("(Ljava/lang/Object;")) {
-                        // Stack: [blocker, long] — extract blocker copy from under the long
-                        mv.visitInsn(Opcodes.DUP2_X1); // [long, blocker, long]
-                        mv.visitInsn(Opcodes.POP2); // [long, blocker]
-                        mv.visitInsn(Opcodes.DUP); // [long, blocker, blocker_copy]
-                        logSyncCall(3, siteId); // consumes blocker_copy → [long, blocker]
-                        // Restore original stack order: [blocker, long]
-                        mv.visitInsn(Opcodes.DUP_X2); // [blocker, long, blocker]
-                        mv.visitInsn(Opcodes.POP); // [blocker, long]
+                        // Stack: [blocker, long] — save args in locals, log, then restore
+                        int nanosLocal = newLocal(Type.LONG_TYPE);
+                        int blockerLocal = newLocal(Type.getType(Object.class));
+                        mv.visitVarInsn(Opcodes.LSTORE, nanosLocal);
+                        mv.visitVarInsn(Opcodes.ASTORE, blockerLocal);
+                        mv.visitVarInsn(Opcodes.ALOAD, blockerLocal);
+                        logSyncCall(3, siteId);
+                        mv.visitVarInsn(Opcodes.ALOAD, blockerLocal);
+                        mv.visitVarInsn(Opcodes.LLOAD, nanosLocal);
                     } else {
                         // Stack: [long] — no blocker
                         mv.visitInsn(Opcodes.ACONST_NULL);
@@ -555,18 +649,21 @@ public class SyncTransformer implements ClassFileTransformer {
                 }
             } else if (owner.equals("java/lang/Thread")) {
                 if (name.equals("start")) {
-                    // The receiver may be typed as Object by the verifier when loaded
-                    // from an instrumented array access (checkArrayObj returns Object).
-                    // CHECKCAST restores the Thread type for both preRegisterThread and
-                    // invokevirtual; it is a no-op at runtime since the object is always
-                    // a Thread here.
+                    // THREAD_START should be recorded after the actual start() call has
+                    // executed. Route through explicit monitor wrappers so capture and
+                    // replay can keep any role bookkeeping but still make the traced
+                    // event post-call rather than pre-call.
                     mv.visitTypeInsn(Opcodes.CHECKCAST, "java/lang/Thread");
-                    mv.visitInsn(Opcodes.DUP); // for logSyncCall
                     if (isReplay) {
-                        mv.visitInsn(Opcodes.DUP); // extra copy consumed by preRegisterThread
-                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "preRegisterThread", "(Ljava/lang/Thread;)V", false);
+                        mv.visitLdcInsn(siteId);
+                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayThreadStart",
+                                "(Ljava/lang/Thread;I)V", false);
+                    } else {
+                        mv.visitLdcInsn(siteId);
+                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "captureThreadStart",
+                                "(Ljava/lang/Thread;I)V", false);
                     }
-                    logSyncCall(9, siteId); // THREAD_START
+                    return;
                 } else if (name.equals("join")) {
                     // Determine if it is a timed join or infinite join
                     int eventType = descriptor.equals("()V") ? 10 : 18; // 10=JOIN, 18=JOIN_TIMEOUT
@@ -576,14 +673,18 @@ public class SyncTransformer implements ClassFileTransformer {
                         mv.visitTypeInsn(Opcodes.CHECKCAST, "java/lang/Thread");
                         mv.visitInsn(Opcodes.DUP);
                     } else {
-                        // Stack surgery for join(long): [threadRef, longValue]
-                        // Extract threadRef, cast it, then restore stack order.
-                        mv.visitInsn(Opcodes.DUP2_X1);
-                        mv.visitInsn(Opcodes.POP2);
-                        mv.visitTypeInsn(Opcodes.CHECKCAST, "java/lang/Thread"); // [long, Thread]
-                        mv.visitInsn(Opcodes.DUP); // Duplicate threadRef
-                        mv.visitInsn(Opcodes.DUP_X2); // Move duplicated ref behind long
-                        mv.visitInsn(Opcodes.POP); // Clean up top
+                        // Stack: [threadRef, longValue] — save args in locals, log, then restore
+                        int millisLocal = newLocal(Type.LONG_TYPE);
+                        int threadLocal = newLocal(Type.getType("Ljava/lang/Thread;"));
+                        mv.visitVarInsn(Opcodes.LSTORE, millisLocal);
+                        mv.visitTypeInsn(Opcodes.CHECKCAST, "java/lang/Thread");
+                        mv.visitVarInsn(Opcodes.ASTORE, threadLocal);
+                        mv.visitVarInsn(Opcodes.ALOAD, threadLocal);
+                        logSyncCall(eventType, siteId);
+                        mv.visitVarInsn(Opcodes.ALOAD, threadLocal);
+                        mv.visitVarInsn(Opcodes.LLOAD, millisLocal);
+                        super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
+                        return;
                     }
                     logSyncCall(eventType, siteId);
                 } else if (name.equals("sleep")) {
@@ -613,17 +714,59 @@ public class SyncTransformer implements ClassFileTransformer {
                     if (descriptor.equals("()V")) {
                         mv.visitInsn(Opcodes.DUP);
                     } else {
-                        // Stack surgery for wait(long): [objRef, longValue]
-                        mv.visitInsn(Opcodes.DUP2_X1);
-                        mv.visitInsn(Opcodes.POP2);
-                        mv.visitInsn(Opcodes.DUP);
-                        mv.visitInsn(Opcodes.DUP_X2);
-                        mv.visitInsn(Opcodes.POP);
+                        // Stack: [objRef, longValue] — save args in locals, log, then restore
+                        int timeoutLocal = newLocal(Type.LONG_TYPE);
+                        int objLocal = newLocal(Type.getType(Object.class));
+                        mv.visitVarInsn(Opcodes.LSTORE, timeoutLocal);
+                        mv.visitVarInsn(Opcodes.ASTORE, objLocal);
+                        mv.visitVarInsn(Opcodes.ALOAD, objLocal);
+                        logSyncCall(15, siteId);
+                        mv.visitVarInsn(Opcodes.ALOAD, objLocal);
+                        mv.visitVarInsn(Opcodes.LLOAD, timeoutLocal);
+                        super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
+                        return;
                     }
                     logSyncCall(15, siteId); // THREAD_WAIT
                 } else if (name.equals("notify") || name.equals("notifyAll")) {
                     mv.visitInsn(Opcodes.DUP);
                     logSyncCall(name.equals("notify") ? 16 : 17, siteId);
+                }
+            } else if (owner.equals("java/util/concurrent/locks/Condition")) {
+                if (name.equals("await") && descriptor.equals("()V")) {
+                    mv.visitLdcInsn(siteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "captureAwait",
+                            "(Ljava/util/concurrent/locks/Condition;I)V", false);
+                    return;
+                } else if (name.equals("awaitUninterruptibly") && descriptor.equals("()V")) {
+                    mv.visitLdcInsn(siteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "captureAwaitUninterruptibly",
+                            "(Ljava/util/concurrent/locks/Condition;I)V", false);
+                    return;
+                } else if (name.equals("awaitNanos") && descriptor.equals("(J)J")) {
+                    mv.visitLdcInsn(siteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "captureAwaitNanos",
+                            "(Ljava/util/concurrent/locks/Condition;JI)J", false);
+                    return;
+                } else if (name.equals("awaitUntil") && descriptor.equals("(Ljava/util/Date;)Z")) {
+                    mv.visitLdcInsn(siteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "captureAwaitUntil",
+                            "(Ljava/util/concurrent/locks/Condition;Ljava/util/Date;I)Z", false);
+                    return;
+                } else if (name.equals("await") && descriptor.equals("(JLjava/util/concurrent/TimeUnit;)Z")) {
+                    mv.visitLdcInsn(siteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "captureAwaitTimed",
+                            "(Ljava/util/concurrent/locks/Condition;JLjava/util/concurrent/TimeUnit;I)Z", false);
+                    return;
+                } else if (name.equals("signal") && descriptor.equals("()V")) {
+                    mv.visitLdcInsn(siteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "captureSignal",
+                            "(Ljava/util/concurrent/locks/Condition;I)V", false);
+                    return;
+                } else if (name.equals("signalAll") && descriptor.equals("()V")) {
+                    mv.visitLdcInsn(siteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "captureSignalAll",
+                            "(Ljava/util/concurrent/locks/Condition;I)V", false);
+                    return;
                 }
             }
 
@@ -950,6 +1093,7 @@ public class SyncTransformer implements ClassFileTransformer {
         private boolean isBlockingCall(String owner, String name) {
             return (owner.equals("java/lang/Thread") && (name.equals("join") || name.equals("sleep"))) ||
                     (owner.equals("java/lang/Object") && name.equals("wait")) ||
+                    (owner.equals("java/util/concurrent/locks/Condition") && name.startsWith("await")) ||
                     (owner.equals("java/util/concurrent/locks/LockSupport") &&
                             (name.equals("park") || name.equals("parkNanos") || name.equals("parkUntil")));
         }
@@ -992,6 +1136,9 @@ public class SyncTransformer implements ClassFileTransformer {
             // Map to your specific method suffixes
             String typeSuffix = isWide ? "Long" : (typeCode == 'L' || typeCode == '[') ? "Obj" : "Int";
             String retDesc = isWide ? "J" : (typeCode == 'L' || typeCode == '[') ? "Ljava/lang/Object;" : "I";
+            Type fieldType = Type.getType(descriptor);
+            int valStoreOp = fieldType.getOpcode(Opcodes.ISTORE);
+            int valLoadOp  = fieldType.getOpcode(Opcodes.ILOAD);
 
             int eventType = (opcode == Opcodes.GETFIELD || opcode == Opcodes.GETSTATIC) ? 5 : 6;
             boolean isStatic = (opcode == Opcodes.GETSTATIC || opcode == Opcodes.PUTSTATIC);
@@ -1009,10 +1156,6 @@ public class SyncTransformer implements ClassFileTransformer {
                  * so divergence can be detected, and the approved value (natural or trace)
                  * is what gets written to the field.
                  */
-                // Determine correct local-variable types for this field descriptor.
-                Type fieldType = Type.getType(descriptor);
-                int valStoreOp = fieldType.getOpcode(Opcodes.ISTORE);
-                int valLoadOp  = fieldType.getOpcode(Opcodes.ILOAD);
                 int valLocal   = newLocal(fieldType);
 
                 // New checkField descriptor: (naturalValue, eventType, owner, siteId, vol, stat, name, ownerName)
@@ -1105,79 +1248,84 @@ public class SyncTransformer implements ClassFileTransformer {
 
             } else {
                 /** LOGGING: logFieldT(value, ...) called BEFORE stores, AFTER loads **/
+                int valLocal = newLocal(fieldType);
                 if (opcode == Opcodes.PUTFIELD) {
-                    if (isWide) {
-                        // Stack: [owner(1), val(2)]
-                        mv.visitInsn(Opcodes.DUP2_X1); // [val(2), owner(1), val(2)]
-                        mv.visitInsn(Opcodes.DUP2_X1); // [val(2), val(2), owner(1), val(2)]
-                        mv.visitInsn(Opcodes.POP2);    // [val(2), val(2), owner(1)]
-                    } else {
-                        // Stack: [owner(1), val(1)]
-                        mv.visitInsn(Opcodes.DUP2);    // [owner, val, owner, val]
-                        mv.visitInsn(Opcodes.SWAP);    // [owner, val, val, owner] — bottom pair for PUTFIELD, top pair [val,owner] for log
-                    }
-                    // Prep Log Args
-                    pushLogArgs(typeSuffix, retDesc, eventType, siteId, isVolatile, isStatic, name, owner);
+                    int ownerLocal = newLocal(Type.getType(Object.class));
+                    mv.visitVarInsn(valStoreOp, valLocal);
+                    mv.visitVarInsn(Opcodes.ASTORE, ownerLocal);
+
+                    mv.visitVarInsn(valLoadOp, valLocal);
+                    mv.visitLdcInsn(eventType);
+                    mv.visitVarInsn(Opcodes.ALOAD, ownerLocal);
+                    mv.visitLdcInsn(siteId);
+                    mv.visitInsn(isVolatile ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
+                    mv.visitInsn(isStatic ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
+                    mv.visitLdcInsn(name);
+                    mv.visitLdcInsn(owner);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logField" + typeSuffix,
+                            "(" + retDesc + "ILjava/lang/Object;IZZLjava/lang/String;Ljava/lang/String;)V", false);
+
+                    mv.visitVarInsn(Opcodes.ALOAD, ownerLocal);
+                    mv.visitVarInsn(valLoadOp, valLocal);
                     super.visitFieldInsn(opcode, owner, name, descriptor);
 
                 } else if (opcode == Opcodes.PUTSTATIC) {
-                    if (isWide) mv.visitInsn(Opcodes.DUP2); else mv.visitInsn(Opcodes.DUP);
-                    mv.visitInsn(Opcodes.ACONST_NULL); // owner
-                    pushLogArgs(typeSuffix, retDesc, eventType, siteId, isVolatile, isStatic, name, owner);
+                    mv.visitVarInsn(valStoreOp, valLocal);
+
+                    mv.visitVarInsn(valLoadOp, valLocal);
+                    mv.visitLdcInsn(eventType);
+                    mv.visitInsn(Opcodes.ACONST_NULL);
+                    mv.visitLdcInsn(siteId);
+                    mv.visitInsn(isVolatile ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
+                    mv.visitInsn(isStatic ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
+                    mv.visitLdcInsn(name);
+                    mv.visitLdcInsn(owner);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logField" + typeSuffix,
+                            "(" + retDesc + "ILjava/lang/Object;IZZLjava/lang/String;Ljava/lang/String;)V", false);
+
+                    mv.visitVarInsn(valLoadOp, valLocal);
                     super.visitFieldInsn(opcode, owner, name, descriptor);
 
                 } else if (opcode == Opcodes.GETFIELD) {
-                    mv.visitInsn(Opcodes.DUP); // Save owner: [owner, owner]
-                    super.visitFieldInsn(opcode, owner, name, descriptor); // [owner, value]
+                    int ownerLocal = newLocal(Type.getType(Object.class));
+                    mv.visitVarInsn(Opcodes.ASTORE, ownerLocal);
+                    mv.visitVarInsn(Opcodes.ALOAD, ownerLocal);
+                    super.visitFieldInsn(opcode, owner, name, descriptor);
+                    mv.visitVarInsn(valStoreOp, valLocal);
 
-                    // Duplicate value so one copy is passed to logField and one remains
-                    // for the program to consume (same pattern as atomics DUP-before-log).
-                    if (isWide) {
-                        // DUP2_X1: [val_copy(wide), owner, val] — val_copy preserved at bottom
-                        mv.visitInsn(Opcodes.DUP2_X1);
-                    } else {
-                        // DUP_X1 + SWAP: [owner, value] → [val_copy, owner, value] → [val_copy, value, owner]
-                        mv.visitInsn(Opcodes.DUP_X1);
-                        mv.visitInsn(Opcodes.SWAP);
-                    }
-                    pushLogArgs(typeSuffix, retDesc, eventType, siteId, isVolatile, isStatic, name, owner);
+                    mv.visitVarInsn(valLoadOp, valLocal);
+                    mv.visitLdcInsn(eventType);
+                    mv.visitVarInsn(Opcodes.ALOAD, ownerLocal);
+                    mv.visitLdcInsn(siteId);
+                    mv.visitInsn(isVolatile ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
+                    mv.visitInsn(isStatic ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
+                    mv.visitLdcInsn(name);
+                    mv.visitLdcInsn(owner);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logField" + typeSuffix,
+                            "(" + retDesc + "ILjava/lang/Object;IZZLjava/lang/String;Ljava/lang/String;)V", false);
+
+                    mv.visitVarInsn(valLoadOp, valLocal);
 
                 } else { // GETSTATIC
-                    super.visitFieldInsn(opcode, owner, name, descriptor); // [value]
-                    // DUP before handing off to pushLogArgs so the program copy stays at
-                    // the bottom of the stack after the void log call returns.
-                    if (isWide) mv.visitInsn(Opcodes.DUP2); else mv.visitInsn(Opcodes.DUP);
-                    mv.visitInsn(Opcodes.ACONST_NULL); // owner (null for static)
-                    pushLogArgs(typeSuffix, retDesc, eventType, siteId, isVolatile, isStatic, name, owner);
+                    super.visitFieldInsn(opcode, owner, name, descriptor);
+                    mv.visitVarInsn(valStoreOp, valLocal);
+
+                    mv.visitVarInsn(valLoadOp, valLocal);
+                    mv.visitLdcInsn(eventType);
+                    mv.visitInsn(Opcodes.ACONST_NULL);
+                    mv.visitLdcInsn(siteId);
+                    mv.visitInsn(isVolatile ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
+                    mv.visitInsn(isStatic ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
+                    mv.visitLdcInsn(name);
+                    mv.visitLdcInsn(owner);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logField" + typeSuffix,
+                            "(" + retDesc + "ILjava/lang/Object;IZZLjava/lang/String;Ljava/lang/String;)V", false);
+
+                    mv.visitVarInsn(valLoadOp, valLocal);
                 }
                 return;
             }
         }
-
-        private void pushLogArgs(String suffix, String valDesc, int type, int siteId, boolean vol, boolean stat, String name, String own) {
-            // Stack is [value(1 or 2), owner(1)]
-            mv.visitLdcInsn(type);
-            // Stack: [value, owner, type]
-            if (valDesc.equals("J") || valDesc.equals("D")) {
-                // Value is 2 slots. We need type to go BEFORE owner but AFTER value.
-                // Current: [V_hi, V_lo, Owner, Type]
-                mv.visitInsn(Opcodes.SWAP); // [V_hi, V_lo, Type, Owner]
-                // Now move Type behind V: [Type, V_hi, V_lo, Owner] -> Hard with SWAP.
-                // Let's assume your logField signature is (Value, Type, Owner, ...)
-                // If Type is already after value, we just need siteId etc.
-            } else {
-                mv.visitInsn(Opcodes.SWAP); // [value, type, owner]
-            }
-            
-            mv.visitLdcInsn(siteId);
-            mv.visitInsn(vol ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
-            mv.visitInsn(stat ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
-            mv.visitLdcInsn(name);
-            mv.visitLdcInsn(own);
-
-            mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logField" + suffix,
-                    "(" + valDesc + "ILjava/lang/Object;IZZLjava/lang/String;Ljava/lang/String;)V", false);
-        } 
     }
 
     /**

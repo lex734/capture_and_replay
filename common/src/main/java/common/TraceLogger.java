@@ -91,23 +91,23 @@ public class TraceLogger {
         if (eventType == BinarySchema.Event.THREAD_START && lock instanceof Thread) {
             long childTid = ((Thread) lock).getId();
             int childRoleId = IdentityMapper.getRoleIdBySite(childTid, currentSiteId);
-            // System.out.println(String.format(
-            //         "[SYNC]   epoch=%d seq=%d role=%d  %-24s lock=%s  site=%d  childRole=%d",
-            //         seq >>> 32, seq & 0xFFFFFFFFL, roleId, eventName,
-            //         lock.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(lock)),
-            //         currentSiteId, childRoleId));
+            System.out.println(String.format(
+                    "[SYNC]   epoch=%d seq=%d role=%d  %-24s lock=%s  site=%d  childRole=%d",
+                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, eventName,
+                    lock.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(lock)),
+                    currentSiteId, childRoleId));
             BinarySchema.write(seq, (long) roleId, ((eventType & 0xFF) | (BinarySchema.Flags.NONE << 8)),
                     birthId.siteId, birthId.count, childRoleId, currentSiteId);
             return;
         }
 
-        // System.out.println(String.format(
-        //         "[SYNC]   epoch=%d seq=%d role=%d  %-24s lock=%s  site=%d",
-        //         seq >>> 32, seq & 0xFFFFFFFFL, roleId, eventName,
-        //         lock != null
-        //                 ? lock.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(lock))
-        //                 : "null",
-        //         currentSiteId));
+        System.out.println(String.format(
+                "[SYNC]   epoch=%d seq=%d role=%d  %-24s lock=%s  site=%d",
+                seq >>> 32, seq & 0xFFFFFFFFL, roleId, eventName,
+                lock != null
+                        ? lock.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(lock))
+                        : "null",
+                currentSiteId));
         BinarySchema.write(seq, (long) roleId, ((eventType & 0xFF) | (BinarySchema.Flags.NONE << 8)), birthId.siteId,
                 birthId.count, currentSiteId);
     }
@@ -134,10 +134,10 @@ public class TraceLogger {
         if (roleId == -1) return;
         BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
         int packedType = packFieldType(eventType, isVolatile, isStatic);
-        // String evName = (eventType == BinarySchema.Event.FIELD_READ) ? "READ" : "WRITE";
-        // System.out.println(String.format("[FIELD]  epoch=%d seq=%d role=%d  %-5s%s %s.%s = %d",
-        //         seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
-        //         isVolatile ? "(volatile)" : "", ownerName, fieldName, value));
+        String evName = (eventType == BinarySchema.Event.FIELD_READ) ? "READ" : "WRITE";
+        System.out.println(String.format("[FIELD]  epoch=%d seq=%d role=%d  %-5s%s %s.%s = %d",
+                seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
+                isVolatile ? "(volatile)" : "", ownerName, fieldName, value));
         BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, 0, value);
     }
 
@@ -150,10 +150,10 @@ public class TraceLogger {
         if (roleId == -1) return;
         BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
         int packedType = packFieldType(eventType, isVolatile, isStatic);
-        // String evName = (eventType == BinarySchema.Event.FIELD_READ) ? "READ" : "WRITE";
-        // System.out.println(String.format("[FIELD]  epoch=%d seq=%d role=%d  %-5s%s %s.%s = %dL",
-        //         seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
-        //         isVolatile ? "(volatile)" : "", ownerName, fieldName, value));
+        String evName = (eventType == BinarySchema.Event.FIELD_READ) ? "READ" : "WRITE";
+        System.out.println(String.format("[FIELD]  epoch=%d seq=%d role=%d  %-5s%s %s.%s = %dL",
+                seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
+                isVolatile ? "(volatile)" : "", ownerName, fieldName, value));
         BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count,
                 (int) (value >> 32), (int) value);
     }
@@ -168,12 +168,12 @@ public class TraceLogger {
         BirthId birthId   = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
         BirthId valueBirth = IdentityMapper.getBirthId(value, null, currentSiteId);
         int packedType = packFieldType(eventType, isVolatile, isStatic);
-        // String evName = (eventType == BinarySchema.Event.FIELD_READ) ? "READ" : "WRITE";
-        // System.out.println(String.format("[FIELD]  epoch=%d seq=%d role=%d  %-5s%s %s.%s = %s",
-        //         seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
-        //         isVolatile ? "(volatile)" : "", ownerName, fieldName,
-        //         value != null ? value.getClass().getSimpleName()
-        //                 + "@" + Integer.toHexString(System.identityHashCode(value)) : "null"));
+        String evName = (eventType == BinarySchema.Event.FIELD_READ) ? "READ" : "WRITE";
+        System.out.println(String.format("[FIELD]  epoch=%d seq=%d role=%d  %-5s%s %s.%s = %s",
+                seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
+                isVolatile ? "(volatile)" : "", ownerName, fieldName,
+                value != null ? value.getClass().getSimpleName()
+                        + "@" + Integer.toHexString(System.identityHashCode(value)) : "null"));
         BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count,
                 valueBirth.siteId, valueBirth.count);
     }
@@ -202,12 +202,12 @@ public class TraceLogger {
         if (roleId == -1) return;
         BirthId birthId = IdentityMapper.getBirthId(array, null, currentSiteId);
         int packedType = packArrayValuedType(eventType, birthId.siteId);
-        // String evName = (eventType == BinarySchema.Event.ARRAY_READ) ? "ARRAY_READ" : "ARRAY_WRITE";
-        // System.out.println(String.format("[ARRAY]  epoch=%d seq=%d role=%d  %-12s %s[%d] = %d",
-        //         seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
-        //         array != null ? array.getClass().getSimpleName()
-        //                 + "@" + Integer.toHexString(System.identityHashCode(array)) : "null",
-        //         index, value));
+        String evName = (eventType == BinarySchema.Event.ARRAY_READ) ? "ARRAY_READ" : "ARRAY_WRITE";
+        System.out.println(String.format("[ARRAY]  epoch=%d seq=%d role=%d  %-12s %s[%d] = %d",
+                seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
+                array != null ? array.getClass().getSimpleName()
+                        + "@" + Integer.toHexString(System.identityHashCode(array)) : "null",
+                index, value));
         BinarySchema.write(seq, (long) roleId, packedType, birthId.count, index, 0, value);
     }
 
@@ -218,12 +218,12 @@ public class TraceLogger {
         if (roleId == -1) return;
         BirthId birthId = IdentityMapper.getBirthId(array, null, currentSiteId);
         int packedType = packArrayValuedType(eventType, birthId.siteId);
-        // String evName = (eventType == BinarySchema.Event.ARRAY_READ) ? "ARRAY_READ" : "ARRAY_WRITE";
-        // System.out.println(String.format("[ARRAY]  epoch=%d seq=%d role=%d  %-12s %s[%d] = %dL",
-        //         seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
-        //         array != null ? array.getClass().getSimpleName()
-        //                 + "@" + Integer.toHexString(System.identityHashCode(array)) : "null",
-        //         index, value));
+        String evName = (eventType == BinarySchema.Event.ARRAY_READ) ? "ARRAY_READ" : "ARRAY_WRITE";
+        System.out.println(String.format("[ARRAY]  epoch=%d seq=%d role=%d  %-12s %s[%d] = %dL",
+                seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
+                array != null ? array.getClass().getSimpleName()
+                        + "@" + Integer.toHexString(System.identityHashCode(array)) : "null",
+                index, value));
         BinarySchema.write(seq, (long) roleId, packedType, birthId.count, index,
                 (int) (value >> 32), (int) value);
     }
@@ -236,14 +236,14 @@ public class TraceLogger {
         BirthId birthId    = IdentityMapper.getBirthId(array, null, currentSiteId);
         BirthId valueBirth = IdentityMapper.getBirthId(value, null, currentSiteId);
         int packedType = packArrayValuedType(eventType, birthId.siteId);
-        // String evName = (eventType == BinarySchema.Event.ARRAY_READ) ? "ARRAY_READ" : "ARRAY_WRITE";
-        // System.out.println(String.format("[ARRAY]  epoch=%d seq=%d role=%d  %-12s %s[%d] = %s",
-        //         seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
-        //         array != null ? array.getClass().getSimpleName()
-        //                 + "@" + Integer.toHexString(System.identityHashCode(array)) : "null",
-        //         index,
-        //         value != null ? value.getClass().getSimpleName()
-        //                 + "@" + Integer.toHexString(System.identityHashCode(value)) : "null"));
+        String evName = (eventType == BinarySchema.Event.ARRAY_READ) ? "ARRAY_READ" : "ARRAY_WRITE";
+        System.out.println(String.format("[ARRAY]  epoch=%d seq=%d role=%d  %-12s %s[%d] = %s",
+                seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
+                array != null ? array.getClass().getSimpleName()
+                        + "@" + Integer.toHexString(System.identityHashCode(array)) : "null",
+                index,
+                value != null ? value.getClass().getSimpleName()
+                        + "@" + Integer.toHexString(System.identityHashCode(value)) : "null"));
         BinarySchema.write(seq, (long) roleId, packedType, birthId.count, index,
                 valueBirth.siteId, valueBirth.count);
     }

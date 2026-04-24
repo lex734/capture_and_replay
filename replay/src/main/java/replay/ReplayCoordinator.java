@@ -45,8 +45,9 @@ public class ReplayCoordinator {
 
     // Map each role to its own sequence of events
     private static final Map<Integer, LinkedList<long[]>> roleQueues = new ConcurrentHashMap<>();
+    private static final AtomicLong eventsMatched = new AtomicLong(0);
     private static final AtomicLong globalMatchCount = new AtomicLong(0);
-
+    
     // Maps roleId → the Thread object that owns it, so isAnyRoleBehind can skip
     // roles whose thread has exited normally (without an uncaught exception).
     private static final ConcurrentHashMap<Integer, Thread> roleIdToThread = new ConcurrentHashMap<>();
@@ -55,6 +56,7 @@ public class ReplayCoordinator {
     // return immediately so threads run freely rather than deadlocking.
     private static volatile boolean hasDiverged = false;
     private static volatile String firstDivergenceInfo = null;
+    private static volatile boolean isIncomplete = false;
 
     public static boolean hasDiverged() { return hasDiverged; }
 
@@ -89,6 +91,8 @@ public class ReplayCoordinator {
         roleIdToThread.clear();
         hasDiverged = false;
         firstDivergenceInfo = null;
+        isIncomplete = false;
+        eventsMatched.set(0);
         totalValuedEvents.set(0);
         naturalAgreements.set(0);
         injectedEvents.set(0);
@@ -152,6 +156,19 @@ public class ReplayCoordinator {
             firstDivergenceInfo = String.format(
                     "role=%d epoch=%d expectedType=0x%02x actualType=0x%02x | %s",
                     roleId, epoch, expectedType & 0xFF, actualType & 0xFF, extra);
+            System.err.println("[DIVERGENCE] Replay has structurally diverged: " + firstDivergenceInfo);
+            System.err.println("[DIVERGENCE] Synchronization and injection will no longer be applied.");
+            controlLock.notifyAll();
+        }
+    }
+
+    /** Overload for divergences that have no expected/actual event type (e.g. early thread exit). */
+    private static void reportDivergence(int roleId, String extra) {
+        if (hasDiverged) return;
+        synchronized (controlLock) {
+            if (hasDiverged) return;
+            hasDiverged = true;
+            firstDivergenceInfo = "role=" + roleId + " | " + extra;
             System.err.println("[DIVERGENCE] Replay has structurally diverged: " + firstDivergenceInfo);
             System.err.println("[DIVERGENCE] Synchronization and injection will no longer be applied.");
             controlLock.notifyAll();
@@ -237,10 +254,13 @@ public class ReplayCoordinator {
 
     /** Called by the UncaughtExceptionHandler when a replay thread dies early. */
     public static void reportThreadDead(int roleId) {
+        LinkedList<long[]> queue = roleQueues.get(roleId);
+        if (queue != null && !queue.isEmpty()) {
+            reportDivergence(roleId, "thread exited with " + queue.size() + " unconsumed events");
+        }
         activeRoles.remove(roleId);
         startedRoles.remove(roleId);
         pendingRoles.remove(roleId);
-        // System.err.println("[Replay] role=" + roleId + " died (uncaught exception) — skipping its remaining events.");
         synchronized (controlLock) {
             controlLock.notifyAll();
         }
@@ -343,8 +363,8 @@ public class ReplayCoordinator {
 
                 // --- THE MATCH CHECK ---
                 if (packedType == eType && objSite == (int) expected[3] && objCount == (int) expected[4]) {
-                    myQueue.poll(); // Consume the CLASS_INIT_END
-                    
+                    myQueue.poll();
+                    if (fidelityEnabled) eventsMatched.incrementAndGet();
                     lastMatchedSeq.set(eSeq);
                     // Standard JMM release check (redundant now, but good for safety)
                     if (isReleaseEvent(eType)) {
@@ -396,6 +416,7 @@ public class ReplayCoordinator {
 
                 if (packedType == (int) expected[2] && objSite == (int) expected[3] && objCount == (int) expected[4]) {
                     myQueue.poll();
+                    if (fidelityEnabled) eventsMatched.incrementAndGet();
                     int traceValue = (int) expected[6];
                     lastMatchedSeq.set(eSeq);
                     if (isReleaseEvent(packedType)) releasedEpoch.set(eEpoch);
@@ -445,6 +466,7 @@ public class ReplayCoordinator {
 
                 if (packedType == eType && objSite == (int) expected[3] && objCount == (int) expected[4]) {
                     myQueue.poll();
+                    if (fidelityEnabled) eventsMatched.incrementAndGet();
                     long traceValue = ((long) expected[5] << 32) | (expected[6] & 0xFFFFFFFFL);
                     lastMatchedSeq.set(eSeq);
                     if (isReleaseEvent(packedType)) releasedEpoch.set(eEpoch);
@@ -489,6 +511,7 @@ public class ReplayCoordinator {
 
                 if (packedType == eType && objSite == (int) expected[3] && objCount == (int) expected[4]) {
                     myQueue.poll();
+                    if (fidelityEnabled) eventsMatched.incrementAndGet();
                     Object traceValue = IdentityMapper.resolveByBirthId((int) expected[5], (int) expected[6]);
                     lastMatchedSeq.set(eSeq);
                     if (isReleaseEvent(packedType)) releasedEpoch.set(eEpoch);
@@ -644,6 +667,7 @@ public class ReplayCoordinator {
                 if (packedType == eType && objSite == (int) expected[3] && objCount == (int) expected[4]) {
                     // // System.out.println("Match found for Role " + roleId + " at Epoch " + eEpoch + " with Type " + (eType & 0xFF));
                     myQueue.poll();
+                    if (fidelityEnabled) eventsMatched.incrementAndGet();
                     lastMatchedSeq.set(eSeq);
                     
                     // If this specific event was a release, make sure we update (redundancy)
@@ -873,6 +897,18 @@ public class ReplayCoordinator {
     }
 
     public static void printFidelityReport() {
+        // If the run ends with required trace events still pending and no structural
+        // mismatch/dead-role failure was observed, classify the run as incomplete.
+        if (!hasDiverged) {
+            for (Map.Entry<Integer, LinkedList<long[]>> entry : roleQueues.entrySet()) {
+                LinkedList<long[]> queue = entry.getValue();
+                if (queue != null && !queue.isEmpty()) {
+                    isIncomplete = true;
+                    break;
+                }
+            }
+        }
+
         long total    = totalValuedEvents.get();
         long agreed   = naturalAgreements.get();
         long injected = injectedEvents.get();
@@ -890,6 +926,9 @@ public class ReplayCoordinator {
         Properties p = new Properties();
         p.setProperty("match",                 String.valueOf(match));
         p.setProperty("structural_divergence", String.valueOf(hasDiverged));
+        p.setProperty("incomplete",            String.valueOf(isIncomplete));
+        p.setProperty("events_matched",        String.valueOf(eventsMatched.get()));
+        p.setProperty("events_total",          String.valueOf(totalEvents));
         p.setProperty("valued_events",         String.valueOf(total));
         p.setProperty("natural_agreements",    String.valueOf(agreed));
         p.setProperty("injections",            String.valueOf(injected));
@@ -922,23 +961,26 @@ public class ReplayCoordinator {
                 || (eventType == BinarySchema.Event.FIELD_WRITE && isVolatile);
     }
 
+    private static boolean isRoleBehind(int roleId, long targetEpoch, boolean shouldHaveLiveThread) {
+        LinkedList<long[]> queue = roleQueues.get(roleId);
+        if (queue == null || queue.isEmpty()) return false;
+
+        long headEpoch = queue.peek()[0] >>> 32;
+        if (headEpoch >= targetEpoch) return false;
+
+        if (shouldHaveLiveThread) {
+            Thread t = roleIdToThread.get(roleId);
+            if (t != null && !t.isAlive()) {
+                reportDivergence(roleId, "thread exited with " + queue.size() + " unconsumed events");
+                return false;
+            }
+        }
+        return true;
+    }
+
     private static boolean isAnyRoleBehind(long targetEpoch) {
         for (Integer activeId : activeRoles) {
-            // If the thread that owns this role has exited normally (no uncaught
-            // exception), it will never call awaitTurn again. Any leftover events
-            // in its queue are phantom events — don't let them block epoch advancement.
-            Thread t = roleIdToThread.get(activeId);
-            if (t != null && !t.isAlive()) continue;
-
-            LinkedList<long[]> queue = roleQueues.get(activeId);
-            if (queue != null && !queue.isEmpty()) {
-                long headEpoch = queue.peek()[0] >>> 32;
-                if (headEpoch < targetEpoch) {
-                    // // System.out.println("[Replay] Role " + activeId + " is still at Epoch " + headEpoch + " (targetEpoch=" + targetEpoch + ")");
-                    // An active thread still has events to process in an older epoch.
-                    return true;
-                }
-            }
+            if (isRoleBehind(activeId, targetEpoch, true)) return true;
         }
 
         // Also check roles that have called checkIn() but haven't yet called
@@ -946,18 +988,16 @@ public class ReplayCoordinator {
         // Without this, a freshly-started thread sitting in startedRoles is invisible
         // to the epoch guard and the epoch can race past its early events.
         for (Integer startedId : startedRoles) {
-            LinkedList<long[]> queue = roleQueues.get(startedId);
-            if (queue != null && !queue.isEmpty()) {
-                long headEpoch = queue.peek()[0] >>> 32;
-                if (headEpoch < targetEpoch) {
-                    // // System.out.println("[Replay] Started-but-not-active role " + startedId + " is still at Epoch " + headEpoch + " (targetEpoch=" + targetEpoch + ")");
-                    return true;
-                }
-            }
+            if (isRoleBehind(startedId, targetEpoch, true)) return true;
+        }
+
+        // Pending roles have not checked in yet, but their queue head still
+        // represents required earlier-epoch work. A later epoch must not open
+        // until that older epoch is fully drained.
+        for (Integer pendingId : pendingRoles) {
+            if (isRoleBehind(pendingId, targetEpoch, false)) return true;
         }
 
         return false;
     }
 }
-
-

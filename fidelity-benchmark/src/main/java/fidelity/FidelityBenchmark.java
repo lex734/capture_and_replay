@@ -1,164 +1,484 @@
 package fidelity;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.Reader;
-import java.net.URISyntaxException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Properties;
+import java.io.*;
+import java.nio.file.*;
+import java.util.*;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 /**
- * Measures how faithfully the replay agent reproduces a captured run.
+ * Measures how faithfully the replay agent reproduces captured SCTBench runs.
  *
- * <p>Runs the workload under capture once (recording stdout), then under replay
- * N times (default 100). Each replay run's stdout is compared against the
- * captured stdout to determine whether the final output matched. Injection-rate
- * and write-event statistics are collected as supplementary metrics via
- * {@code -Dtool.fidelity.output}.
+ * <p>For each class in the SCTBench suite: captures one run unconditionally,
+ * then replays that trace N times (default 30) and reports per-class metrics.
  *
  * <p>Usage:
  * <pre>
  *   java -cp fidelity-benchmark.jar fidelity.FidelityBenchmark \
- *        &lt;capture-agent.jar&gt; &lt;replay-agent.jar&gt; [runs] [workload-class]
+ *        &lt;capture-agent.jar&gt; &lt;replay-agent.jar&gt; &lt;sctbench.jar&gt; [runs=30] [class-or-classlist.txt]
  * </pre>
- *
- * <p>Workload classes available in this jar:
- * <ul>
- *   <li>{@code fidelity.workload.WorkloadAtomicCounter} (default) — ATOMIC_RMW, near-deterministic</li>
- *   <li>{@code fidelity.workload.WorkloadPlainCounter}  — FIELD_WRITE race, less deterministic</li>
- *   <li>{@code fidelity.workload.WorkloadVolatileWrite} — volatile FIELD_WRITE</li>
- *   <li>{@code fidelity.workload.WorkloadSharedObject}  — volatile object-reference race</li>
- *   <li>{@code fidelity.workload.WorkloadArrayElement}  — ARRAY_WRITE, per-element tracking</li>
- * </ul>
  */
 public class FidelityBenchmark {
 
+    private static final long CAPTURE_TIMEOUT_MS = 3_000;
+    private static final long REPLAY_TIMEOUT_MS  = 5_000;
+
+    // Benchmarks where timeout is the expected bug signal (deadlock).
+    private static final Set<String> DEADLOCK_BENCHMARKS = new HashSet<>(Arrays.asList(
+        "cmu.pasta.fray.benchmark.sctbench.cs.origin.Carter01Bad",
+        "cmu.pasta.fray.benchmark.sctbench.cs.origin.Deadlock01Bad",
+        "cmu.pasta.fray.benchmark.sctbench.cs.origin.Phase01Bad",
+        "cmu.pasta.fray.benchmark.sctbench.cs.origin.Sync01Bad",
+        "cmu.pasta.fray.benchmark.sctbench.cs.origin.Sync02Bad"
+    ));
+
     public static void main(String[] args) throws Exception {
-        if (args.length < 2) {
-            System.err.println("Usage: FidelityBenchmark <capture-agent.jar> <replay-agent.jar> [runs=100] [workload-class]");
+        if (args.length < 3) {
+            System.err.println("Usage: FidelityBenchmark <capture-agent.jar> <replay-agent.jar>"
+                + " <sctbench.jar> [runs=30] [class-or-classlist.txt]");
             System.exit(1);
         }
 
-        String captureJar = args[0];
-        String replayJar  = args[1];
-        int    runs       = args.length > 2 ? Integer.parseInt(args[2]) : 100;
-        String workload   = args.length > 3 ? args[3] : "fidelity.workload.WorkloadAtomicCounter";
+        String captureJar  = args[0];
+        String replayJar   = args[1];
+        String sctbenchJar = args[2];
+        int    runs        = args.length > 3 ? Integer.parseInt(args[3]) : 30;
 
-        String selfJar = selfJarPath();
-
-        System.out.printf("=== Fidelity Benchmark: %s  (%d runs) ===%n%n", workload, runs);
-
-        // Step 1: Capture once — record the "Final: X" line as the reference output
-        System.out.println("Capturing...");
-        List<String> captureCmd = List.of("java", "-javaagent:" + captureJar, "-cp", selfJar, workload);
-        String capturedOutput = captureFinalLine(captureCmd);
-        System.out.println("Capture output  : " + capturedOutput);
-        System.out.println();
-
-        // Step 2: Replay N times
-        int  matchCount         = 0;
-        int  structuralDivCount = 0;
-        long sumWriteEvents     = 0;
-        long sumAgreements      = 0;
-        long sumInjections      = 0;
-
-        System.out.println("Replaying...");
-        for (int i = 0; i < runs; i++) {
-            Path resultFile = Path.of("fidelity_result_" + i + ".properties");
-
-            List<String> replayCmd = new ArrayList<>();
-            replayCmd.add("java");
-            replayCmd.add("-Dtool.fidelity.output=" + resultFile.toAbsolutePath());
-            replayCmd.add("-javaagent:" + replayJar);
-            replayCmd.add("-cp");
-            replayCmd.add(selfJar);
-            replayCmd.add(workload);
-
-            String replayOutput = captureFinalLine(replayCmd);
-
-            // Primary metric: did the replay print the same "Final: X" as capture?
-            if (replayOutput.equals(capturedOutput)) matchCount++;
-
-            // Supplementary metrics from the fidelity properties file
-            if (Files.exists(resultFile)) {
-                Properties p = new Properties();
-                try (Reader r = Files.newBufferedReader(resultFile)) {
-                    p.load(r);
-                } catch (IOException e) {
-                    System.err.println("[WARN] Could not read result file for run " + i + ": " + e.getMessage());
-                } finally {
-                    Files.deleteIfExists(resultFile);
-                }
-                if (Boolean.parseBoolean(p.getProperty("structural_divergence", "false"))) structuralDivCount++;
-                sumWriteEvents += Long.parseLong(p.getProperty("valued_events",       "0"));
-                sumAgreements  += Long.parseLong(p.getProperty("natural_agreements", "0"));
-                sumInjections  += Long.parseLong(p.getProperty("injections",         "0"));
+        List<String> classes;
+        if (args.length > 4) {
+            String arg = args[4];
+            Path p = Paths.get(arg);
+            if (Files.isRegularFile(p)) {
+                classes = Files.readAllLines(p).stream()
+                    .map(String::trim).filter(s -> !s.isEmpty())
+                    .collect(Collectors.toList());
+            } else {
+                classes = Collections.singletonList(arg);
             }
-
-            if ((i + 1) % 10 == 0)
-                System.out.printf("  %d / %d complete%n", i + 1, runs);
+        } else {
+            classes = loadBundledClassList();
         }
 
-        // Step 3: Aggregated report
-        double naturalRate   = sumWriteEvents > 0 ? 100.0 * sumAgreements / sumWriteEvents : 0.0;
-        double injectionRate = sumWriteEvents > 0 ? 100.0 * sumInjections  / sumWriteEvents : 0.0;
+        System.out.printf("=== Fidelity Benchmark: SCTBench (%d replay runs per class) ===%n%n", runs);
 
-        System.out.println();
-        System.out.println("===== FIDELITY BENCHMARK RESULTS =====");
-        System.out.printf("Workload                : %s%n", workload);
-        System.out.printf("Runs                    : %d%n", runs);
-        System.out.printf("Final output match      : %d / %d  (%.1f%%)%n",
-                matchCount, runs, 100.0 * matchCount / runs);
-        System.out.printf("Structural divergences  : %d / %d  (%.1f%%)%n",
-                structuralDivCount, runs, 100.0 * structuralDivCount / runs);
-        System.out.printf("Avg write events / run  : %.0f%n", (double) sumWriteEvents / runs);
-        System.out.printf("Natural agreement rate  : %.1f%%%n", naturalRate);
-        System.out.printf("Injection rate          : %.1f%%%n", injectionRate);
-        System.out.println("=======================================");
+        // All subprocesses share the harness working directory. Sequential execution
+        // means there is no race on trace.bin between different classes.
+        Path workDir  = Paths.get("").toAbsolutePath();
+        Path traceFile = workDir.resolve("trace.bin");
+
+        // Summary accumulators
+        int  classesReplayed   = 0;
+        long totalReplays      = 0;
+        long totalCompleteRuns = 0;
+        long totalIncompleteRuns = 0;
+        long totalDivergences  = 0;
+        long totalOutcomeMatch = 0;
+        long totalOutcomeComplete = 0;
+        long totalOutcomeIncomplete = 0;
+        long totalOutcomeDiverged = 0;
+        long totalCompleteMatched = 0;
+        long totalCompleteRemaining = 0;
+        long totalCompleteEvents = 0;
+        long totalIncompleteMatched = 0;
+        long totalIncompleteRemaining = 0;
+        long totalIncompleteEvents = 0;
+        long totalDivergedMatched = 0;
+        long totalDivergedRemaining = 0;
+        long totalDivergedEvents = 0;
+        long totalValued       = 0;
+        long totalAgreements   = 0;
+        long totalInjections   = 0;
+
+        for (String cls : classes) {
+            System.out.printf("--- %s ---%n", cls);
+
+            Files.deleteIfExists(traceFile);
+
+            CaptureResult cr = runCapture(captureJar, sctbenchJar, cls, workDir);
+            System.out.printf("  Capture            : %s%n", cr.summary);
+            if (!cr.traceProduced) {
+                System.out.println();
+                continue;
+            }
+            classesReplayed++;
+
+            // Per-class accumulators
+            long traceSize      = 0;  // events_total (constant per class; take max observed)
+            int  runsWithData   = 0;
+            int  completeRuns   = 0;
+            int  incompleteRuns = 0;
+            int  divergences    = 0;
+            int  outcomeMatch   = 0;
+            int  outcomeComplete = 0;
+            int  outcomeIncomplete = 0;
+            int  outcomeDiverged = 0;
+            long completeMatched = 0, completeRemaining = 0, completeEvents = 0;
+            long incompleteMatched = 0, incompleteRemaining = 0, incompleteEvents = 0;
+            long divergedMatched = 0, divergedRemaining = 0, divergedEvents = 0;
+            long sumValued      = 0, sumAgreements = 0, sumInjections = 0;
+
+            for (int i = 0; i < runs; i++) {
+                Path propsFile = workDir.resolve("fidelity_run_" + i + ".properties");
+                ReplayResult rr = runReplay(replayJar, sctbenchJar, cls, workDir, propsFile);
+
+                if (rr.eventsTotal > traceSize) traceSize = rr.eventsTotal;
+                if (rr.eventsTotal > 0) {
+                    runsWithData++;
+                }
+                long remaining = Math.max(0, rr.eventsTotal - rr.eventsMatched);
+                if (rr.diverged) {
+                    divergences++;
+                    divergedMatched += rr.eventsMatched;
+                    divergedRemaining += remaining;
+                    divergedEvents += rr.eventsTotal;
+                } else if (rr.incomplete) {
+                    incompleteRuns++;
+                    incompleteMatched += rr.eventsMatched;
+                    incompleteRemaining += remaining;
+                    incompleteEvents += rr.eventsTotal;
+                } else {
+                    completeRuns++;
+                    completeMatched += rr.eventsMatched;
+                    completeRemaining += remaining;
+                    completeEvents += rr.eventsTotal;
+                }
+                boolean outMatch = rr.outcomeMatchesCapture(cr.hadBug);
+                if (outMatch) outcomeMatch++;
+                if (rr.diverged && outMatch) outcomeDiverged++;
+                if (rr.incomplete && outMatch) outcomeIncomplete++;
+                if (!rr.diverged && !rr.incomplete && outMatch) outcomeComplete++;
+
+                sumValued     += rr.valuedEvents;
+                sumAgreements += rr.naturalAgreements;
+                sumInjections += rr.injections;
+            }
+
+            // Per-class display
+            System.out.printf("  Trace size         : %d events%n", traceSize);
+            System.out.printf("  Complete runs      : %d / %d%n", completeRuns, runs);
+            System.out.printf("  Incomplete runs    : %d / %d%n", incompleteRuns, runs);
+            System.out.printf("  Structural divs    : %d / %d%n", divergences, runs);
+            System.out.printf("  Outcome reproduced : %d / %d  (%.2f%%)%n",
+                outcomeMatch, runs, 100.0 * outcomeMatch / runs);
+            if (completeRuns > 0) {
+                System.out.printf("  ...complete runs   : %d / %d%n", outcomeComplete, completeRuns);
+            }
+            if (incompleteRuns > 0) {
+                System.out.printf("  ...incomplete runs : %d / %d%n", outcomeIncomplete, incompleteRuns);
+            }
+            if (divergences > 0) {
+                System.out.printf("  ...diverged runs   : %d / %d%n", outcomeDiverged, divergences);
+            }
+            if (completeRuns > 0 && completeEvents > 0) {
+                System.out.printf("  Matched (complete) : %.2f avg / run  (%.2f%%)%n",
+                    (double) completeMatched / completeRuns,
+                    100.0 * completeMatched / completeEvents);
+            }
+            if (incompleteRuns > 0 && incompleteEvents > 0) {
+                System.out.printf("  Matched (incompl.) : %.2f avg / run  (%.2f%%)%n",
+                    (double) incompleteMatched / incompleteRuns,
+                    100.0 * incompleteMatched / incompleteEvents);
+                System.out.printf("  Remaining (incompl.): %.2f avg / run  (%.2f%%)%n",
+                    (double) incompleteRemaining / incompleteRuns,
+                    100.0 * incompleteRemaining / incompleteEvents);
+            }
+            if (divergences > 0 && divergedEvents > 0) {
+                System.out.printf("  Matched (pre-div)  : %.2f avg / run  (%.2f%%)%n",
+                    (double) divergedMatched / divergences,
+                    100.0 * divergedMatched / divergedEvents);
+                System.out.printf("  Remaining (post-div): %.2f avg / run  (%.2f%%)%n",
+                    (double) divergedRemaining / divergences,
+                    100.0 * divergedRemaining / divergedEvents);
+            }
+            if (sumValued > 0) {
+                System.out.printf("  Valued events      : %.2f avg / run%n",
+                    (double) sumValued / runsWithData);
+                System.out.printf("  Natural agreement  : %.2f / %.2f  (%.2f%%)%n",
+                    (double) sumAgreements / runsWithData, (double) sumValued / runsWithData,
+                    100.0 * sumAgreements / sumValued);
+                System.out.printf("  Injections         : %.2f / %.2f  (%.2f%%)%n",
+                    (double) sumInjections / runsWithData, (double) sumValued / runsWithData,
+                    100.0 * sumInjections / sumValued);
+            }
+            System.out.println();
+
+            // Accumulate into summary
+            totalReplays       += runs;
+            totalCompleteRuns  += completeRuns;
+            totalIncompleteRuns += incompleteRuns;
+            totalDivergences   += divergences;
+            totalOutcomeMatch  += outcomeMatch;
+            totalOutcomeComplete += outcomeComplete;
+            totalOutcomeIncomplete += outcomeIncomplete;
+            totalOutcomeDiverged += outcomeDiverged;
+            totalCompleteMatched += completeMatched;
+            totalCompleteRemaining += completeRemaining;
+            totalCompleteEvents += completeEvents;
+            totalIncompleteMatched += incompleteMatched;
+            totalIncompleteRemaining += incompleteRemaining;
+            totalIncompleteEvents += incompleteEvents;
+            totalDivergedMatched += divergedMatched;
+            totalDivergedRemaining += divergedRemaining;
+            totalDivergedEvents += divergedEvents;
+            totalValued        += sumValued;
+            totalAgreements    += sumAgreements;
+            totalInjections    += sumInjections;
+        }
+
+        // Summary
+        System.out.println("===== SUMMARY =====");
+        System.out.printf("Classes tested        : %d%n", classes.size());
+        System.out.printf("Classes replayed      : %d / %d%n", classesReplayed, classes.size());
+        if (totalReplays > 0) {
+            System.out.printf("Complete runs         : %d / %d runs  (%.1f%%)%n",
+                totalCompleteRuns, totalReplays, 100.0 * totalCompleteRuns / totalReplays);
+            System.out.printf("Incomplete runs       : %d / %d runs  (%.1f%%)%n",
+                totalIncompleteRuns, totalReplays, 100.0 * totalIncompleteRuns / totalReplays);
+            System.out.printf("Structural divs       : %d / %d runs  (%.1f%%)%n",
+                totalDivergences, totalReplays, 100.0 * totalDivergences / totalReplays);
+            System.out.printf("Outcome reproduced    : %d / %d runs  (%.1f%%)%n",
+                totalOutcomeMatch, totalReplays, 100.0 * totalOutcomeMatch / totalReplays);
+            if (totalCompleteRuns > 0) {
+                System.out.printf("...complete runs      : %d / %d runs  (%.1f%%)%n",
+                    totalOutcomeComplete, totalCompleteRuns,
+                    100.0 * totalOutcomeComplete / totalCompleteRuns);
+            }
+            if (totalIncompleteRuns > 0) {
+                System.out.printf("...incomplete runs    : %d / %d runs  (%.1f%%)%n",
+                    totalOutcomeIncomplete, totalIncompleteRuns,
+                    100.0 * totalOutcomeIncomplete / totalIncompleteRuns);
+            }
+            if (totalDivergences > 0) {
+                System.out.printf("...diverged runs      : %d / %d runs  (%.1f%%)%n",
+                    totalOutcomeDiverged, totalDivergences,
+                    100.0 * totalOutcomeDiverged / totalDivergences);
+            }
+            if (totalCompleteRuns > 0 && totalCompleteEvents > 0) {
+                System.out.printf("Matched (complete)    : %.1f%%%n",
+                    100.0 * totalCompleteMatched / totalCompleteEvents);
+            }
+            if (totalIncompleteRuns > 0 && totalIncompleteEvents > 0) {
+                System.out.printf("Matched (incomplete)  : %.1f%%%n",
+                    100.0 * totalIncompleteMatched / totalIncompleteEvents);
+                System.out.printf("Remaining (incomplete): %.1f%%%n",
+                    100.0 * totalIncompleteRemaining / totalIncompleteEvents);
+            }
+            if (totalDivergences > 0 && totalDivergedEvents > 0) {
+                System.out.printf("Matched (pre-div)     : %.1f%%%n",
+                    100.0 * totalDivergedMatched / totalDivergedEvents);
+                System.out.printf("Remaining (post-div)  : %.1f%%%n",
+                    100.0 * totalDivergedRemaining / totalDivergedEvents);
+            }
+        }
+        if (totalValued > 0) {
+            System.out.printf("Valued events         : %d%n", totalValued);
+            System.out.printf("Natural agreement     : %d / %d  (%.1f%%)%n",
+                totalAgreements, totalValued, 100.0 * totalAgreements / totalValued);
+            System.out.printf("Injections            : %d / %d  (%.1f%%)%n",
+                totalInjections, totalValued, 100.0 * totalInjections / totalValued);
+        }
+        System.out.println("===================");
     }
 
-    /**
-     * Runs the given command and returns the last line starting with "Final:"
-     * from stdout. All other stdout/stderr output is discarded. Returns an
-     * empty string if no "Final:" line was produced.
-     */
-    private static String captureFinalLine(List<String> cmd) throws IOException, InterruptedException {
-        Process p = new ProcessBuilder(cmd)
-                .redirectErrorStream(false)
-                .start();
+    // ---------- capture ----------
 
-        // Capture stdout, keep only "Final:" lines
-        StringBuilder finalLine = new StringBuilder();
-        Thread reader = new Thread(() -> {
-            try (BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
+    private static CaptureResult runCapture(
+            String captureJar, String sctbenchJar, String cls, Path workDir)
+            throws IOException, InterruptedException {
+
+        RunResult r = runJava(
+            Arrays.asList("-javaagent:" + captureJar, "-ea", "-cp", sctbenchJar, cls),
+            workDir, CAPTURE_TIMEOUT_MS);
+
+        if (!Files.exists(workDir.resolve("trace.bin"))) {
+            String status = r.timedOut ? "timed out" : "exit " + r.exitCode;
+            return new CaptureResult(false, "no trace.bin produced (" + status + ")", false);
+        }
+
+        boolean hadBug = hasBugSignal(r.stdout, r.stderr)
+            || (r.timedOut && DEADLOCK_BENCHMARKS.contains(cls));
+        String outcome = hadBug ? "bug" : "clean";
+        String status  = r.timedOut ? "timed out" : "exit " + r.exitCode;
+        return new CaptureResult(true, outcome + " (" + status + ")", hadBug);
+    }
+
+    // ---------- replay ----------
+
+    private static ReplayResult runReplay(
+            String replayJar, String sctbenchJar, String cls,
+            Path workDir, Path propsFile)
+            throws IOException, InterruptedException {
+
+        List<String> extraArgs = Arrays.asList(
+            "-Dtool.fidelity.output=" + propsFile.toAbsolutePath(),
+            "-javaagent:" + replayJar,
+            "-ea", "-cp", sctbenchJar, cls);
+
+        RunResult r = runJava(extraArgs, workDir, REPLAY_TIMEOUT_MS);
+
+        boolean hadBug  = hasBugSignal(r.stdout, r.stderr)
+            || (r.timedOut && DEADLOCK_BENCHMARKS.contains(cls));
+        boolean diverged = false;
+        boolean incomplete = false;
+
+        long eventsMatched = 0, eventsTotal = 0;
+        long valuedEvents = 0, naturalAgreements = 0, injections = 0;
+
+        if (Files.exists(propsFile)) {
+            Properties p = new Properties();
+            try (Reader rd = Files.newBufferedReader(propsFile)) { p.load(rd); }
+            catch (IOException ignored) {}
+            Files.deleteIfExists(propsFile);
+            diverged          = Boolean.parseBoolean(p.getProperty("structural_divergence", "false"));
+            incomplete        = Boolean.parseBoolean(p.getProperty("incomplete", "false"));
+            eventsMatched     = Long.parseLong(p.getProperty("events_matched",      "0"));
+            eventsTotal       = Long.parseLong(p.getProperty("events_total",        "0"));
+            valuedEvents      = Long.parseLong(p.getProperty("valued_events",       "0"));
+            naturalAgreements = Long.parseLong(p.getProperty("natural_agreements",  "0"));
+            injections        = Long.parseLong(p.getProperty("injections",          "0"));
+        } else {
+            // Fallback for runs that fail before the replay shutdown hook writes stats.
+            diverged = hasDivergenceSignal(r.stdout, r.stderr);
+        }
+
+        if (diverged) incomplete = false;
+
+        return new ReplayResult(hadBug, diverged, incomplete, eventsMatched, eventsTotal,
+            valuedEvents, naturalAgreements, injections);
+    }
+
+    // ---------- process execution ----------
+
+    private static RunResult runJava(List<String> extraArgs, Path workDir, long timeoutMs)
+            throws IOException, InterruptedException {
+
+        List<String> cmd = new ArrayList<>(Arrays.asList(
+            javaExecutable(),
+            "--add-opens", "java.base/java.lang=ALL-UNNAMED",
+            "--add-opens", "java.base/java.util.concurrent=ALL-UNNAMED",
+            "--add-opens", "java.base/java.util.concurrent.locks=ALL-UNNAMED"
+        ));
+        cmd.addAll(extraArgs);
+
+        Process p = new ProcessBuilder(cmd)
+            .directory(workDir.toFile())
+            .redirectErrorStream(false)
+            .start();
+
+        StringWriter outSW = new StringWriter(), errSW = new StringWriter();
+        Thread outT = drain(p.getInputStream(), outSW);
+        Thread errT = drain(p.getErrorStream(), errSW);
+
+        boolean finished = p.waitFor(timeoutMs, TimeUnit.MILLISECONDS);
+        if (!finished) {
+            p.destroy(); // SIGTERM — lets shutdown hooks (fidelity report) run
+            finished = p.waitFor(2, TimeUnit.SECONDS);
+            if (!finished) p.destroyForcibly();
+            p.waitFor();
+        }
+        outT.join();
+        errT.join();
+
+        return new RunResult(outSW.toString(), errSW.toString(),
+            finished ? p.exitValue() : 124, !finished);
+    }
+
+    private static Thread drain(InputStream is, Writer out) {
+        Thread t = new Thread(() -> {
+            try (BufferedReader br = new BufferedReader(new InputStreamReader(is))) {
                 String line;
-                while ((line = br.readLine()) != null) {
-                    if (line.startsWith("Final:")) finalLine.replace(0, finalLine.length(), line);
-                }
+                while ((line = br.readLine()) != null) out.write(line + "\n");
             } catch (IOException ignored) {}
         });
-        reader.start();
-        // Discard stderr
-        Thread errDrain = new Thread(() -> {
-            try { p.getErrorStream().transferTo(java.io.OutputStream.nullOutputStream()); }
-            catch (IOException ignored) {}
-        });
-        errDrain.start();
-
-        int exit = p.waitFor();
-        reader.join();
-        errDrain.join();
-
-        if (exit != 0) System.err.println("[WARN] Process exited with code " + exit + ": " + cmd.get(cmd.size() - 1));
-        return finalLine.toString();
+        t.setDaemon(true);
+        t.start();
+        return t;
     }
 
-    private static String selfJarPath() throws URISyntaxException {
-        return Path.of(FidelityBenchmark.class.getProtectionDomain()
-                .getCodeSource().getLocation().toURI()).toString();
+    private static String javaExecutable() {
+        return Paths.get(System.getProperty("java.home"), "bin", "java").toString();
+    }
+
+    // ---------- signal detection ----------
+
+    private static boolean hasBugSignal(String stdout, String stderr) {
+        String combined = stdout + stderr;
+        return combined.contains("AssertionError")
+            || combined.contains("Bug Found!")
+            || combined.contains("Bug found!")
+            || combined.contains("Deadlock detected")
+            || combined.contains("RuntimeException: deadlock");
+    }
+
+    private static boolean hasDivergenceSignal(String stdout, String stderr) {
+        String combined = stdout + stderr;
+        return combined.contains("[DIVERGENCE]")
+            || combined.contains("structurally diverged")
+            || combined.contains("valued event mismatch")
+            || combined.contains("site mismatch")
+            || combined.contains("object mismatch");
+    }
+
+    // ---------- helpers ----------
+
+    private static List<String> loadBundledClassList() throws IOException {
+        try (InputStream is = FidelityBenchmark.class.getResourceAsStream("/sctbench.txt")) {
+            if (is == null) throw new IOException("sctbench.txt not found in jar");
+            return new BufferedReader(new InputStreamReader(is)).lines()
+                .map(String::trim).filter(s -> !s.isEmpty())
+                .collect(Collectors.toList());
+        }
+    }
+
+    // ---------- result types ----------
+
+    private static final class CaptureResult {
+        final boolean traceProduced;
+        final String  summary;
+        final boolean hadBug;
+        CaptureResult(boolean traceProduced, String summary, boolean hadBug) {
+            this.traceProduced = traceProduced;
+            this.summary       = summary;
+            this.hadBug        = hadBug;
+        }
+    }
+
+    private static final class ReplayResult {
+        final boolean hadBug;
+        final boolean diverged;
+        final boolean incomplete;
+        final long    eventsMatched;
+        final long    eventsTotal;
+        final long    valuedEvents;
+        final long    naturalAgreements;
+        final long    injections;
+        ReplayResult(boolean hadBug, boolean diverged, boolean incomplete,
+                     long eventsMatched, long eventsTotal,
+                     long valuedEvents, long naturalAgreements, long injections) {
+            this.hadBug            = hadBug;
+            this.diverged          = diverged;
+            this.incomplete        = incomplete;
+            this.eventsMatched     = eventsMatched;
+            this.eventsTotal       = eventsTotal;
+            this.valuedEvents      = valuedEvents;
+            this.naturalAgreements = naturalAgreements;
+            this.injections        = injections;
+        }
+        boolean outcomeMatchesCapture(boolean captureHadBug) {
+            return hadBug == captureHadBug;
+        }
+    }
+
+    private static final class RunResult {
+        final String  stdout;
+        final String  stderr;
+        final int     exitCode;
+        final boolean timedOut;
+        RunResult(String stdout, String stderr, int exitCode, boolean timedOut) {
+            this.stdout   = stdout;
+            this.stderr   = stderr;
+            this.exitCode = exitCode;
+            this.timedOut = timedOut;
+        }
     }
 }

@@ -358,9 +358,9 @@ public class TraceLogger {
         if (IdentityMapper.shouldSkipObjectEvent(birthId, false)) return;
         long seq = nextSeq();
         String className = exception.getClass().getName();
-        // System.out.println(String.format(
-                // "[THROW]  seq=%d role=%d  %s  site=%d",
-                // seq, roleId, className, siteId));
+        System.out.println(String.format(
+                "[THROW]  seq=%d role=%d  %s  site=%d objSite=%d objCount=%d",
+                seq, roleId, className, siteId, birthId.siteId, birthId.count));
 
         BinarySchema.write(seq, (long) roleId,
                 BinarySchema.packType(BinarySchema.Event.EXCEPTION_THROW, BinarySchema.Flags.NONE),

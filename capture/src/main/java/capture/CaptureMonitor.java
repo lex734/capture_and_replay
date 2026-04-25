@@ -324,6 +324,21 @@ public class CaptureMonitor {
     }
   }
 
+  public static boolean captureTryLock(Lock lock, long siteId) {
+    if (lock == null) return false;
+    if (isInside.get() || shouldIgnoreCurrentRole(siteId)) return lock.tryLock();
+    isInside.set(true);
+    captureOrderLock.lock();
+    try {
+      boolean result = lock.tryLock();
+      TraceLogger.logNondetInt(result ? 1 : 0, siteId);
+      return result;
+    } finally {
+      captureOrderLock.unlock();
+      isInside.set(false);
+    }
+  }
+
   // ---- Atomic capture bracketing -----------------------------------------------
   // beginAtomicCapture() acquires captureOrderLock.  The original atomic
   // method call then executes in the instrumented bytecode while the lock is

@@ -988,6 +988,17 @@ public class SyncTransformer implements ClassFileTransformer {
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayUnlock",
                             "(Ljava/util/concurrent/locks/Lock;J)V", false);
                     return;
+                } else if (name.equals("tryLock") && descriptor.equals("()Z")) {
+                    mv.visitLdcInsn(siteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayTryLock",
+                            "(Ljava/util/concurrent/locks/Lock;J)Z", false);
+                    return;
+                } else if (owner.equals("java/util/concurrent/locks/ReentrantLock")
+                        && name.equals("isLocked") && descriptor.equals("()Z")) {
+                    mv.visitLdcInsn(siteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayIsLocked",
+                            "(Ljava/util/concurrent/locks/ReentrantLock;J)Z", false);
+                    return;
                 } else if (name.equals("newCondition") && descriptor.equals("()Ljava/util/concurrent/locks/Condition;")) {
                     mv.visitLdcInsn(siteId);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayNewCondition",
@@ -998,7 +1009,12 @@ public class SyncTransformer implements ClassFileTransformer {
 
             if (!isReplay && (owner.equals("java/util/concurrent/locks/ReentrantLock")
                     || owner.equals("java/util/concurrent/locks/Lock"))) {
-                if (name.equals("newCondition") && descriptor.equals("()Ljava/util/concurrent/locks/Condition;")) {
+                if (name.equals("tryLock") && descriptor.equals("()Z")) {
+                    mv.visitLdcInsn(siteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "captureTryLock",
+                            "(Ljava/util/concurrent/locks/Lock;J)Z", false);
+                    return;
+                } else if (name.equals("newCondition") && descriptor.equals("()Ljava/util/concurrent/locks/Condition;")) {
                     mv.visitLdcInsn(siteId);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "captureNewCondition",
                             "(Ljava/util/concurrent/locks/Lock;J)Ljava/util/concurrent/locks/Condition;", false);
@@ -1631,6 +1647,9 @@ public class SyncTransformer implements ClassFileTransformer {
                     break;
                 case "java/lang/Math":
                     if (name.equals("random")) return "DOUBLE";
+                    break;
+                case "java/lang/Thread":
+                    if (name.equals("activeCount")) return "INT";
                     break;
             }
             return null;

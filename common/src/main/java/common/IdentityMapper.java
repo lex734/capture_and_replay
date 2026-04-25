@@ -212,6 +212,22 @@ public class IdentityMapper {
             return BirthId.GLOBAL;
         }
 
+        // Class literals/objects (e.g., synchronized(MyClass.class)) are VM singletons.
+        // If lazily registered by first-touch site, different threads can assign
+        // different siteIds across runs, breaking monitor identity replay.
+        if (obj instanceof Class<?>) {
+            Class<?> cls = (Class<?>) obj;
+            BirthId.Heap id = new BirthId.Heap(
+                    GLOBAL_ROLE_ID,
+                    stableSiteId("class-literal:" + cls.getName()),
+                    0);
+            synchronized (objToId) {
+                objToId.put(obj, id);
+                idToObj.put(id, obj);
+            }
+            return id;
+        }
+
         BirthId groovyReflectionId = stableGroovyReflectionId(obj);
         if (groovyReflectionId != null) {
             synchronized (objToId) {
@@ -238,29 +254,21 @@ public class IdentityMapper {
             if (existing != null)
                 return existing;
 
-            // Object was never passed through registerAllocation — lazy-register it.
-            // Use per-role-per-site counters for the same reason as registerAllocation.
-            long tid = Thread.currentThread().getId();
-            int roleId = isIgnoredSite(currentInstructionSiteId)
-                    ? IGNORED_ROLE_ID
-                    : getRoleIdBySite(tid, currentInstructionSiteId);
-            AtomicInteger counter;
-            if (roleId >= 0) {
-                RoleSiteKey key = new RoleSiteKey(roleId, currentInstructionSiteId);
-                counter = roleSiteCounters.computeIfAbsent(key, k -> new AtomicInteger(1));
-            } else {
-                counter = siteCounters.computeIfAbsent(currentInstructionSiteId, k -> new AtomicInteger(1));
-            }
-            BirthId.Heap newId = new BirthId.Heap(roleId, currentInstructionSiteId, counter.getAndIncrement());
+            // Object was never passed through registerAllocation — assign a stable
+            // fallback id that is independent of first-touch timing.
+            String ownerNamespace = ownerName == null ? "<none>" : ownerName;
+            long stableObjSite = stableSiteId("lazy-object:" + obj.getClass().getName() + "|" + ownerNamespace);
+            BirthId.Heap newId = new BirthId.Heap(GLOBAL_ROLE_ID, stableObjSite, 0);
             objToId.put(obj, newId);
             idToObj.put(newId, obj);
 
             // Temporary debug logging for lazy registrations. Enable with -Didentity.lazylog=true
             if (Boolean.getBoolean("identity.lazylog")) {
+                long tid = Thread.currentThread().getId();
                 String threadName = Thread.currentThread().getName();
                 System.err.println(String.format(
                     "[LAZY-REGISTER] tid=%d thread=%s role=%d site=%d owner=%s objClass=%s",
-                    tid, threadName, roleId, currentInstructionSiteId,
+                    tid, threadName, GLOBAL_ROLE_ID, stableObjSite,
                     ownerName == null ? "<null>" : ownerName, obj.getClass().getName()));
                 StackTraceElement[] st = Thread.currentThread().getStackTrace();
                 // skip first 3 frames (getStackTrace, this block, caller) and print a few frames

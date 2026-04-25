@@ -1,4 +1,4 @@
 replay/ReplayMonitor.class
 replay/ReplayCoordinator.class
-replay/ReplayCoordinator$ReplayDivergedException.class
+replay/ReplayMonitor$LockState.class
 replay/ReplayAgent.class

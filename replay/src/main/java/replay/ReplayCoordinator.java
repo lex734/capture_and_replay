@@ -3,8 +3,12 @@ package replay;
 import common.BinarySchema;
 import common.IdentityMapper;
 
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.Writer;
 import java.nio.MappedByteBuffer;
 import java.util.ArrayList;
+import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -16,25 +20,19 @@ public class ReplayCoordinator {
     private static final int IGNORE_CREATOR_ROLE = Integer.MIN_VALUE;
     private static final long IGNORE_AUX = Long.MIN_VALUE;
 
-    public static class ReplayDivergedException extends RuntimeException {
-        ReplayDivergedException(String message) {
-            super(message);
-        }
-    }
-
     // Pre-sorted event array: [seq, roleId, packedType, objSite, objCount,
     // data1..data4, slotIdx, objCreatorRole, creatorRoles, data5, data6]
     private static long[][] sortedEvents;
     private static long totalEvents;
     private static final AtomicLong currentIdx = new AtomicLong(0);
     private static final ReentrantLock controlLock = new ReentrantLock();
-    private static final long STALL_TIMEOUT_NANOS = TimeUnit.MILLISECONDS.toNanos(
-            Long.getLong("replay.stall.timeout.ms", 30000L));
 
     // Order-correctness counters.
     private static final AtomicLong matchedCount = new AtomicLong(0);
     private static final AtomicLong skippedCount = new AtomicLong(0);
     private static long sequenceHash = 17L;
+    static volatile boolean fidelityEnabled = false;
+    static volatile String fidelityOutputPath = null;
 
     // Per-role condition: a thread waiting for its turn parks here.
     private static final ConcurrentHashMap<Integer, Condition> roleConditions = new ConcurrentHashMap<>();
@@ -54,10 +52,6 @@ public class ReplayCoordinator {
     private static final Set<Integer> pendingRoles  = ConcurrentHashMap.newKeySet();
     private static final Set<Integer> activeRoles   = ConcurrentHashMap.newKeySet();
     private static final Set<Integer> startedRoles  = ConcurrentHashMap.newKeySet();
-
-    private static volatile String abortReason;
-    private static long idxStartedAtNanos;
-    private static long idxStartedAt = -1;
 
     private static Condition conditionFor(int roleId) {
         return roleConditions.computeIfAbsent(roleId, k -> controlLock.newCondition());
@@ -83,9 +77,6 @@ public class ReplayCoordinator {
         matchedCount.set(0);
         skippedCount.set(0);
         sequenceHash = 17L;
-        abortReason = null;
-        idxStartedAt = 0;
-        idxStartedAtNanos = System.nanoTime();
         roleConditions.clear();
         pendingRoles.clear();
         activeRoles.clear();
@@ -125,74 +116,9 @@ public class ReplayCoordinator {
         }
     }
 
-    private static void throwIfAborted() {
-        String reason = abortReason;
-        if (reason != null) {
-            throw new ReplayDivergedException(reason);
-        }
-    }
-
-    private static String eventSummary(long[] event) {
-        return String.format("role=%d type=%d objSite=%d objCount=%d creator=%d data1=%d data2=%d",
-                (int) event[1], (int) event[2] & 0xFF, event[3], (int) event[4],
-                (int) event[10], event[5], event[6]);
-    }
-
-    private static String actualSummary(int roleId, int packedType, long objSite, int objCount,
-                                        long data, int objCreatorRole) {
-        return String.format("role=%d type=%d objSite=%d objCount=%d creator=%d data=%d",
-                roleId, packedType & 0xFF, objSite, objCount, objCreatorRole, data);
-    }
-
-    private static void abortReplay(String reason) {
-        if (abortReason == null) {
-            abortReason = reason;
-            System.err.println("[Replay DIVERGED] " + reason);
-            for (Condition c : roleConditions.values()) {
-                c.signalAll();
-            }
-            anyChange.signalAll();
-        }
-        throwIfAborted();
-    }
-
-    private static void noteIdxProgress(long idx) {
-        if (idxStartedAt != idx) {
-            idxStartedAt = idx;
-            idxStartedAtNanos = System.nanoTime();
-        }
-    }
-
     private static void advanceIdxAndSignal() {
-        long idx = currentIdx.incrementAndGet();
-        noteIdxProgress(idx);
+        currentIdx.incrementAndGet();
         signalNext();
-    }
-
-    private static void abortIfSameRoleDiverged(long idx, long[] expected,
-                                                int roleId, int packedType,
-                                                long objSite, int objCount, long data,
-                                                int objCreatorRole) {
-        if (roleId == (int) expected[1]) {
-            abortReplay(String.format("idx=%d expected %s but replay reached %s",
-                    idx, eventSummary(expected),
-                    actualSummary(roleId, packedType, objSite, objCount, data, objCreatorRole)));
-        }
-    }
-
-    private static void abortIfStalled(long idx, long[] expected,
-                                       int roleId, int packedType,
-                                       long objSite, int objCount, long data,
-                                       int objCreatorRole) {
-        if (STALL_TIMEOUT_NANOS <= 0) return;
-        noteIdxProgress(idx);
-        long elapsed = System.nanoTime() - idxStartedAtNanos;
-        if (elapsed >= STALL_TIMEOUT_NANOS) {
-            abortReplay(String.format(
-                    "idx=%d made no progress for %d ms; expected %s; last waiter was %s",
-                    idx, TimeUnit.NANOSECONDS.toMillis(elapsed), eventSummary(expected),
-                    actualSummary(roleId, packedType, objSite, objCount, data, objCreatorRole)));
-        }
     }
 
     /**
@@ -226,7 +152,6 @@ public class ReplayCoordinator {
         int threadStartType = BinarySchema.packType(BinarySchema.Event.THREAD_START, BinarySchema.Flags.NONE);
         controlLock.lock();
         try {
-            throwIfAborted();
             long idx = currentIdx.get();
             int fallbackChildRole = -1;
             for (long i = idx; i < totalEvents; i++) {
@@ -268,20 +193,6 @@ public class ReplayCoordinator {
             } finally {
                 controlLock.unlock();
             }
-        }
-    }
-
-    /** Called by the UncaughtExceptionHandler when a replay thread dies early. */
-    public static void reportThreadDead(int roleId) {
-        activeRoles.remove(roleId);
-        startedRoles.remove(roleId);
-        pendingRoles.remove(roleId);
-        System.err.println("[Replay] role=" + roleId + " died — skipping its remaining events.");
-        controlLock.lock();
-        try {
-            signalNext();
-        } finally {
-            controlLock.unlock();
         }
     }
 
@@ -377,12 +288,6 @@ public class ReplayCoordinator {
         int expectedRole = (int) expected[1];
 
         if (pendingRoles.contains(expectedRole)) {
-            noteIdxProgress(idx);
-            long elapsed = System.nanoTime() - idxStartedAtNanos;
-            if (STALL_TIMEOUT_NANOS > 0 && elapsed >= STALL_TIMEOUT_NANOS) {
-                abortReplay(String.format("idx=%d made no progress for %d ms; expected %s but role=%d never started",
-                        idx, TimeUnit.NANOSECONDS.toMillis(elapsed), eventSummary(expected), expectedRole));
-            }
             anyChange.await(10, TimeUnit.MILLISECONDS);
             return true;
         }
@@ -391,7 +296,6 @@ public class ReplayCoordinator {
             return true; // re-check
         }
         if (!activeRoles.contains(expectedRole)) {
-            System.err.println("[Replay] role=" + expectedRole + " is dead, skipping idx=" + idx);
             skippedCount.incrementAndGet();
             advanceIdxAndSignal();
             return true;
@@ -438,10 +342,8 @@ public class ReplayCoordinator {
             System.out.println(String.format("[awaitTurn] role=%d type=%d objSite=%d objCount=%d data=%d",
                     roleId, packedType & 0xFF, objSite, objCount, data));
             while (true) {
-                throwIfAborted();
                 long idx = currentIdx.get();
                 if (idx >= totalEvents) return;
-                noteIdxProgress(idx);
 
                 long[] expected = sortedEvents[(int) idx];
                 System.out.println(String.format("[check] idx=%-4d expects role=%d type=%d objSite=%d objCount=%d data1=%d data2=%d",
@@ -458,36 +360,6 @@ public class ReplayCoordinator {
                     return;
                 }
 
-                // Field reads in spin loops can appear with different fieldIds between
-                // capture and replay due to short-circuit evaluation differences (e.g.
-                // `a && b` skips `b` when `a` is false, so which fields get read varies
-                // with runtime values). When the same role presents a FIELD_READ at the
-                // same object site but a different fieldId, skip the stale trace event
-                // and re-anchor on the next synchronisation event.
-                if (roleId == (int) expected[1]
-                        && (expected[2] & 0xFF) == BinarySchema.Event.FIELD_READ
-                        && (packedType  & 0xFF) == BinarySchema.Event.FIELD_READ
-                        && objSite  == expected[3]
-                        && objCount == (int) expected[4]) {
-                    skippedCount.incrementAndGet();
-                    advanceIdxAndSignal();
-                    continue;
-                }
-
-                // Some deadlock-style SCTBench cases spin on plain field reads until
-                // the failure condition becomes true, then throw. Replay may observe
-                // extra same-role reads before the expected EXCEPTION_THROW, so give
-                // the schedule time to converge instead of aborting immediately.
-                if (roleId == (int) expected[1]
-                        && (expected[2] & 0xFF) == BinarySchema.Event.EXCEPTION_THROW
-                        && (packedType & 0xFF) == BinarySchema.Event.FIELD_READ) {
-                    abortIfStalled(idx, expected, roleId, packedType, objSite, objCount, data, objCreatorRole);
-                    myTurn.await(100, TimeUnit.MILLISECONDS);
-                    continue;
-                }
-
-                abortIfSameRoleDiverged(idx, expected, roleId, packedType, objSite, objCount, data, objCreatorRole);
-                abortIfStalled(idx, expected, roleId, packedType, objSite, objCount, data, objCreatorRole);
                 System.err.println(String.format("[WAIT]  idx=%-4d expects role=%d type=%d  got role=%d type=%d",
                         idx, (int) expected[1], (int) expected[2] & 0xFF, roleId, packedType & 0xFF));
                 myTurn.await(100, TimeUnit.MILLISECONDS);
@@ -507,10 +379,8 @@ public class ReplayCoordinator {
             activateRole(roleId);
             Condition myTurn = conditionFor(roleId);
             while (true) {
-                throwIfAborted();
                 long idx = currentIdx.get();
                 if (idx >= totalEvents) return -1;
-                noteIdxProgress(idx);
 
                 long[] expected = sortedEvents[(int) idx];
                 if (advancePastBlockedRoles()) continue;
@@ -526,10 +396,6 @@ public class ReplayCoordinator {
                     return childRole;
                 }
 
-                abortIfSameRoleDiverged(idx, expected, roleId, packedType,
-                        birthId.siteId, birthId.count, siteId, objCreatorRole);
-                abortIfStalled(idx, expected, roleId, packedType,
-                        birthId.siteId, birthId.count, siteId, objCreatorRole);
                 myTurn.await(100, TimeUnit.MILLISECONDS);
             }
         } catch (InterruptedException e) {
@@ -576,10 +442,8 @@ public class ReplayCoordinator {
             activateRole(roleId);
             Condition myTurn = conditionFor(roleId);
             while (true) {
-                throwIfAborted();
                 long idx = currentIdx.get();
                 if (idx >= totalEvents) return 0;
-                noteIdxProgress(idx);
                 long[] expected = sortedEvents[(int) idx];
 
                 if (advancePastBlockedRoles()) continue;
@@ -590,15 +454,18 @@ public class ReplayCoordinator {
                         && (data5 == IGNORE_AUX || data5 == expected[12])) {
                     recordMatch(expected);
                     int postOpValue  = (int) expected[5];
-                    int returnValue  = (int) expected[6];
+                    int eventId = packedType & 0xFF;
+                    // NONDETERMINISTIC_INT records the captured value in data1.
+                    // Atomic int events use data1 as post-op and data2 as return value.
+                    int returnValue  = (eventId == BinarySchema.Event.NONDETERMINISTIC_INT)
+                            ? postOpValue
+                            : (int) expected[6];
                     if (onMatch != null) {
                         try { onMatch.accept(postOpValue); } catch (Exception e) { e.printStackTrace(); }
                     }
                     advanceIdxAndSignal();
                     return returnValue;
                 }
-                abortIfSameRoleDiverged(idx, expected, roleId, packedType, objSite, objCount, 0, objCreatorRole);
-                abortIfStalled(idx, expected, roleId, packedType, objSite, objCount, 0, objCreatorRole);
                 myTurn.await(100, TimeUnit.MILLISECONDS);
             }
         } catch (InterruptedException e) {
@@ -645,10 +512,8 @@ public class ReplayCoordinator {
             activateRole(roleId);
             Condition myTurn = conditionFor(roleId);
             while (true) {
-                throwIfAborted();
                 long idx = currentIdx.get();
                 if (idx >= totalEvents) return 0L;
-                noteIdxProgress(idx);
                 long[] expected = sortedEvents[(int) idx];
 
                 if (advancePastBlockedRoles()) continue;
@@ -666,8 +531,6 @@ public class ReplayCoordinator {
                     advanceIdxAndSignal();
                     return returnValue;
                 }
-                abortIfSameRoleDiverged(idx, expected, roleId, packedType, objSite, objCount, 0, objCreatorRole);
-                abortIfStalled(idx, expected, roleId, packedType, objSite, objCount, 0, objCreatorRole);
                 myTurn.await(100, TimeUnit.MILLISECONDS);
             }
         } catch (InterruptedException e) {
@@ -699,10 +562,8 @@ public class ReplayCoordinator {
             activateRole(roleId);
             Condition myTurn = conditionFor(roleId);
             while (true) {
-                throwIfAborted();
                 long idx = currentIdx.get();
                 if (idx >= totalEvents) return;
-                noteIdxProgress(idx);
                 long[] expected = sortedEvents[(int) idx];
 
                 if (advancePastBlockedRoles()) continue;
@@ -714,8 +575,6 @@ public class ReplayCoordinator {
                     recordMatch(expected);
                     return; // lock still held; endAtomicReplay() will advance + release
                 }
-                abortIfSameRoleDiverged(idx, expected, roleId, packedType, objSite, objCount, 0, objCreatorRole);
-                abortIfStalled(idx, expected, roleId, packedType, objSite, objCount, 0, objCreatorRole);
                 System.err.println(String.format("[WAIT]  idx=%-4d expects role=%d type=%d  got role=%d type=%d",
                         idx, (int) expected[1], (int) expected[2] & 0xFF, roleId, packedType & 0xFF));
                 myTurn.await(100, TimeUnit.MILLISECONDS);
@@ -748,10 +607,8 @@ public class ReplayCoordinator {
             activateRole(roleId);
             Condition myTurn = conditionFor(roleId);
             while (true) {
-                throwIfAborted();
                 long idx = currentIdx.get();
                 if (idx >= totalEvents) return;
-                noteIdxProgress(idx);
                 long[] expected = sortedEvents[(int) idx];
 
                 if (advancePastBlockedRoles()) continue;
@@ -760,8 +617,6 @@ public class ReplayCoordinator {
                     recordMatch(expected);
                     return;
                 }
-                abortIfSameRoleDiverged(idx, expected, roleId, packedType, objSite, objCount, data, objCreatorRole);
-                abortIfStalled(idx, expected, roleId, packedType, objSite, objCount, data, objCreatorRole);
                 myTurn.await(100, TimeUnit.MILLISECONDS);
             }
         } catch (InterruptedException e) {
@@ -814,10 +669,8 @@ public class ReplayCoordinator {
             activateRole(roleId);
             Condition myTurn = conditionFor(roleId);
             while (true) {
-                throwIfAborted();
                 long idx = currentIdx.get();
                 if (idx >= totalEvents) return null;
-                noteIdxProgress(idx);
                 long[] expected = sortedEvents[(int) idx];
 
                 if (advancePastBlockedRoles()) continue;
@@ -842,8 +695,6 @@ public class ReplayCoordinator {
                     advanceIdxAndSignal();
                     return returnValue;
                 }
-                abortIfSameRoleDiverged(idx, expected, roleId, packedType, objSite, objCount, 0, objCreatorRole);
-                abortIfStalled(idx, expected, roleId, packedType, objSite, objCount, 0, objCreatorRole);
                 myTurn.await(100, TimeUnit.MILLISECONDS);
             }
         } catch (InterruptedException e) {
@@ -862,5 +713,23 @@ public class ReplayCoordinator {
         System.err.println(String.format(
             "[ReplayStats] matched=%d skipped=%d total=%d seqHash=%d",
             matchedCount.get(), skippedCount.get(), totalEvents, sequenceHash));
+        if (fidelityEnabled) {
+            printFidelityReport();
+        }
+    }
+
+    public static void printFidelityReport() {
+        if (!fidelityEnabled || fidelityOutputPath == null) return;
+
+        Properties p = new Properties();
+        p.setProperty("match", String.valueOf(matchedCount.get() == totalEvents));
+        p.setProperty("events_matched", String.valueOf(matchedCount.get()));
+        p.setProperty("events_total", String.valueOf(totalEvents));
+
+        try (Writer w = new FileWriter(fidelityOutputPath)) {
+            p.store(w, "Replay Fidelity Result");
+        } catch (IOException e) {
+            System.err.println("[FIDELITY] Failed to write result file: " + e.getMessage());
+        }
     }
 }

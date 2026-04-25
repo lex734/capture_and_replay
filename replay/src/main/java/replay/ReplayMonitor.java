@@ -4,7 +4,9 @@ import common.BinarySchema;
 import common.IdentityMapper;
 import common.IdentityMapper.BirthId;
 
+import java.util.IdentityHashMap;
 import java.util.Date;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
@@ -24,6 +26,46 @@ import java.util.concurrent.locks.Lock;
 public class ReplayMonitor {
     private static final ThreadLocal<Boolean> isInside = ThreadLocal.withInitial(() -> false);
     private static final ThreadLocal<Boolean> atomicReplayActive = ThreadLocal.withInitial(() -> false);
+    // Enforced runtime sync-state model for replay:
+    // lock/tryLock/unlock/await/signal update this model directly, and user code
+    // decisions (e.g., isLocked()) are injected from here.
+    private static final class LockState {
+        long ownerTid;
+        int holdCount;
+    }
+    private static final Map<Lock, LockState> lockStates = new IdentityHashMap<>();
+    private static final Map<Condition, Lock> conditionToLock = new IdentityHashMap<>();
+
+    private static void modelAcquire(Lock lock, long tid) {
+        synchronized (lockStates) {
+            LockState st = lockStates.computeIfAbsent(lock, k -> new LockState());
+            if (st.ownerTid == tid) {
+                st.holdCount++;
+            } else {
+                st.ownerTid = tid;
+                st.holdCount = 1;
+            }
+        }
+    }
+
+    private static void modelRelease(Lock lock, long tid) {
+        synchronized (lockStates) {
+            LockState st = lockStates.get(lock);
+            if (st == null) return;
+            if (st.ownerTid != tid) return;
+            st.holdCount--;
+            if (st.holdCount <= 0) {
+                lockStates.remove(lock);
+            }
+        }
+    }
+
+    private static boolean modelIsLocked(Lock lock) {
+        synchronized (lockStates) {
+            LockState st = lockStates.get(lock);
+            return st != null && st.holdCount > 0;
+        }
+    }
 
     // ---- Sync events (monitor enter/exit, thread lifecycle, wait/notify, park/unpark) ----
 
@@ -296,6 +338,7 @@ public class ReplayMonitor {
             BirthId birthId = IdentityMapper.getBirthId(lock, null, currentSiteId);
             int packedType = BinarySchema.packType(BinarySchema.Event.MONITOR_ENTER, BinarySchema.Flags.NONE);
             ReplayCoordinator.awaitTurn(roleId, packedType, birthId, currentSiteId);
+            modelAcquire(lock, tid);
         } finally {
             isInside.set(false);
         }
@@ -314,6 +357,7 @@ public class ReplayMonitor {
             BirthId birthId = IdentityMapper.getBirthId(lock, null, currentSiteId);
             int packedType = BinarySchema.packType(BinarySchema.Event.MONITOR_EXIT, BinarySchema.Flags.NONE);
             ReplayCoordinator.awaitTurn(roleId, packedType, birthId, currentSiteId);
+            modelRelease(lock, tid);
         } finally {
             isInside.set(false);
         }
@@ -326,16 +370,49 @@ public class ReplayMonitor {
         isInside.set(true);
         try {
             IdentityMapper.registerAllocation(condition, currentSiteId);
+            synchronized (conditionToLock) {
+                conditionToLock.put(condition, lock);
+            }
             return condition;
         } finally {
             isInside.set(false);
         }
     }
 
+    public static boolean replayTryLock(Lock lock, long currentSiteId) {
+        if (lock == null) return false;
+        if (isInside.get()) return lock.tryLock();
+        isInside.set(true);
+        try {
+            long tid = Thread.currentThread().getId();
+            int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+            if (roleId == -1) return lock.tryLock();
+            int packedType = BinarySchema.packType(BinarySchema.Event.NONDETERMINISTIC_INT, BinarySchema.Flags.NONE);
+            int val = ReplayCoordinator.awaitTurnInt(roleId, packedType, currentSiteId, 0);
+            if (val != 0) {
+                modelAcquire(lock, tid);
+                return true;
+            }
+            return false;
+        } finally {
+            isInside.set(false);
+        }
+    }
+
+    public static boolean replayIsLocked(java.util.concurrent.locks.ReentrantLock lock, long currentSiteId) {
+        if (lock == null) return false;
+        if (isInside.get()) return modelIsLocked(lock);
+        isInside.set(true);
+        try {
+            return modelIsLocked(lock);
+        } finally {
+            isInside.set(false);
+        }
+    }
+
     // ---- Condition await variants ----
-    // Replay follows the captured trace order directly. ReentrantLock and
-    // Condition operations are not executed physically because the trace already
-    // encodes the synchronization order they established during capture.
+    // Replay follows captured order and applies lock/condition side-effects in
+    // the injected sync-state model.
 
     private static void conditionAwaitTurn(Condition condition, long currentSiteId) {
         long tid = Thread.currentThread().getId();
@@ -362,8 +439,16 @@ public class ReplayMonitor {
         }
         isInside.set(true);
         try {
+            long tid = Thread.currentThread().getId();
             conditionAwaitTurn(condition, currentSiteId);
+            Lock lock;
+            synchronized (conditionToLock) { lock = conditionToLock.get(condition); }
+            if (lock != null) modelRelease(lock, tid);
             conditionWakeupTurn(condition, wakeupSiteId);
+            if (lock != null) modelAcquire(lock, tid);
+            if (Thread.interrupted()) {
+                throw new InterruptedException();
+            }
         } finally {
             isInside.set(false);
         }
@@ -375,8 +460,13 @@ public class ReplayMonitor {
         }
         isInside.set(true);
         try {
+            long tid = Thread.currentThread().getId();
             conditionAwaitTurn(condition, currentSiteId);
+            Lock lock;
+            synchronized (conditionToLock) { lock = conditionToLock.get(condition); }
+            if (lock != null) modelRelease(lock, tid);
             conditionWakeupTurn(condition, wakeupSiteId);
+            if (lock != null) modelAcquire(lock, tid);
         } finally {
             isInside.set(false);
         }
@@ -388,8 +478,16 @@ public class ReplayMonitor {
         }
         isInside.set(true);
         try {
+            long tid = Thread.currentThread().getId();
             conditionAwaitTurn(condition, currentSiteId);
+            Lock lock;
+            synchronized (conditionToLock) { lock = conditionToLock.get(condition); }
+            if (lock != null) modelRelease(lock, tid);
             conditionWakeupTurn(condition, wakeupSiteId);
+            if (lock != null) modelAcquire(lock, tid);
+            if (Thread.interrupted()) {
+                throw new InterruptedException();
+            }
             return 1L;
         } finally {
             isInside.set(false);
@@ -402,8 +500,16 @@ public class ReplayMonitor {
         }
         isInside.set(true);
         try {
+            long tid = Thread.currentThread().getId();
             conditionAwaitTurn(condition, currentSiteId);
+            Lock lock;
+            synchronized (conditionToLock) { lock = conditionToLock.get(condition); }
+            if (lock != null) modelRelease(lock, tid);
             conditionWakeupTurn(condition, wakeupSiteId);
+            if (lock != null) modelAcquire(lock, tid);
+            if (Thread.interrupted()) {
+                throw new InterruptedException();
+            }
             return true;
         } finally {
             isInside.set(false);
@@ -416,8 +522,16 @@ public class ReplayMonitor {
         }
         isInside.set(true);
         try {
+            long tid = Thread.currentThread().getId();
             conditionAwaitTurn(condition, currentSiteId);
+            Lock lock;
+            synchronized (conditionToLock) { lock = conditionToLock.get(condition); }
+            if (lock != null) modelRelease(lock, tid);
             conditionWakeupTurn(condition, wakeupSiteId);
+            if (lock != null) modelAcquire(lock, tid);
+            if (Thread.interrupted()) {
+                throw new InterruptedException();
+            }
             return true;
         } finally {
             isInside.set(false);
@@ -1651,10 +1765,9 @@ public class ReplayMonitor {
             int packedType = BinarySchema.packType(BinarySchema.Event.EXCEPTION_THROW, BinarySchema.Flags.NONE);
             ReplayCoordinator.awaitTurn(roleId, packedType, birthId, siteId);
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            // System.out.println(String.format(
-                    // "[CHECK-THROW] seq=%d role=%d  %s  site=%d",
-                    // seq, roleId,
-                    // exception.getClass().getName(), siteId));
+            System.out.println(String.format(
+                    "[CHECK-THROW] seq=%d role=%d  %s  site=%d objSite=%d objCount=%d",
+                    seq, roleId, exception.getClass().getName(), siteId, birthId.siteId, birthId.count));
         } finally {
             isInside.set(false);
         }

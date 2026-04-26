@@ -1,126 +1,160 @@
 # Observer Effect Benchmark Suite
 
-Demonstrates the **observer effect** of the capture agent: attaching the agent
-to a program makes hardware-level concurrency bugs unobservable.
+This benchmark measures whether the capture agent changes concurrency behavior
+while observing a program.
 
-Each scenario is a JCStress litmus test with one or more `FORBIDDEN` outcomes —
-outcomes that are impossible under sequential consistency (SC) but that can
-appear on real hardware (x86 store buffers, JIT compiler reordering).  The
-suite runs each test twice and compares which `FORBIDDEN` outcomes appear:
+For each selected JCStress test, the suite runs:
 
 | Run | Configuration |
-|-----|--------------|
-| **Plain** | No agent — program runs freely; hardware bugs are observable |
-| **Capture** | `trace-capture-agent.jar` attached — agent serialises shared-memory accesses; hardware bugs disappear |
+|---|---|
+| Plain | No agent attached |
+| Capture | `trace-capture-agent.jar` attached |
 
----
+It then compares outcome distributions and flags observer effect when a
+`FORBIDDEN` or `INTERESTING` outcome appears in plain mode but is suppressed in
+capture mode.
+
+## Test Suite Selection
+
+Primary workload is the official JCStress samples jar. The runner selects:
+
+- `org.openjdk.jcstress.samples.jmm.*`
+- `org.openjdk.jcstress.samples.primitives.*`
+- `org.openjdk.jcstress.samples.problems.*`
+
+The runner excludes:
+
+- `org.openjdk.jcstress.samples.api.*` (API tutorial tests)
+
+If the target jar does not contain JCStress sample tests, the runner falls back
+to local `observer.Scenario*` tests in this module.
+
+## What The Different Tests Are About
+
+### JMM Family
+
+`org.openjdk.jcstress.samples.jmm.basic.*`
+
+- Data races and visibility with plain vs volatile/opaque/synchronized access
+- Atomicity and word tearing behavior
+- Coherence and causality constraints
+- Progress/liveness differences across memory access modes
+
+`org.openjdk.jcstress.samples.jmm.advanced.*`
+
+- Multi-copy atomicity and IRIW-style outcomes
+- Release/acquire ordering pitfalls
+- Misplaced or partial synchronization patterns
+- Volatile vs final publication effects
+- Cases where synchronization is present but insufficient as a fence
+
+### Concurrency Family
+
+`org.openjdk.jcstress.samples.primitives.lazy.*`
+
+- Lazy initialization correctness under races
+- One-shot publication variants and broken wrappers
+
+`org.openjdk.jcstress.samples.primitives.singletons.*`
+
+- Singleton construction/publication patterns
+- Broken DCL variants vs correct implementations
+
+`org.openjdk.jcstress.samples.primitives.rmw.*`
+
+- CAS/RMW semantics under contention
+- Success/failure ordering effects and witness behavior
+
+`org.openjdk.jcstress.samples.primitives.mutex.*`
+
+- Mutual exclusion algorithm correctness
+- Locking primitives and critical section safety
+
+`org.openjdk.jcstress.samples.primitives.library.*`
+
+- Library usage patterns under concurrent access
+- Correct vs incorrect composition of thread-safe components
+
+`org.openjdk.jcstress.samples.problems.classic.*`
+
+- Classical concurrency problems (for example dining philosophers,
+  producer-consumer)
+
+`org.openjdk.jcstress.samples.problems.racecondition.*`
+
+- Read-modify-write races
+- Check-then-act race patterns
+
+## Why This Is A Good Workload
+
+- Broad coverage: avoids cherry-picking a few litmus tests
+- Standardized expectations: JCStress already encodes acceptable vs forbidden
+  outcomes
+- Reproducible methodology: same tests, same harness, plain vs capture delta
 
 ## Prerequisites
 
-- JDK 11 or later on `$PATH`
-- Maven 3.x on `$PATH` (for the initial build)
-- Agent JARs available in one of:
-  - `<repo-root>/libs/` — pre-built
-  - `<repo-root>/capture/target/` — after `mvn package` from the repo root
+- JDK 11+ on `PATH`
+- Maven 3.x on `PATH`
+- Capture agent jar in `<repo-root>/capture/target/trace-capture-agent.jar` or
+  `<repo-root>/libs/trace-capture-agent.jar`
 
-> **Important:** The agent must include the `exclude=` argument support added
-> in `instr/Agent.java`.  If the pre-built JAR in `libs/` pre-dates that
-> change, rebuild with `mvn package -DskipTests` from the repo root.
+Build project agents from repo root if needed:
 
----
+```bash
+mvn -DskipTests package
+```
 
-## Build
+## Build This Module
 
 ```bash
 cd observer-effect-bench
 ./build.sh
 ```
 
-`run.sh` calls `build.sh` automatically if `target/jcstress.jar` is missing.
+## Build Official JCStress Samples
 
----
+```bash
+git clone --depth 1 https://github.com/openjdk/jcstress.git /tmp/jcstress-src
+cd /tmp/jcstress-src
+mvn clean verify -pl jcstress-samples -am -DskipTests
+```
 
-## Running the Full Suite
+This produces:
+
+```bash
+/tmp/jcstress-src/jcstress-samples/target/jcstress.jar
+```
+
+## Run
+
+Run with official samples (recommended):
+
+```bash
+cd <repo-root>/observer-effect-bench
+JCSTRESS_JAR=/tmp/jcstress-src/jcstress-samples/target/jcstress.jar ./run.sh
+```
+
+Run with local fallback suite:
 
 ```bash
 ./run.sh
 ```
 
-Runs all three scenarios in plain and capture modes and prints a comparison:
+## Useful Environment Variables
 
-```
-======================================================================
-Scenario: observer.ScenarioStoreBuf
-======================================================================
-  Running plain (no agent)...
-  Running with capture agent...
+- `JCSTRESS_JAR`: target jcstress workload jar (defaults to local
+  `observer-effect-bench/target/jcstress.jar`)
+- `OBSERVER_TEST_TIME_SECS`: per-test time budget (default `5`)
+- `OBSERVER_TIMEOUT_SECS`: subprocess timeout in seconds (default `120`)
+- `OBSERVER_MAX_TESTS`: cap number of tests for smoke runs
 
-  Outcome         Plain (no agent)      Capture (agent)   Observer Effect
-  ------------------------------------------------------------------------------------------
-  0, 0            47 [FORBIDDEN]        0 [FORBIDDEN]     *** HIDDEN — agent suppresses hardware-only outcome
-  0, 1            498231 [ACCEPTABLE]   500000 [ACCEPTABLE]
-  1, 0            497891 [ACCEPTABLE]   500000 [ACCEPTABLE]
-  1, 1              3831 [ACCEPTABLE]        0 [ACCEPTABLE]
+## Local Fallback Tests
 
-  Observer effect DETECTED for observer.ScenarioStoreBuf
-```
+- `observer.ScenarioStoreBuf`
+- `observer.ScenarioDekker`
+- `observer.ScenarioMessagePass`
+- `observer.ScenarioLoadBuffer`
+- `observer.ScenarioLostUpdate`
 
----
-
-## Running a Single Scenario
-
-```bash
-# No agent (baseline — hardware bugs visible)
-./run.sh observer.ScenarioStoreBuf plain
-
-# With capture agent (hardware bugs suppressed)
-./run.sh observer.ScenarioStoreBuf capture
-```
-
----
-
-## Scenarios
-
-| Class | Litmus test | SC-forbidden outcome | Hardware mechanism |
-|---|---|---|---|
-| `ScenarioStoreBuf` | Store buffering | `(r1=0, r2=0)` | x86 store buffer: both loads read stale cache lines before either store propagates |
-| `ScenarioDekker` | Dekker mutex | `(r1=1, r2=1)` (both enter CS) | x86 store buffer: same mechanism as SB applied to flag variables |
-| `ScenarioMessagePass` | Message passing | `(r1=1, r2=0)` (flag seen, data not) | JIT compiler reorders the sender's two plain stores |
-
----
-
-## Why the Outcomes Disappear Under the Agent
-
-The capture agent instruments every plain field access by wrapping it in
-`monitorenter` / `monitorexit` calls (via ASM bytecode rewriting).  This:
-
-1. **Flushes the store buffer** — `monitorenter` implies a full memory fence on
-   x86, so the local store buffer is drained before any load executes.  The
-   `(0, 0)` and `(1, 1)` outcomes require both stores to remain buffered while
-   the loads proceed — the fence makes this impossible.
-
-2. **Prevents JIT store reordering** — the JIT compiler treats the barriers
-   introduced by the monitor operations as ordering constraints, preventing it
-   from reordering the sender's `data = 42` and `flag = 1` stores.  The `(1, 0)`
-   outcome in `ScenarioMessagePass` requires this reordering.
-
-The agent's instrumentation of `org.openjdk.jcstress.*` is suppressed via
-`-javaagent:capture.jar=exclude=org/openjdk/jcstress` so that only the test
-actor classes are instrumented and JCStress's own harness runs unmodified.
-
----
-
-## File Layout
-
-```
-observer-effect-bench/
-├── pom.xml                            # Standalone Maven project
-├── src/main/java/observer/
-│   ├── ScenarioStoreBuf.java          # Store-buffering litmus test
-│   ├── ScenarioDekker.java            # Dekker mutual-exclusion litmus test
-│   ├── ScenarioMessagePass.java       # Message-passing litmus test
-│   └── ObserverEffectRunner.java      # Forks JCStress, compares outcome distributions
-├── build.sh                           # mvn package → target/jcstress.jar
-├── run.sh                             # Entry point
-└── README.md
-```
+These are small litmus/control tests used only when samples are unavailable.

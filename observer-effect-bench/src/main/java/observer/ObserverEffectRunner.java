@@ -22,7 +22,7 @@ import java.util.regex.*;
  */
 public class ObserverEffectRunner {
 
-    static final String[] SCENARIOS = {
+    static final String[] LOCAL_SCENARIOS = {
         "observer.ScenarioStoreBuf",
         "observer.ScenarioDekker",
         "observer.ScenarioMessagePass",
@@ -31,9 +31,11 @@ public class ObserverEffectRunner {
     };
 
     // Per-test wall-clock budget in seconds passed to JCStress via -time.
-    static final int TEST_TIME_SECS = 5;
+    static final int TEST_TIME_SECS = intFromEnv("OBSERVER_TEST_TIME_SECS", 5);
     // Hard timeout per JCStress subprocess (should be >> TEST_TIME_SECS).
-    static final int TIMEOUT_SECS   = 120;
+    static final int TIMEOUT_SECS   = intFromEnv("OBSERVER_TIMEOUT_SECS", 120);
+    // Optional cap for quick smoke runs.
+    static final int MAX_TESTS      = intFromEnv("OBSERVER_MAX_TESTS", Integer.MAX_VALUE);
 
     // JCStress prints per-fork outcome tables that look like:
     //
@@ -47,6 +49,8 @@ public class ObserverEffectRunner {
     static final Pattern OUTCOME_LINE = Pattern.compile(
         "^\\s+(\\S.*?)\\s{2,}([\\d,]+)\\s+[\\d.]+%\\s+(Forbidden|Acceptable|Interesting)\\b.*$"
     );
+    static final Pattern TEST_NAME_LINE = Pattern.compile("^[A-Za-z_]\\w*(\\.[A-Za-z_]\\w*)+$");
+    static String timeArgName = "-time";
 
     public static void main(String[] args) throws Exception {
         if (args.length < 2) {
@@ -65,12 +69,33 @@ public class ObserverEffectRunner {
         System.out.println("Observer Effect Test Suite");
         System.out.println("Capture agent : " + captureJar);
         System.out.println("JCStress jar  : " + jcstressJar);
-        System.out.printf ("Test duration : %ds per scenario per mode%n%n", TEST_TIME_SECS);
+        System.out.printf ("Test duration : %ds per test per mode%n%n", TEST_TIME_SECS);
 
         Path workDir = Files.createTempDirectory("observer-effect-");
         try {
-            for (String scenario : SCENARIOS) {
-                runScenario(scenario, captureJar, jcstressJar, workDir);
+            timeArgName = detectTimeArgName(jcstressJar, workDir);
+            List<String> scenarios = selectScenarios(jcstressJar, workDir);
+            if (MAX_TESTS < scenarios.size()) {
+                scenarios = scenarios.subList(0, MAX_TESTS);
+            }
+
+            int hiddenCount = 0;
+            for (String scenario : scenarios) {
+                if (runScenario(scenario, captureJar, jcstressJar, workDir)) {
+                    hiddenCount++;
+                }
+            }
+
+            System.out.println("=".repeat(70));
+            System.out.printf("Summary: %d / %d tests showed observer-effect suppression%n",
+                hiddenCount, scenarios.size());
+            System.out.println("=".repeat(70));
+            System.out.println();
+            if (hiddenCount == 0) {
+                System.out.println("No suppressions observed. This can happen if:");
+                System.out.println("  - the selected tests are not memory-order sensitive, or");
+                System.out.println("  - forbidden outcomes need longer run time on this hardware.");
+                System.out.println();
             }
         } finally {
             deleteDir(workDir);
@@ -79,7 +104,7 @@ public class ObserverEffectRunner {
 
     // ── Per-scenario ──────────────────────────────────────────────────────────
 
-    static void runScenario(String scenario, Path captureJar, Path jcstressJar, Path workDir)
+    static boolean runScenario(String scenario, Path captureJar, Path jcstressJar, Path workDir)
             throws Exception {
 
         System.out.println("=".repeat(70));
@@ -97,7 +122,7 @@ public class ObserverEffectRunner {
         Map<String, long[]> captureMap = parseOutcomes(captureOut);
 
         // ── Print comparison ───────────────────────────────────────────────
-        printComparison(scenario, plainMap, captureMap);
+        return printComparison(scenario, plainMap, captureMap);
     }
 
     // ── JCStress invocation ───────────────────────────────────────────────────
@@ -117,8 +142,8 @@ public class ObserverEffectRunner {
         cmd.add(jcstressJar.toString());
         cmd.add("-t");
         cmd.add(scenario);
-        cmd.add("-time");
-        cmd.add(String.valueOf(TEST_TIME_SECS)); // -time takes seconds
+        cmd.add(timeArgName);
+        cmd.add("-tb".equals(timeArgName) ? (TEST_TIME_SECS + "s") : String.valueOf(TEST_TIME_SECS));
         cmd.add("-v"); // verbose: prints per-fork RESULT tables to stdout (required for parseOutcomes)
 
         // Pass the agent to the forked test JVMs (not the orchestrator JVM).
@@ -160,6 +185,88 @@ public class ObserverEffectRunner {
         return sb.toString();
     }
 
+    static String detectTimeArgName(Path jcstressJar, Path workDir) throws Exception {
+        List<String> cmd = new ArrayList<>();
+        cmd.add("java");
+        cmd.add("-jar");
+        cmd.add(jcstressJar.toString());
+        cmd.add("-time");
+        cmd.add("1");
+        cmd.add("-l");
+        cmd.add("-t");
+        cmd.add("__observer_probe_no_tests__");
+
+        ProcessBuilder pb = new ProcessBuilder(cmd);
+        pb.directory(workDir.toFile());
+        pb.redirectErrorStream(true);
+        Process p = pb.start();
+        byte[] out = p.getInputStream().readAllBytes();
+        boolean done = p.waitFor(TIMEOUT_SECS, TimeUnit.SECONDS);
+        if (!done) {
+            p.destroyForcibly();
+            return "-time";
+        }
+
+        String s = new String(out);
+        if (s.contains("-time option is not supported anymore, please use -tb")) {
+            return "-tb";
+        }
+        return "-time";
+    }
+
+    static List<String> selectScenarios(Path jcstressJar, Path workDir) throws Exception {
+        List<String> available = listTests(jcstressJar, workDir);
+        List<String> sampleTests = available.stream()
+            .filter(ObserverEffectRunner::isJmmOrConcurrencySample)
+            .collect(java.util.stream.Collectors.toList());
+
+        if (!sampleTests.isEmpty()) {
+            System.out.printf("Discovered %d JMM/Concurrency samples (APISample excluded).%n%n",
+                sampleTests.size());
+            return sampleTests;
+        }
+
+        System.out.println("No jcstress-samples classes found in the provided jar.");
+        System.out.println("Falling back to local observer scenarios.");
+        System.out.println();
+        return Arrays.asList(LOCAL_SCENARIOS);
+    }
+
+    static List<String> listTests(Path jcstressJar, Path workDir) throws Exception {
+        List<String> cmd = new ArrayList<>();
+        cmd.add("java");
+        cmd.add("-jar");
+        cmd.add(jcstressJar.toString());
+        cmd.add("-l");
+
+        ProcessBuilder pb = new ProcessBuilder(cmd);
+        pb.directory(workDir.toFile());
+        pb.redirectErrorStream(true);
+        Process p = pb.start();
+
+        byte[] out = p.getInputStream().readAllBytes();
+        boolean done = p.waitFor(TIMEOUT_SECS, TimeUnit.SECONDS);
+        if (!done) {
+            p.destroyForcibly();
+            throw new RuntimeException("JCStress -l timed out after " + TIMEOUT_SECS + "s");
+        }
+
+        List<String> tests = new ArrayList<>();
+        for (String line : new String(out).split("\n")) {
+            String s = line.trim();
+            if (TEST_NAME_LINE.matcher(s).matches()) {
+                tests.add(s);
+            }
+        }
+        return tests;
+    }
+
+    static boolean isJmmOrConcurrencySample(String testName) {
+        if (!testName.startsWith("org.openjdk.jcstress.samples.")) return false;
+        if (testName.startsWith("org.openjdk.jcstress.samples.api.")) return false;
+        return true;
+    }
+
     // ── Output parsing ────────────────────────────────────────────────────────
 
     /**
@@ -192,9 +299,9 @@ public class ObserverEffectRunner {
 
     // ── Result printing ───────────────────────────────────────────────────────
 
-    static void printComparison(String scenario,
-                                Map<String, long[]> plain,
-                                Map<String, long[]> capture) {
+    static boolean printComparison(String scenario,
+                                   Map<String, long[]> plain,
+                                   Map<String, long[]> capture) {
 
         // Collect all outcome keys from both runs
         Set<String> allOutcomes = new LinkedHashSet<>();
@@ -204,7 +311,7 @@ public class ObserverEffectRunner {
         if (allOutcomes.isEmpty()) {
             System.out.println("  (no outcome data parsed — check JCStress output above)");
             System.out.println();
-            return;
+            return false;
         }
 
         String fmt = "  %-14s  %20s  %20s  %s%n";
@@ -246,6 +353,7 @@ public class ObserverEffectRunner {
                 + " (forbidden outcomes may need more iterations, or may not appear on this hardware)");
         }
         System.out.println();
+        return anyHidden;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -254,5 +362,15 @@ public class ObserverEffectRunner {
         Files.walk(dir)
              .sorted(Comparator.reverseOrder())
              .forEach(p -> { try { Files.delete(p); } catch (IOException ignored) {} });
+    }
+
+    static int intFromEnv(String key, int defaultValue) {
+        String v = System.getenv(key);
+        if (v == null || v.trim().isEmpty()) return defaultValue;
+        try {
+            return Integer.parseInt(v.trim());
+        } catch (NumberFormatException ignored) {
+            return defaultValue;
+        }
     }
 }

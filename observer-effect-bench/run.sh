@@ -21,7 +21,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
-JCSTRESS_JAR="$SCRIPT_DIR/target/jcstress.jar"
+RUNNER_JAR="$SCRIPT_DIR/target/jcstress.jar"
+JCSTRESS_JAR="${JCSTRESS_JAR:-$RUNNER_JAR}"
 
 # ── Locate capture agent JAR ───────────────────────────────────────────────────
 find_jar() {
@@ -40,11 +41,17 @@ find_jar() {
 
 CAPTURE_JAR="$REPO_ROOT/capture/target/trace-capture-agent.jar"
 
-# ── Build jcstress jar if missing ─────────────────────────────────────────────
-if [ ! -f "$JCSTRESS_JAR" ]; then
-    echo "target/jcstress.jar not found — building..."
+# ── Ensure local runner jar exists ─────────────────────────────────────────────
+if [ ! -f "$RUNNER_JAR" ]; then
+    echo "target/jcstress.jar not found — building local observer suite..."
     "$SCRIPT_DIR/build.sh"
     echo
+fi
+
+# ── Validate selected target jcstress jar ─────────────────────────────────────
+if [ ! -f "$JCSTRESS_JAR" ]; then
+    echo "ERROR: JCSTRESS_JAR does not exist: $JCSTRESS_JAR" >&2
+    exit 1
 fi
 
 # ── Single-scenario mode ───────────────────────────────────────────────────────
@@ -69,5 +76,5 @@ if [ $# -ge 1 ]; then
 fi
 
 # ── Full suite ─────────────────────────────────────────────────────────────────
-java -cp "$JCSTRESS_JAR" observer.ObserverEffectRunner \
+java -cp "$RUNNER_JAR" observer.ObserverEffectRunner \
     "$CAPTURE_JAR" "$JCSTRESS_JAR"

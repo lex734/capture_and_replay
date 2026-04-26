@@ -57,6 +57,8 @@ public class ReplayCoordinator {
     private static volatile boolean hasDiverged = false;
     private static volatile String firstDivergenceInfo = null;
     private static volatile boolean isIncomplete = false;
+    private static volatile String incompleteReason = "";
+    private static volatile String incompleteDetails = "";
 
     public static boolean hasDiverged() { return hasDiverged; }
 
@@ -70,6 +72,9 @@ public class ReplayCoordinator {
     private static final AtomicLong naturalAgreements = new AtomicLong(0);
     // Counts events (reads or writes) where the natural value differed from the trace.
     private static final AtomicLong injectedEvents    = new AtomicLong(0);
+    // Counts valued events where natural != trace but replay intentionally keeps the
+    // natural value (no injection applied).
+    private static final AtomicLong noInjectDisagreements = new AtomicLong(0);
 
     // key  = (objSite << 32) | (objCount & 0xFFFFFFFFL)
     // v[0] = captured final value (packed data1<<32|data2)
@@ -92,10 +97,13 @@ public class ReplayCoordinator {
         hasDiverged = false;
         firstDivergenceInfo = null;
         isIncomplete = false;
+        incompleteReason = "";
+        incompleteDetails = "";
         eventsMatched.set(0);
         totalValuedEvents.set(0);
         naturalAgreements.set(0);
         injectedEvents.set(0);
+        noInjectDisagreements.set(0);
         finalStateMap.clear();
 
         ArrayList<long[]> allEvents = new ArrayList<>();
@@ -570,6 +578,7 @@ public class ReplayCoordinator {
         if (ev == null) return naturalValue;
         int traceValue = (int) ev[6];
         if (naturalValue != traceValue) {
+            if (fidelityEnabled) noInjectDisagreements.incrementAndGet();
             reportDivergence(roleId, ev[0] >>> 32, (int) ev[2], packedType,
                     "RMW value mismatch: natural=" + naturalValue + " trace=" + traceValue);
         }
@@ -582,6 +591,7 @@ public class ReplayCoordinator {
         if (ev == null) return naturalValue;
         long traceValue = ((long) ev[5] << 32) | (ev[6] & 0xFFFFFFFFL);
         if (naturalValue != traceValue) {
+            if (fidelityEnabled) noInjectDisagreements.incrementAndGet();
             reportDivergence(roleId, ev[0] >>> 32, (int) ev[2], packedType,
                     "RMW value mismatch: natural=" + naturalValue + " trace=" + traceValue);
         }
@@ -594,10 +604,16 @@ public class ReplayCoordinator {
         if (ev == null) return naturalValue;
         Object traceValue = IdentityMapper.resolveByBirthId((int) ev[5], (int) ev[6]);
         if (naturalValue != traceValue) {
+            if (fidelityEnabled) noInjectDisagreements.incrementAndGet();
             reportDivergence(roleId, ev[0] >>> 32, (int) ev[2], packedType,
                     "RMW value mismatch: natural=" + naturalValue + " trace=" + traceValue);
         }
         return naturalValue;
+    }
+
+    public static void recordNoInjectDisagreement() {
+        if (!fidelityEnabled) return;
+        noInjectDisagreements.incrementAndGet();
     }
 
     // ---- Value-returning field turn methods ----
@@ -836,7 +852,7 @@ public class ReplayCoordinator {
         if (ev != null && isTrackedEvent(baseType)) {
             totalValuedEvents.incrementAndGet();
             if (naturalValue == (int) ev[6]) naturalAgreements.incrementAndGet();
-            else                             injectedEvents.incrementAndGet();
+            else if (baseType != BinarySchema.Event.ATOMIC_RMW) injectedEvents.incrementAndGet();
         }
     }
 
@@ -853,7 +869,7 @@ public class ReplayCoordinator {
             long traceValue = ((long) ev[5] << 32) | (ev[6] & 0xFFFFFFFFL);
             totalValuedEvents.incrementAndGet();
             if (naturalValue == traceValue) naturalAgreements.incrementAndGet();
-            else                            injectedEvents.incrementAndGet();
+            else if (baseType != BinarySchema.Event.ATOMIC_RMW) injectedEvents.incrementAndGet();
         }
     }
 
@@ -876,6 +892,8 @@ public class ReplayCoordinator {
                                           Object naturalValue, long[] ev) {
         if (!fidelityEnabled) return;
         int baseType = packedType & 0xFF;
+        int flags = (packedType >>> 8) & 0xFF;
+        boolean isArrayValued = (flags & BinarySchema.Flags.IS_ARRAY_VALUED) != 0;
         if (isWriteEvent(baseType)) {
             IdentityMapper.BirthId nat = IdentityMapper.lookupBirthId(naturalValue);
             long natLong = nat != null
@@ -892,7 +910,9 @@ public class ReplayCoordinator {
                     : Long.MIN_VALUE;
             totalValuedEvents.incrementAndGet();
             if (natBirthId == capturedBirthId) naturalAgreements.incrementAndGet();
-            else                               injectedEvents.incrementAndGet();
+            else if (baseType != BinarySchema.Event.ATOMIC_RMW && !isArrayValued) {
+                injectedEvents.incrementAndGet();
+            }
         }
     }
 
@@ -900,18 +920,60 @@ public class ReplayCoordinator {
         // If the run ends with required trace events still pending and no structural
         // mismatch/dead-role failure was observed, classify the run as incomplete.
         if (!hasDiverged) {
+            int pendingWithTail = 0;
+            int startedWithTail = 0;
+            int activeWithTail = 0;
+            int deadStartedOrActiveWithTail = 0;
+            int otherWithTail = 0;
+            StringBuilder rolesWithTail = new StringBuilder();
             for (Map.Entry<Integer, LinkedList<long[]>> entry : roleQueues.entrySet()) {
+                int roleId = entry.getKey();
                 LinkedList<long[]> queue = entry.getValue();
                 if (queue != null && !queue.isEmpty()) {
                     isIncomplete = true;
-                    break;
+                    if (rolesWithTail.length() > 0) rolesWithTail.append(',');
+                    rolesWithTail.append(roleId).append('(').append(queue.size()).append(')');
+
+                    boolean isPending = pendingRoles.contains(roleId);
+                    boolean isStarted = startedRoles.contains(roleId);
+                    boolean isActive = activeRoles.contains(roleId);
+                    Thread t = roleIdToThread.get(roleId);
+                    boolean deadThread = (t != null && !t.isAlive());
+
+                    if (isPending) pendingWithTail++;
+                    else if (isStarted) {
+                        startedWithTail++;
+                        if (deadThread) deadStartedOrActiveWithTail++;
+                    } else if (isActive) {
+                        activeWithTail++;
+                        if (deadThread) deadStartedOrActiveWithTail++;
+                    } else otherWithTail++;
                 }
+            }
+
+            if (isIncomplete) {
+                if (pendingWithTail > 0) {
+                    incompleteReason = "role_not_started";
+                } else if (deadStartedOrActiveWithTail > 0) {
+                    incompleteReason = "thread_exited_with_unconsumed_tail";
+                } else if (startedWithTail > 0 || activeWithTail > 0) {
+                    incompleteReason = "stalled_with_live_roles";
+                } else {
+                    incompleteReason = "unconsumed_tail_unknown_owner";
+                }
+                incompleteDetails = "pending=" + pendingWithTail
+                        + ",started=" + startedWithTail
+                        + ",active=" + activeWithTail
+                        + ",dead_started_or_active=" + deadStartedOrActiveWithTail
+                        + ",other=" + otherWithTail
+                        + ",tail_roles=" + rolesWithTail;
             }
         }
 
         long total    = totalValuedEvents.get();
         long agreed   = naturalAgreements.get();
         long injected = injectedEvents.get();
+        long noInject = noInjectDisagreements.get();
 
         int locs = finalStateMap.size(), matched = 0, unseen = 0;
         for (long[] v : finalStateMap.values()) {
@@ -927,11 +989,14 @@ public class ReplayCoordinator {
         p.setProperty("match",                 String.valueOf(match));
         p.setProperty("structural_divergence", String.valueOf(hasDiverged));
         p.setProperty("incomplete",            String.valueOf(isIncomplete));
+        p.setProperty("incomplete_reason",     incompleteReason);
+        p.setProperty("incomplete_details",    incompleteDetails);
         p.setProperty("events_matched",        String.valueOf(eventsMatched.get()));
         p.setProperty("events_total",          String.valueOf(totalEvents));
         p.setProperty("valued_events",         String.valueOf(total));
         p.setProperty("natural_agreements",    String.valueOf(agreed));
         p.setProperty("injections",            String.valueOf(injected));
+        p.setProperty("no_inject_disagreements", String.valueOf(noInject));
         p.setProperty("locations_matched",     String.valueOf(matched));
         p.setProperty("locations_total",       String.valueOf(locs));
         p.setProperty("locations_unseen",      String.valueOf(unseen));

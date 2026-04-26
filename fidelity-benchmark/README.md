@@ -11,8 +11,10 @@ that trace N times (default 30) and reports per-class and aggregate metrics.
 | **Fidelity score** | For one replay run: `events_matched / events_total`, where `events_matched` is the number of trace events the replay agent consumed and matched before the first divergence (or all events if replay completes without diverging). Averaged over all N replay runs per class and across classes. A score of 1.0 means every event in the trace was faithfully reproduced; a score of 0.5 means replay diverged halfway through. |
 | **Outcome reproduction rate** | Fraction of replay runs whose outcome (bug signal present or absent) matched the capture outcome. Measures whether divergence, when it occurs, changes the observable result. |
 | **Divergence rate** | Fraction of replay runs where the replay agent reported a structural divergence (event-type or object-identity mismatch against the trace). |
+| **Incomplete reason** | For incomplete runs (no divergence, but tail events left), classifies why replay stopped early: e.g. `role_not_started`, `thread_exited_with_unconsumed_tail`, or `stalled_with_live_roles` (often timeout/stall). |
 | **Natural agreement rate** | Among valued events (field reads/writes, atomics) processed during replay: fraction where the thread's natural value already matched the captured value without injection. |
 | **Injection rate** | Fraction of valued events where the replay agent had to override the thread's natural value with the captured one. |
+| **No-inject disagreement rate** | Fraction of valued events where natural and captured values disagreed but replay intentionally kept the natural value (for example, non-injecting paths like certain RMW/object-array cases). |
 
 ### Interpreting the fidelity score
 
@@ -20,6 +22,7 @@ that trace N times (default 30) and reports per-class and aggregate metrics.
 - **High score, some divergences** — most runs replay cleanly; occasional divergences happen late in the trace.
 - **Low score with divergences** — replay is structurally mismatched early; the captured schedule is not being reliably enforced.
 - **Low score with zero divergences** — replay processes only a prefix of the trace and then threads exit early, leaving the remaining events in their role queues unconsumed. No mismatch is reported because a divergence is only raised when `awaitTurn` is *called* and the event does not match — an `awaitTurn` call that is never made is invisible. This happens when a thread exits (or takes a branch that bypasses an instrumented operation) before consuming all of its queued events. The bug may not manifest because it depends on operations in the unconsumed tail of the trace. **This failure mode is invisible to divergence detection alone; the fidelity score is the only signal that replay is not reproducing the full execution.**
+- When incompletes occur, the benchmark prints an **Incomplete reasons** breakdown per class (for example `stalled_with_live_roles=3`). This comes from replay-side diagnostics written into the per-run properties (`incomplete_reason`, `incomplete_details`).
 
 A high **natural agreement rate** means the program's concurrent behaviour is largely deterministic under the replayed schedule, so the replay agent rarely needs to inject values.
 

@@ -88,6 +88,7 @@ public class FidelityBenchmark {
         long totalValued       = 0;
         long totalAgreements   = 0;
         long totalInjections   = 0;
+        long totalNoInjectDisagreements = 0;
 
         for (String cls : classes) {
             System.out.printf("--- %s ---%n", cls);
@@ -115,7 +116,8 @@ public class FidelityBenchmark {
             long completeMatched = 0, completeRemaining = 0, completeEvents = 0;
             long incompleteMatched = 0, incompleteRemaining = 0, incompleteEvents = 0;
             long divergedMatched = 0, divergedRemaining = 0, divergedEvents = 0;
-            long sumValued      = 0, sumAgreements = 0, sumInjections = 0;
+            long sumValued      = 0, sumAgreements = 0, sumInjections = 0, sumNoInjectDisagreements = 0;
+            Map<String, Integer> incompleteReasons = new LinkedHashMap<>();
 
             for (int i = 0; i < runs; i++) {
                 Path propsFile = workDir.resolve("fidelity_run_" + i + ".properties");
@@ -136,6 +138,10 @@ public class FidelityBenchmark {
                     incompleteMatched += rr.eventsMatched;
                     incompleteRemaining += remaining;
                     incompleteEvents += rr.eventsTotal;
+                    String reason = rr.incompleteReason == null || rr.incompleteReason.isEmpty()
+                            ? "unknown"
+                            : rr.incompleteReason;
+                    incompleteReasons.put(reason, incompleteReasons.getOrDefault(reason, 0) + 1);
                 } else {
                     completeRuns++;
                     completeMatched += rr.eventsMatched;
@@ -151,6 +157,7 @@ public class FidelityBenchmark {
                 sumValued     += rr.valuedEvents;
                 sumAgreements += rr.naturalAgreements;
                 sumInjections += rr.injections;
+                sumNoInjectDisagreements += rr.noInjectDisagreements;
             }
 
             // Per-class display
@@ -181,6 +188,14 @@ public class FidelityBenchmark {
                 System.out.printf("  Remaining (incompl.): %.2f avg / run  (%.2f%%)%n",
                     (double) incompleteRemaining / incompleteRuns,
                     100.0 * incompleteRemaining / incompleteEvents);
+                if (!incompleteReasons.isEmpty()) {
+                    StringBuilder sb = new StringBuilder();
+                    for (Map.Entry<String, Integer> e : incompleteReasons.entrySet()) {
+                        if (sb.length() > 0) sb.append(", ");
+                        sb.append(e.getKey()).append('=').append(e.getValue());
+                    }
+                    System.out.printf("  Incomplete reasons : %s%n", sb);
+                }
             }
             if (divergences > 0 && divergedEvents > 0) {
                 System.out.printf("  Matched (pre-div)  : %.2f avg / run  (%.2f%%)%n",
@@ -199,6 +214,9 @@ public class FidelityBenchmark {
                 System.out.printf("  Injections         : %.2f / %.2f  (%.2f%%)%n",
                     (double) sumInjections / runsWithData, (double) sumValued / runsWithData,
                     100.0 * sumInjections / sumValued);
+                System.out.printf("  No-inject disagree : %.2f / %.2f  (%.2f%%)%n",
+                    (double) sumNoInjectDisagreements / runsWithData, (double) sumValued / runsWithData,
+                    100.0 * sumNoInjectDisagreements / sumValued);
             }
             System.out.println();
 
@@ -223,6 +241,7 @@ public class FidelityBenchmark {
             totalValued        += sumValued;
             totalAgreements    += sumAgreements;
             totalInjections    += sumInjections;
+            totalNoInjectDisagreements += sumNoInjectDisagreements;
         }
 
         // Summary
@@ -276,6 +295,9 @@ public class FidelityBenchmark {
                 totalAgreements, totalValued, 100.0 * totalAgreements / totalValued);
             System.out.printf("Injections            : %d / %d  (%.1f%%)%n",
                 totalInjections, totalValued, 100.0 * totalInjections / totalValued);
+            System.out.printf("No-inject disagreements: %d / %d  (%.1f%%)%n",
+                totalNoInjectDisagreements, totalValued,
+                100.0 * totalNoInjectDisagreements / totalValued);
         }
         System.out.println("===================");
     }
@@ -320,9 +342,11 @@ public class FidelityBenchmark {
             || (r.timedOut && DEADLOCK_BENCHMARKS.contains(cls));
         boolean diverged = false;
         boolean incomplete = false;
+        String incompleteReason = "";
+        String incompleteDetails = "";
 
         long eventsMatched = 0, eventsTotal = 0;
-        long valuedEvents = 0, naturalAgreements = 0, injections = 0;
+        long valuedEvents = 0, naturalAgreements = 0, injections = 0, noInjectDisagreements = 0;
 
         if (Files.exists(propsFile)) {
             Properties p = new Properties();
@@ -331,20 +355,31 @@ public class FidelityBenchmark {
             Files.deleteIfExists(propsFile);
             diverged          = Boolean.parseBoolean(p.getProperty("structural_divergence", "false"));
             incomplete        = Boolean.parseBoolean(p.getProperty("incomplete", "false"));
+            incompleteReason  = p.getProperty("incomplete_reason", "");
+            incompleteDetails = p.getProperty("incomplete_details", "");
             eventsMatched     = Long.parseLong(p.getProperty("events_matched",      "0"));
             eventsTotal       = Long.parseLong(p.getProperty("events_total",        "0"));
             valuedEvents      = Long.parseLong(p.getProperty("valued_events",       "0"));
             naturalAgreements = Long.parseLong(p.getProperty("natural_agreements",  "0"));
             injections        = Long.parseLong(p.getProperty("injections",          "0"));
+            noInjectDisagreements = Long.parseLong(p.getProperty("no_inject_disagreements", "0"));
         } else {
             // Fallback for runs that fail before the replay shutdown hook writes stats.
             diverged = hasDivergenceSignal(r.stdout, r.stderr);
         }
 
         if (diverged) incomplete = false;
+        if (incomplete && r.timedOut) {
+            incompleteReason = incompleteReason.isEmpty()
+                ? "timeout"
+                : "timeout+" + incompleteReason;
+        } else if (incomplete && incompleteReason.isEmpty()) {
+            incompleteReason = "unknown";
+        }
 
         return new ReplayResult(hadBug, diverged, incomplete, eventsMatched, eventsTotal,
-            valuedEvents, naturalAgreements, injections);
+            valuedEvents, naturalAgreements, injections, noInjectDisagreements,
+            incompleteReason, incompleteDetails);
     }
 
     // ---------- process execution ----------
@@ -452,9 +487,14 @@ public class FidelityBenchmark {
         final long    valuedEvents;
         final long    naturalAgreements;
         final long    injections;
+        final long    noInjectDisagreements;
+        final String  incompleteReason;
+        final String  incompleteDetails;
         ReplayResult(boolean hadBug, boolean diverged, boolean incomplete,
                      long eventsMatched, long eventsTotal,
-                     long valuedEvents, long naturalAgreements, long injections) {
+                     long valuedEvents, long naturalAgreements, long injections,
+                     long noInjectDisagreements,
+                     String incompleteReason, String incompleteDetails) {
             this.hadBug            = hadBug;
             this.diverged          = diverged;
             this.incomplete        = incomplete;
@@ -463,6 +503,9 @@ public class FidelityBenchmark {
             this.valuedEvents      = valuedEvents;
             this.naturalAgreements = naturalAgreements;
             this.injections        = injections;
+            this.noInjectDisagreements = noInjectDisagreements;
+            this.incompleteReason  = incompleteReason;
+            this.incompleteDetails = incompleteDetails;
         }
         boolean outcomeMatchesCapture(boolean captureHadBug) {
             return hadBug == captureHadBug;

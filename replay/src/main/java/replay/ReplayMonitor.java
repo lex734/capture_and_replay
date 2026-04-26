@@ -7,6 +7,7 @@ import java.util.Date;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Replay-side counterpart to CaptureMonitor.
@@ -92,8 +93,11 @@ public class ReplayMonitor {
             }
             BirthId birthId = IdentityMapper.getBirthId(lock, null, currentSiteId);
             int packedType = BinarySchema.packType(BinarySchema.Event.MONITOR_ENTER, BinarySchema.Flags.NONE);
-            ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, currentSiteId);
             lock.lock();
+            // Capture records MONITOR_ENTER after successful acquisition. Replay must do
+            // the same so lock-dependent control flow (for example isLocked()) observes
+            // natural ownership state before matching the event.
+            ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, currentSiteId);
         } finally {
             isInside.set(false);
         }
@@ -101,7 +105,13 @@ public class ReplayMonitor {
 
     public static void replayUnlock(Lock lock, int currentSiteId) {
         if (isInside.get() || lock == null) {
-            if (lock != null) lock.unlock();
+            if (lock != null) {
+                try {
+                    lock.unlock();
+                } catch (IllegalMonitorStateException ignored) {
+                    // Replay-only ownership mismatch: swallow to avoid killing the thread.
+                }
+            }
             return;
         }
         isInside.set(true);
@@ -109,12 +119,25 @@ public class ReplayMonitor {
             long tid = Thread.currentThread().getId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) {
-                lock.unlock();
+                try {
+                    lock.unlock();
+                } catch (IllegalMonitorStateException ignored) {
+                    // Role-unmapped thread; avoid replay-only crash.
+                }
                 return;
             }
             BirthId birthId = IdentityMapper.getBirthId(lock, null, currentSiteId);
             int packedType = BinarySchema.packType(BinarySchema.Event.MONITOR_EXIT, BinarySchema.Flags.NONE);
-            lock.unlock();
+            if (lock instanceof ReentrantLock && !((ReentrantLock) lock).isHeldByCurrentThread()) {
+                System.err.println("[DIVERGENCE] replayUnlock: current thread does not own lock; skipping unlock");
+                return;
+            }
+            try {
+                lock.unlock();
+            } catch (IllegalMonitorStateException e) {
+                System.err.println("[DIVERGENCE] replayUnlock: unlock without ownership; skipping sync consume");
+                return;
+            }
             ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, currentSiteId);
         } finally {
             isInside.set(false);
@@ -416,6 +439,35 @@ public class ReplayMonitor {
         }
     }
 
+    public static Object checkArrayObjNoInject(Object naturalValue, int eventType, Object array, int index, int currentSiteId) {
+        if (isInside.get() || array == null) return naturalValue;
+        isInside.set(true);
+        try {
+            long tid = Thread.currentThread().getId();
+            int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+            if (roleId == -1) return naturalValue;
+            BirthId birthId = IdentityMapper.getBirthId(array, null, currentSiteId);
+            int packedType = (eventType & 0xFF)
+                    | (BinarySchema.Flags.IS_ARRAY_VALUED << 8)
+                    | ((birthId.siteId & 0xFFFF) << 16);
+            Object traceVal = ReplayCoordinator.awaitTurnArrayObj(roleId, packedType, birthId.count, index, naturalValue);
+            if (traceVal != naturalValue) {
+                ReplayCoordinator.recordNoInjectDisagreement();
+            }
+            long seq = ReplayCoordinator.getLastMatchedSeq();
+            String evName = (eventType == BinarySchema.Event.ARRAY_READ) ? "ARRAY_READ" : "ARRAY_WRITE";
+            System.out.println(String.format("[CHECK-ARRAY] epoch=%d seq=%d role=%d  %-12s %s[%d] = %s (natural)",
+                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
+                    array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array)),
+                    index,
+                    naturalValue != null ? naturalValue.getClass().getSimpleName()
+                            + "@" + Integer.toHexString(System.identityHashCode(naturalValue)) : "null"));
+            return naturalValue;
+        } finally {
+            isInside.set(false);
+        }
+    }
+
     // ---- Atomic operations ----
 
     private static int buildAtomicPackedType(int eventType, BirthId receiverBirth, int index) {
@@ -499,6 +551,76 @@ public class ReplayMonitor {
     // ---- RMW divergence check ----
     // The atomic operation has already executed; natural value is always returned.
     // Divergence is logged but not injected (can't undo the completed operation).
+
+    // ---- Deterministic atomic read/write check ----
+    // For plain atomic reads/writes (get/set), compare against trace and inject the
+    // captured value when safe (same policy as field/array valued events).
+
+    public static int checkAtomicInt(int naturalValue, Object receiver, int index, int eventType, int currentSiteId) {
+        if (isInside.get()) return naturalValue;
+        isInside.set(true);
+        try {
+            long tid = Thread.currentThread().getId();
+            int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+            if (roleId == -1) return naturalValue;
+            BirthId b = IdentityMapper.getBirthId(receiver, null, currentSiteId);
+            int val = ReplayCoordinator.awaitTurnFieldInt(roleId,
+                    buildAtomicPackedType(eventType, b, index), atomicObjSite(b, index), atomicObjCount(b, index),
+                    naturalValue);
+            long seq = ReplayCoordinator.getLastMatchedSeq();
+            System.out.println(String.format("[CHECK-ATOM]  epoch=%d seq=%d role=%d  %-12s %s = %d",
+                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
+                    receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
+                    val));
+            return val;
+        } finally {
+            isInside.set(false);
+        }
+    }
+
+    public static long checkAtomicLong(long naturalValue, Object receiver, int index, int eventType, int currentSiteId) {
+        if (isInside.get()) return naturalValue;
+        isInside.set(true);
+        try {
+            long tid = Thread.currentThread().getId();
+            int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+            if (roleId == -1) return naturalValue;
+            BirthId b = IdentityMapper.getBirthId(receiver, null, currentSiteId);
+            long val = ReplayCoordinator.awaitTurnFieldLong(roleId,
+                    buildAtomicPackedType(eventType, b, index), atomicObjSite(b, index), atomicObjCount(b, index),
+                    naturalValue);
+            long seq = ReplayCoordinator.getLastMatchedSeq();
+            System.out.println(String.format("[CHECK-ATOM]  epoch=%d seq=%d role=%d  %-12s %s = %dL",
+                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
+                    receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
+                    val));
+            return val;
+        } finally {
+            isInside.set(false);
+        }
+    }
+
+    public static Object checkAtomicObj(Object naturalValue, Object receiver, int index, int eventType, int currentSiteId) {
+        if (isInside.get()) return naturalValue;
+        isInside.set(true);
+        try {
+            long tid = Thread.currentThread().getId();
+            int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+            if (roleId == -1) return naturalValue;
+            BirthId b = IdentityMapper.getBirthId(receiver, null, currentSiteId);
+            Object val = ReplayCoordinator.awaitTurnFieldObj(roleId,
+                    buildAtomicPackedType(eventType, b, index), atomicObjSite(b, index), atomicObjCount(b, index),
+                    naturalValue);
+            long seq = ReplayCoordinator.getLastMatchedSeq();
+            System.out.println(String.format("[CHECK-ATOM]  epoch=%d seq=%d role=%d  %-12s %s = %s",
+                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
+                    receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
+                    val != null ? val.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(val)) : "null"));
+            return val;
+        } finally {
+            isInside.set(false);
+        }
+    }
 
     public static int checkAtomicRmwInt(int naturalValue, Object receiver, int index, int eventType, int currentSiteId) {
         if (isInside.get()) return naturalValue;
@@ -671,41 +793,36 @@ public class ReplayMonitor {
     }
 
     public static void preRegisterThread(Thread thread) {
-        if (isInside.get()) return;
-        isInside.set(true);
-        try {
-            // Assign this thread's roleId now, before it runs a single instruction.
-            // Look up the child role from the parent's next THREAD_START event in the
-            // trace (data1 holds the childRoleId written at capture time). This is
-            // correct even when threads run different workloads, because the mapping is
-            // based on which parent spawned which child, not on global sequence order.
-            long tid = thread.getId();
-            int parentRole = IdentityMapper.getRoleId(Thread.currentThread().getId());
-            int nextRole = (parentRole != -1)
-                    ? ReplayCoordinator.peekChildRoleFromThreadStart(parentRole)
-                    : -1;
-            if (nextRole == -1) {
-                // Fallback: no THREAD_START found in parent queue — use sequence order.
-                nextRole = ReplayCoordinator.peekNextPendingRole();
-            }
-            if (nextRole == -1) return;
-
-            IdentityMapper.preAssignRole(tid, nextRole);
-            // Do NOT call checkIn() here. checkIn() would place the child role in
-            // startedRoles before thread.start() is actually called. isAnyRoleBehind
-            // checks startedRoles and would block the parent's THREAD_START epoch
-            // advancement if the child has any trace events at epochs below the
-            // THREAD_START epoch (which happens when the child races ahead of the
-            // parent's logSync call during capture). Since thread.start() is called
-            // AFTER checkSync(THREAD_START) returns, the child thread can never run
-            // to process those events — a true deadlock. Instead, the child remains
-            // in pendingRoles (invisible to the epoch guard) until its thread actually
-            // starts and calls awaitTurn(), at which point activateRole() moves it
-            // directly from pendingRoles to activeRoles.
-            System.out.println("[PreRegister] role=" + nextRole + " (parent role=" + parentRole + ")");
-        } finally {
-            isInside.set(false);
+        if (thread == null) return;
+        // Assign this thread's roleId now, before it runs a single instruction.
+        // Look up the child role from the parent's next THREAD_START event in the
+        // trace (data1 holds the childRoleId written at capture time). This is
+        // correct even when threads run different workloads, because the mapping is
+        // based on which parent spawned which child, not on global sequence order.
+        long tid = thread.getId();
+        int parentRole = IdentityMapper.getRoleId(Thread.currentThread().getId());
+        int nextRole = (parentRole != -1)
+                ? ReplayCoordinator.peekChildRoleFromThreadStart(parentRole)
+                : -1;
+        if (nextRole == -1) {
+            // Fallback: no THREAD_START found in parent queue — use sequence order.
+            nextRole = ReplayCoordinator.peekNextPendingRole();
         }
+        if (nextRole == -1) return;
+
+        IdentityMapper.preAssignRole(tid, nextRole);
+        // Do NOT call checkIn() here. checkIn() would place the child role in
+        // startedRoles before thread.start() is actually called. isAnyRoleBehind
+        // checks startedRoles and would block the parent's THREAD_START epoch
+        // advancement if the child has any trace events at epochs below the
+        // THREAD_START epoch (which happens when the child races ahead of the
+        // parent's logSync call during capture). Since thread.start() is called
+        // AFTER checkSync(THREAD_START) returns, the child thread can never run
+        // to process those events — a true deadlock. Instead, the child remains
+        // in pendingRoles (invisible to the epoch guard) until its thread actually
+        // starts and calls awaitTurn(), at which point activateRole() moves it
+        // directly from pendingRoles to activeRoles.
+        System.out.println("[PreRegister] role=" + nextRole + " (parent role=" + parentRole + ")");
     }
 
     private static String getEventName(int eventType) {

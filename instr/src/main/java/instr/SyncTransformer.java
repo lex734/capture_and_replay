@@ -341,12 +341,14 @@ public class SyncTransformer implements ClassFileTransformer {
                 String monitorMethod = isReplay ? "checkSync" : "logSync";
                 int eventType = (opcode == Opcodes.MONITORENTER) ? 1 : 2;
                 int siteId = SyncTransformer.registerSiteId(className + "." + methodName + "#" + instructionId++);
-                mv.visitInsn(Opcodes.DUP); 
-                mv.visitLdcInsn(eventType); 
-                mv.visitInsn(Opcodes.SWAP); 
-                mv.visitLdcInsn(siteId); 
-                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, monitorMethod, "(ILjava/lang/Object;I)V", false);
+                // Log/check intrinsic monitor events after the actual monitor opcode so
+                // the trace reflects real acquisition/release order (not just attempts).
+                mv.visitInsn(Opcodes.DUP);
                 super.visitInsn(opcode);
+                mv.visitLdcInsn(eventType);
+                mv.visitInsn(Opcodes.SWAP);
+                mv.visitLdcInsn(siteId);
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, monitorMethod, "(ILjava/lang/Object;I)V", false);
                 return;
             }
 
@@ -395,7 +397,8 @@ public class SyncTransformer implements ClassFileTransformer {
                         mv.visitVarInsn(Opcodes.ALOAD, arrLocal);
                         mv.visitVarInsn(Opcodes.ILOAD, idxLocal);
                         mv.visitLdcInsn(siteId);
-                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkArray" + typeSuffix, checkDesc, false);
+                        String arrayReplayMethod = isObjOp ? "checkArrayObjNoInject" : "checkArray" + typeSuffix;
+                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, arrayReplayMethod, checkDesc, false);
                         // For object arrays, the verifier tracks the natural AALOAD type
                         // (for example ObjType) through the local. The replay helper
                         // returns Object, and replacing the stack value with that erases
@@ -418,7 +421,8 @@ public class SyncTransformer implements ClassFileTransformer {
                         mv.visitVarInsn(Opcodes.ALOAD, arrLocal);
                         mv.visitVarInsn(Opcodes.ILOAD, idxLocal);
                         mv.visitLdcInsn(siteId);
-                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkArray" + typeSuffix, checkDesc, false);
+                        String arrayReplayMethod = isObjOp ? "checkArrayObjNoInject" : "checkArray" + typeSuffix;
+                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, arrayReplayMethod, checkDesc, false);
                         // Stack: [approvedValue]
                         int resultLocal = newLocal(elemType);
                         mv.visitVarInsn(valStoreOp, resultLocal);
@@ -790,15 +794,7 @@ public class SyncTransformer implements ClassFileTransformer {
                     mv.visitVarInsn(Opcodes.ASTORE, receiverSlot);
 
                     if (isReplay) {
-                        if (atomicEventType == 20 || atomicEventType == 21) {
-                            // ATOMIC_READ / ATOMIC_WRITE: causal order guarantees correctness,
-                            // execute naturally without interception
-                            mv.visitVarInsn(Opcodes.ALOAD, receiverSlot);
-                            for (int i = 0; i < argTypes.length; i++) {
-                                mv.visitVarInsn(argTypes[i].getOpcode(Opcodes.ILOAD), argSlots[i]);
-                            }
-                            super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
-                        } else if (atomicEventType == 26) {
+                        if (atomicEventType == 26) {
                             // ATOMIC_CAS: outcome is non-deterministic across schedules — inject
                             // captured result without executing; divergence is NOT a bug
                             mv.visitVarInsn(Opcodes.ALOAD, receiverSlot);
@@ -811,7 +807,8 @@ public class SyncTransformer implements ClassFileTransformer {
                             mv.visitLdcInsn(siteId);
                             emitAtomicInjectCall(returnTypeChar);
                         } else {
-                            // ATOMIC_RMW: execute naturally then check for divergence
+                            // ATOMIC_READ / ATOMIC_WRITE / ATOMIC_RMW:
+                            // execute naturally, then consume+check against the trace.
                             mv.visitVarInsn(Opcodes.ALOAD, receiverSlot);
                             for (int i = 0; i < argTypes.length; i++) {
                                 mv.visitVarInsn(argTypes[i].getOpcode(Opcodes.ILOAD), argSlots[i]);
@@ -824,17 +821,45 @@ public class SyncTransformer implements ClassFileTransformer {
                                 mv.visitVarInsn(retType.getOpcode(Opcodes.ILOAD), retLocal);
                                 mv.visitVarInsn(Opcodes.ALOAD, receiverSlot);
                                 if (isArrayAtomic && argTypes.length > 0) {
-                                    mv.visitVarInsn(Opcodes.ILOAD, argSlots[0]);
+                                mv.visitVarInsn(Opcodes.ILOAD, argSlots[0]);
+                            } else {
+                                mv.visitLdcInsn(-1);
+                            }
+                            mv.visitLdcInsn(atomicEventType);
+                            mv.visitLdcInsn(siteId);
+                            if (atomicEventType == 22) {
+                                emitAtomicRmwCheckCall(returnTypeChar);
+                            } else {
+                                emitAtomicCheckCall(returnTypeChar);
+                            }
+                        } else if (argTypes.length > 0) {
+                            // Void atomics (e.g., set/lazySet): compare the written value
+                            // against the trace so the event is consumed in replay order.
+                            Type valueType = argTypes[argTypes.length - 1];
+
+                            mv.visitVarInsn(valueType.getOpcode(Opcodes.ILOAD), argSlots[argTypes.length - 1]);
+                            mv.visitVarInsn(Opcodes.ALOAD, receiverSlot);
+                            if (isArrayAtomic && argTypes.length > 0) {
+                                mv.visitVarInsn(Opcodes.ILOAD, argSlots[0]);
                                 } else {
                                     mv.visitLdcInsn(-1);
-                                }
-                                mv.visitLdcInsn(atomicEventType);
-                                mv.visitLdcInsn(siteId);
-                                emitAtomicRmwCheckCall(returnTypeChar);
                             }
+                            mv.visitLdcInsn(atomicEventType);
+                            mv.visitLdcInsn(siteId);
+                            if (atomicEventType == 22) {
+                                int sort = valueType.getSort();
+                                char valueChar = (sort == Type.LONG || sort == Type.DOUBLE)
+                                        ? 'J'
+                                        : ((sort == Type.OBJECT || sort == Type.ARRAY) ? 'L' : 'I');
+                                emitAtomicRmwCheckCall(valueChar);
+                            } else {
+                                emitAtomicCheckCall(valueType);
+                            }
+                            mv.visitInsn(valueType.getSize() == 2 ? Opcodes.POP2 : Opcodes.POP);
                         }
-                        return;
-                    } else {
+                    }
+                    return;
+                } else {
 
                         // 2. Restore the stack exactly as it was and execute the original call
                         mv.visitVarInsn(Opcodes.ALOAD, receiverSlot);
@@ -975,26 +1000,26 @@ public class SyncTransformer implements ClassFileTransformer {
             int sort = valueType.getSort();
             if (sort == Type.LONG) {
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkAtomicLong",
-                        "(JLjava/lang/Object;III)V", false);
+                        "(JLjava/lang/Object;III)J", false);
             } else if (sort == Type.OBJECT || sort == Type.ARRAY) {
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkAtomicObj",
-                        "(Ljava/lang/Object;Ljava/lang/Object;III)V", false);
+                        "(Ljava/lang/Object;Ljava/lang/Object;III)Ljava/lang/Object;", false);
             } else {
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkAtomicInt",
-                        "(ILjava/lang/Object;III)V", false);
+                        "(ILjava/lang/Object;III)I", false);
             }
         }
 
         private void emitAtomicCheckCall(char returnTypeChar) {
             if (returnTypeChar == 'J' || returnTypeChar == 'D') {
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkAtomicLong",
-                        "(Ljava/lang/Object;III)J", false);
+                        "(JLjava/lang/Object;III)J", false);
             } else if (returnTypeChar == 'L' || returnTypeChar == '[') {
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkAtomicObj",
-                        "(Ljava/lang/Object;III)Ljava/lang/Object;", false);
+                        "(Ljava/lang/Object;Ljava/lang/Object;III)Ljava/lang/Object;", false);
             } else {
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkAtomicInt",
-                        "(Ljava/lang/Object;III)I", false);
+                        "(ILjava/lang/Object;III)I", false);
             }
         }
 

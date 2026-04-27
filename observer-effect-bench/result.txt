@@ -1,0 +1,1911 @@
+Observer Effect Test Suite
+Capture agent : /home/enxing/capture_and_replay/capture/target/trace-capture-agent.jar
+JCStress jar  : /tmp/jcstress-src/jcstress-samples/target/jcstress.jar
+Test duration : 5s per test per mode
+
+Discovered 140 JMM/Concurrency samples (APISample excluded).
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_01_SynchronizedBarriers
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0, 0                       103048696             282941160  
+  0, 1                          713760               2707632  
+  1, 0              1189 [INTERESTING]       0 [INTERESTING]  *** HIDDEN — agent suppresses hardware-only outcome
+  1, 1                        56344000             100985314  
+
+  Observer effect DETECTED for org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_01_SynchronizedBarriers
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_02_MultiCopyAtomic.FencedIRIWTest
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0, 0, 0, 0                   8374358                585469  
+  0, 0, 0, 1                   1327678                293948  
+  0, 0, 1, 0                   1072283                250406  
+  0, 0, 1, 1                  11949653               1431971  
+  0, 1, 1, 0                   8602934               2076584  
+  0, 1, 1, 1                  12378422               1878862  
+  1, 0, 0, 1                  12882346               2811966  
+  1, 0, 1, 0           0 [INTERESTING]       0 [INTERESTING]  
+  1, 0, 1, 1                  29540069               7709092  
+  1, 1, 0, 1                   7789421               1370500  
+  1, 1, 1, 0                   4994364                500020  
+  1, 1, 1, 1                 422305148             123559588  
+  1, 1, 0, 0                   6420543                786697  
+  0, 1, 0, 0                    725721                183605  
+  1, 0, 0, 0                    926512                181870  
+  0, 1, 0, 1                       135                    89  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_02_MultiCopyAtomic.FencedIRIWTest (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_02_MultiCopyAtomic.FullyFencedIRIWTest
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0, 1, 1, 0                   8002902               1742218  
+  1, 0, 0, 1                  10011175               2062628  
+  1, 0, 1, 0           0 [INTERESTING]       0 [INTERESTING]  
+  1, 0, 1, 1                  27923388               5243680  
+  1, 1, 1, 0                   5120536                475971  
+  1, 1, 1, 1                 440709102             127840914  
+  0, 0, 0, 0                   6238236                341173  
+  1, 1, 0, 1                   8006645                866449  
+  1, 0, 0, 0                    403609                 76555  
+  1, 1, 0, 0                   5580973                260079  
+  0, 0, 0, 1                    958069                122859  
+  0, 0, 1, 1                  10302050                609077  
+  0, 1, 0, 0                    591272                 65998  
+  0, 1, 1, 1                  11590538               1334694  
+  0, 0, 1, 0                    844380                151012  
+  0, 1, 0, 1                         0                    11  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_02_MultiCopyAtomic.FullyFencedIRIWTest (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_02_MultiCopyAtomic.OpaqueIRIW
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0, 0, 0, 1                   1095012                168861  
+  0, 0, 1, 1                  11376811               1058834  
+  0, 1, 1, 0                   9004962               1969269  
+  0, 1, 1, 1                  12066195               1272602  
+  1, 0, 0, 1                  13549680               2599142  
+  1, 0, 1, 0           0 [INTERESTING]       0 [INTERESTING]  
+  1, 0, 1, 1                  28842877               5178275  
+  1, 1, 1, 1                 424157908             123913296  
+  0, 0, 0, 0                   6404400                700168  
+  0, 0, 1, 0                   1160881                191898  
+  1, 1, 0, 0                   5551114                765304  
+  1, 1, 1, 0                   6064281                640243  
+  0, 1, 0, 0                    797404                125596  
+  1, 1, 0, 1                   9360257               1592931  
+  1, 0, 0, 0                    564072                151140  
+  0, 1, 0, 1                       100                   245  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_02_MultiCopyAtomic.OpaqueIRIW (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_03_NonMCA_Coherence
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0, 0, 0, 0                   8588634               1074945  
+  0, 0, 1, 1                   7106043                903961  
+  1, 1, 0, 0                   4019715                647240  
+  1, 1, 1, 1                  84488954              16113204  
+  1, 1, 2, 2                  38820872               7786994  
+  1, 2, 2, 1             0 [FORBIDDEN]         0 [FORBIDDEN]  
+  2, 1, 1, 2             0 [FORBIDDEN]         0 [FORBIDDEN]  
+  2, 2, 0, 0                   4802280                744192  
+  2, 2, 1, 1                  22039886               2871505  
+  2, 2, 2, 2                 368744980             116752030  
+  0, 0, 2, 2                   8462535               1084510  
+  1, 2, 1, 1                      3576                   441  
+  0, 0, 0, 2                      1584                   141  
+  0, 0, 1, 2                      2072                   125  
+  2, 2, 0, 2                       390                    26  
+  0, 2, 1, 1                      2565                   643  
+  1, 1, 1, 2                      4055                   189  
+  1, 2, 2, 2                     13129                  3535  
+  2, 2, 2, 1                      1778                   151  
+  2, 1, 2, 2                      2404                   200  
+  1, 1, 2, 1                      2625                   393  
+  0, 2, 0, 0                      1964                   233  
+  2, 1, 0, 0                      1714                   322  
+  2, 2, 1, 2                      3956                   968  
+  1, 1, 0, 1                       566                    28  
+  2, 1, 1, 1                      7495                  1137  
+  0, 0, 0, 1                      1612                   152  
+  0, 1, 2, 2                       909                   624  
+  0, 1, 0, 0                      1696                   286  
+  0, 1, 1, 1                       856                   165  
+  1, 2, 0, 0                      1740                   580  
+  1, 1, 0, 2                       170                    51  
+  0, 0, 2, 1                      1018                   194  
+  0, 2, 2, 2                      1054                   214  
+  2, 2, 0, 1                       932                   102  
+  2, 1, 2, 1                       323                     3  
+  1, 2, 1, 2                       138                     5  
+  0, 2, 0, 2                        92                     2  
+  0, 1, 2, 1                         0                     1  
+  0, 2, 1, 2                         0                     1  
+  0, 1, 0, 1                         0                     2  
+  0, 1, 1, 2                         0                     1  
+  2, 1, 0, 2                         0                     1  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_03_NonMCA_Coherence (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_04_LosingUpdates.Atomics
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  10                          61264102             101530928  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_04_LosingUpdates.Atomics (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_04_LosingUpdates.Volatiles
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0                      0 [FORBIDDEN]         0 [FORBIDDEN]  
+  1                      0 [FORBIDDEN]         0 [FORBIDDEN]  
+  10                         135877146             278702750  
+  5                            2581166               6224712  
+  6                            1679188               4534692  
+  7                            3140138               8877880  
+  8                            3647878               9275966  
+  9                            2909786               7581484  
+  4                 2931 [INTERESTING]    6308 [INTERESTING]  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_04_LosingUpdates.Volatiles (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_05_MisplacedVolatile.NonRacy
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  -1                          35321808              66592544  
+  0                      0 [FORBIDDEN]         0 [FORBIDDEN]  
+  42                          57883748             113148812  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_05_MisplacedVolatile.NonRacy (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_05_MisplacedVolatile.Racy
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  -1                          27523018              39218594  
+  0                    0 [INTERESTING]       0 [INTERESTING]  
+  42                          67107748              92026526  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_05_MisplacedVolatile.Racy (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_06_SemiSynchronized.NonRacy
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  -1                          63016112              56484666  
+  4                           91393890             127202880  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_06_SemiSynchronized.NonRacy (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_06_SemiSynchronized.RacyRead
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  -1                         211478190             577516870  
+  4                           76088406             152748712  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_06_SemiSynchronized.RacyRead (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_06_SemiSynchronized.RacyWrite
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  -1                          56229334             115438506  
+  4                          197079574             476462850  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_06_SemiSynchronized.RacyWrite (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_07_SemiVolatile.NonRacy
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  -1                         170229662             331489958  
+  4                          153902644             239295188  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_07_SemiVolatile.NonRacy (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_07_SemiVolatile.RacyRead
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  -1                         167299668             410869146  
+  4                          148200418             297010450  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_07_SemiVolatile.RacyRead (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_07_SemiVolatile.RacyWrite
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  -1                         230352822             346812110  
+  4                          183661084             356023710  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_07_SemiVolatile.RacyWrite (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_08_ArrayVolatility.DeclarationSite
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0, 0                        33289918              46635224  
+  0, 1                          140313                210722  
+  1, 0             24468 [INTERESTING]   80868 [INTERESTING]  
+  1, 1                        77143372             143881642  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_08_ArrayVolatility.DeclarationSite (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_08_ArrayVolatility.UseSite
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0, 0                        45035878              68573568  
+  0, 1                          258363                312082  
+  1, 0                   0 [FORBIDDEN]         0 [FORBIDDEN]  
+  1, 1                        59366902              87356316  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_08_ArrayVolatility.UseSite (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_09_WrongReleaseOrder
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0, 0                        81964240             249086504  
+  1, 1                        98339272             249795372  
+  0, 1                          129307                307928  
+  1, 0            508717 [INTERESTING]  1133902 [INTERESTING]  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_09_WrongReleaseOrder (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_10_WrongListReleaseOrder
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  -1                         135122026             336755078  
+  -2              381426 [INTERESTING]  1022758 [INTERESTING]  
+  -3                   0 [INTERESTING]       0 [INTERESTING]  
+  -4                   0 [INTERESTING]       0 [INTERESTING]  
+  42                          57008404             113384960  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_10_WrongListReleaseOrder (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_11_WrongAcquireOrder
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0, 0                       118544080             304303792  
+  0, 1                          274628                607366  
+  1, 0                          301473                844034  
+  1, 1                       136910752             280350324  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_11_WrongAcquireOrder (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_12_WrongAcquireReleaseOrder
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0, 0                        87402226             192541596  
+  0, 1                         1426794               4730352  
+  1, 0             22294 [INTERESTING]   11845 [INTERESTING]  
+  1, 1                       115511478             241162560  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_12_WrongAcquireReleaseOrder (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_13_VolatileVsFinal.RealLife
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  -1                         131111078             537022534  
+  0                    0 [INTERESTING]       0 [INTERESTING]  
+  42                         100464472             274758722  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_13_VolatileVsFinal.RealLife (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_13_VolatileVsFinal.Synthetic
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  -1                         256770264             494286336  
+  0                    0 [INTERESTING]       0 [INTERESTING]  
+  42                         159129824             343747450  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_13_VolatileVsFinal.Synthetic (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_14_SynchronizedAreNotFences.Fenced
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0, 0                       104759216             296341218  
+  0, 1                         3919579               7502932  
+  1, 0                   0 [FORBIDDEN]         0 [FORBIDDEN]  
+  1, 1                       178408364             430622276  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_14_SynchronizedAreNotFences.Fenced (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_14_SynchronizedAreNotFences.Synchronized
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0, 0                        92369408             167656042  
+  0, 1                         3047502               5833630  
+  1, 0            148940 [INTERESTING]  169015 [INTERESTING]  
+  1, 1                       136023248             242341198  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_14_SynchronizedAreNotFences.Synchronized (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_15_VolatilesAreNotFences.Fences
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0, 0                        98497298             242649646  
+  0, 1                         2445566               6893104  
+  1, 0                   0 [FORBIDDEN]         0 [FORBIDDEN]  
+  1, 1                       170664890             336777230  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_15_VolatilesAreNotFences.Fences (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_15_VolatilesAreNotFences.Volatiles
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0, 0, 0                     60322818             148748372  
+  1, .*, 1                           0                     0  
+  1, 0, 0              0 [INTERESTING]       0 [INTERESTING]  
+  1, 1, 1                     93680208             213374692  
+  0, 0, 1                       684848               1747470  
+  0, 1, 1                      1600811               3883152  
+  1, 0, 1                        25098                 75990  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_15_VolatilesAreNotFences.Volatiles (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.basic.BasicJMM_01_DataRaces
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  class java.lang.Object             177398540             346190172  
+  null                       166185776             372047876  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.basic.BasicJMM_01_DataRaces (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.basic.BasicJMM_02_AccessAtomicity.ByteBuffers
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  -1                          41143434              57947234  
+  0                           11198442              12473098  
+  16777215          5773 [INTERESTING]    7470 [INTERESTING]  
+  255               5312 [INTERESTING]    7514 [INTERESTING]  
+  65535             5750 [INTERESTING]    7365 [INTERESTING]  
+  -16777216         8722 [INTERESTING]    1079 [INTERESTING]  
+  -256              5152 [INTERESTING]     990 [INTERESTING]  
+  -65536           10721 [INTERESTING]    1039 [INTERESTING]  
+  -16711681           45 [INTERESTING]       0 [INTERESTING]  *** HIDDEN — agent suppresses hardware-only outcome
+  16776960             0 [INTERESTING]       1 [INTERESTING]  
+  -16711936            0 [INTERESTING]       1 [INTERESTING]  
+
+  Observer effect DETECTED for org.openjdk.jcstress.samples.jmm.basic.BasicJMM_02_AccessAtomicity.ByteBuffers
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.basic.BasicJMM_02_AccessAtomicity.CrossCacheLine
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  -1                          47516124              45550796  
+  -16777216          933 [INTERESTING]     532 [INTERESTING]  
+  -256              1270 [INTERESTING]     556 [INTERESTING]  
+  -65536            1415 [INTERESTING]     488 [INTERESTING]  
+  0                           14341202              23733266  
+  16777215          1315 [INTERESTING]    1141 [INTERESTING]  
+  255               7385 [INTERESTING]    1138 [INTERESTING]  
+  65535             8482 [INTERESTING]    1090 [INTERESTING]  
+  65280               67 [INTERESTING]       0 [INTERESTING]  *** HIDDEN — agent suppresses hardware-only outcome
+
+  Observer effect DETECTED for org.openjdk.jcstress.samples.jmm.basic.BasicJMM_02_AccessAtomicity.CrossCacheLine
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.basic.BasicJMM_02_AccessAtomicity.Integers
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  -1                         421388576             815612008  
+  0                          220468070             423088708  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.basic.BasicJMM_02_AccessAtomicity.Integers (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.basic.BasicJMM_02_AccessAtomicity.Longs
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  -1                         342816782             886305226  
+  0                          184067640             483180770  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.basic.BasicJMM_02_AccessAtomicity.Longs (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.basic.BasicJMM_02_AccessAtomicity.OpaqueLongs
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  -1                         189114844             561252014  
+  0                          133858744             368557772  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.basic.BasicJMM_02_AccessAtomicity.OpaqueLongs (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.basic.BasicJMM_02_AccessAtomicity.VolatileLongs
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  -1                         174235624             482839614  
+  0                          199729658             738702652  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.basic.BasicJMM_02_AccessAtomicity.VolatileLongs (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.basic.BasicJMM_03_WordTearing.BitSets
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  false, true     4258824 [INTERESTING]  5435896 [INTERESTING]  
+  true, false     4394148 [INTERESTING]  5645274 [INTERESTING]  
+  true, true                  69453456             111635506  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.basic.BasicJMM_03_WordTearing.BitSets (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.basic.BasicJMM_03_WordTearing.ByteCAS
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  true, true                 227258206             467299706  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.basic.BasicJMM_03_WordTearing.ByteCAS (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.basic.BasicJMM_03_WordTearing.JavaArrays
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  true, true                  81543398             142053168  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.basic.BasicJMM_03_WordTearing.JavaArrays (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.basic.BasicJMM_04_Progress.OpaqueSpin
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  STALE                  0 [FORBIDDEN]         0 [FORBIDDEN]  
+  TERMINATED                     34500                 15180  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.basic.BasicJMM_04_Progress.OpaqueSpin (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.basic.BasicJMM_04_Progress.PlainSpin
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  STALE               10 [INTERESTING]       2 [INTERESTING]  
+  TERMINATED                     11046                 12710  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.basic.BasicJMM_04_Progress.PlainSpin (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.basic.BasicJMM_04_Progress.SyncSpin
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  STALE                0 [INTERESTING]       0 [INTERESTING]  
+  TERMINATED                     34918                 15398  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.basic.BasicJMM_04_Progress.SyncSpin (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.basic.BasicJMM_04_Progress.VolatileSpin
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  STALE                0 [INTERESTING]       0 [INTERESTING]  
+  TERMINATED                     35330                 15526  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.basic.BasicJMM_04_Progress.VolatileSpin (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.basic.BasicJMM_05_Coherence.SameOpaqueRead
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0, 0                        19042274              39453738  
+  1, 0                   0 [FORBIDDEN]         0 [FORBIDDEN]  
+  1, 1                        56578754              88986404  
+  0, 1                           60656                149754  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.basic.BasicJMM_05_Coherence.SameOpaqueRead (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.basic.BasicJMM_05_Coherence.SameRead
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0, 0                        16011252              23324250  
+  0, 1                           40587                 57936  
+  1, 0             15714 [INTERESTING]   46668 [INTERESTING]  
+  1, 1                        62386964             114951436  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.basic.BasicJMM_05_Coherence.SameRead (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.basic.BasicJMM_05_Coherence.SameVolatileRead
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0, 0                        22990808              26779454  
+  0, 1                          174855                484218  
+  1, 0                   0 [FORBIDDEN]         0 [FORBIDDEN]  
+  1, 1                        52694420              87164966  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.basic.BasicJMM_05_Coherence.SameVolatileRead (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.basic.BasicJMM_06_Causality.AcquireReleaseGuard
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0, 0                        69212834             241891744  
+  0, 1                         1549754               4659960  
+  1, 0                   0 [FORBIDDEN]         0 [FORBIDDEN]  
+  1, 1                       118936002             229692758  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.basic.BasicJMM_06_Causality.AcquireReleaseGuard (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.basic.BasicJMM_06_Causality.LockGuard
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0, 0                        37192796              79877942  
+  0, 1                   0 [FORBIDDEN]         0 [FORBIDDEN]  
+  1, 0                   0 [FORBIDDEN]         0 [FORBIDDEN]  
+  1, 1                        61260050             101422354  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.basic.BasicJMM_06_Causality.LockGuard (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.basic.BasicJMM_06_Causality.OpaqueReads
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0, 0                       130522860             272823448  
+  0, 1                         2913596               5520934  
+  1, 0                 0 [INTERESTING]       0 [INTERESTING]  
+  1, 1                       144012888             198930414  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.basic.BasicJMM_06_Causality.OpaqueReads (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.basic.BasicJMM_06_Causality.PlainReads
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0, 0                        92683180             245863810  
+  0, 1                         2055211               6814798  
+  1, 0            159461 [INTERESTING]  392024 [INTERESTING]  
+  1, 1                       154089208             478279044  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.basic.BasicJMM_06_Causality.PlainReads (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.basic.BasicJMM_06_Causality.VolatileGuard
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0, 0                       177928956             294155916  
+  0, 1                         1152326               2537906  
+  1, 0                   0 [FORBIDDEN]         0 [FORBIDDEN]  
+  1, 1                       160912846             299385454  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.basic.BasicJMM_06_Causality.VolatileGuard (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.basic.BasicJMM_07_Consensus.AcqRelDekker
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0, 0            38434202 [INTERESTING]  28289337 [INTERESTING]  
+  0, 1                       116763600             180550502  
+  1, 0                        93764972             203610456  
+  1, 1                         3837696               7048010  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.basic.BasicJMM_07_Consensus.AcqRelDekker (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.basic.BasicJMM_07_Consensus.PlainDekker
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0, 0            75660148 [INTERESTING]  99381874 [INTERESTING]  
+  0, 1                       142892330             204082544  
+  1, 0                       139780882             201596968  
+  1, 1                         1210694                273255  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.basic.BasicJMM_07_Consensus.PlainDekker (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.basic.BasicJMM_07_Consensus.VolatileDekker
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0, 0                   0 [FORBIDDEN]         0 [FORBIDDEN]  
+  0, 1                        92333054             228762570  
+  1, 0                        77654508             208218730  
+  1, 1                         3178648               9136966  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.basic.BasicJMM_07_Consensus.VolatileDekker (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.basic.BasicJMM_08_Finals.FinalInit
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  -1, -1, -1, -1              30089702              41999892  
+  1, 2, 3, 4                  42469974              64974810  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.basic.BasicJMM_08_Finals.FinalInit (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.basic.BasicJMM_08_Finals.OpaqueInit
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  -1, -1, -1, -1              22921990              58571792  
+  1, 2, 3, 4                  48286672              45441628  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.basic.BasicJMM_08_Finals.OpaqueInit (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.basic.BasicJMM_08_Finals.PlainInit
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  -1, -1, -1, -1              19057350              41943530  
+  1, 2, 3, 4                  41229802              56346810  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.basic.BasicJMM_08_Finals.PlainInit (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.basic.BasicJMM_09_BenignRaces.DoubleRead
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  42, 42                     105502274              42086008  
+  42, -1             247 [INTERESTING]      41 [INTERESTING]  
+  -1, 42             127 [INTERESTING]     342 [INTERESTING]  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.basic.BasicJMM_09_BenignRaces.DoubleRead (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.basic.BasicJMM_09_BenignRaces.Full
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  42, 42                     103845328              42124746  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.basic.BasicJMM_09_BenignRaces.Full (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.basic.BasicJMM_09_BenignRaces.NonFinal
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  42, 42                     103787524              45832826  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.basic.BasicJMM_09_BenignRaces.NonFinal (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.jmm.basic.BasicJMM_10_OOTA
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0, 0                       495079374            1337803436  
+
+  No observer effect detected for org.openjdk.jcstress.samples.jmm.basic.BasicJMM_10_OOTA (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.lazy.Lazy_01_BrokenFactory.Basic
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  data, data                  81294400             117423176  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.lazy.Lazy_01_BrokenFactory.Basic (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.lazy.Lazy_01_BrokenFactory.RacyOneWay
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  data                       122070586             331847758  
+  dup                  0 [INTERESTING]       0 [INTERESTING]  
+  exception            0 [INTERESTING]       0 [INTERESTING]  
+  null-lazy                   71142744             223838508  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.lazy.Lazy_01_BrokenFactory.RacyOneWay (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.lazy.Lazy_02_BrokenNulls.NullHolder
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  dup, null-holder  36985570 [INTERESTING]  53117882 [INTERESTING]  
+  null-holder, dup  48707240 [INTERESTING]  64159474 [INTERESTING]  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.lazy.Lazy_02_BrokenNulls.NullHolder (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.lazy.Lazy_03_Basic.Basic
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  data, data                  88891024             119181996  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.lazy.Lazy_03_Basic.Basic (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.lazy.Lazy_03_Basic.NullHolder
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  null-holder, null-holder              78817546             122765664  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.lazy.Lazy_03_Basic.NullHolder (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.lazy.Lazy_03_Basic.RacyOneWay
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  data                       146156130             307867752  
+  null-lazy                   97675206             238629444  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.lazy.Lazy_03_Basic.RacyOneWay (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.lazy.Lazy_03_Basic.RacyTwoWay
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  data, data                  82548856              28988442  
+  data, null-lazy               3266904               2185829  
+  null-lazy, data               7005322               2833608  
+  null-lazy, null-lazy               6706418               3746656  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.lazy.Lazy_03_Basic.RacyTwoWay (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.lazy.Lazy_04_BrokenOneShot.Basic
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  data, data                  76535654             135507770  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.lazy.Lazy_04_BrokenOneShot.Basic (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.lazy.Lazy_04_BrokenOneShot.NullHolder
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  null-holder, null-holder              86815086             137981306  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.lazy.Lazy_04_BrokenOneShot.NullHolder (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.lazy.Lazy_04_BrokenOneShot.RacyOneWay
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  data                       103459340             308413702  
+  null-holder          0 [INTERESTING]       0 [INTERESTING]  
+  null-lazy                   87894060             279268774  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.lazy.Lazy_04_BrokenOneShot.RacyOneWay (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.lazy.Lazy_04_BrokenOneShot.RacyTwoWay
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  .*, null-holder       0 [INTERESTING]       0 [INTERESTING]  
+  data, data                  78297918              30898640  
+  data, null-lazy               3771015               2335296  
+  null-holder, .*       0 [INTERESTING]       0 [INTERESTING]  
+  null-lazy, data               7961154               2925838  
+  null-lazy, null-lazy               8303284               3524232  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.lazy.Lazy_04_BrokenOneShot.RacyTwoWay (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.lazy.Lazy_05_WrapperOneShot.Basic
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  data, data                  61085872              97712506  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.lazy.Lazy_05_WrapperOneShot.Basic (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.lazy.Lazy_05_WrapperOneShot.NullHolder
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  null-holder, null-holder              86065860             138483066  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.lazy.Lazy_05_WrapperOneShot.NullHolder (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.lazy.Lazy_05_WrapperOneShot.RacyOneWay
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  data                        82807754             239831096  
+  null-lazy                   70695332             246069570  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.lazy.Lazy_05_WrapperOneShot.RacyOneWay (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.lazy.Lazy_05_WrapperOneShot.RacyTwoWay
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  data, data                  79290120              25464990  
+  data, null-lazy               3815419               2473375  
+  null-lazy, data               8701486               2339952  
+  null-lazy, null-lazy               8608400               6200956  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.lazy.Lazy_05_WrapperOneShot.RacyTwoWay (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.lazy.Lazy_06_FencedOneShot.Basic
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  data, data                  84977656             113611436  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.lazy.Lazy_06_FencedOneShot.Basic (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.lazy.Lazy_06_FencedOneShot.NullHolder
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  null-holder, null-holder              85256046             142713516  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.lazy.Lazy_06_FencedOneShot.NullHolder (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.lazy.Lazy_06_FencedOneShot.RacyOneWay
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  data                       146369226             306156988  
+  null-lazy                  121053960             330399678  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.lazy.Lazy_06_FencedOneShot.RacyOneWay (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.lazy.Lazy_06_FencedOneShot.RacyTwoWay
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  data, data                  79641554              28944908  
+  data, null-lazy               4023256               2530874  
+  null-lazy, data               8233763               3621552  
+  null-lazy, null-lazy               8670492               6056380  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.lazy.Lazy_06_FencedOneShot.RacyTwoWay (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.library.Library_01_CHM.BrokenMultimap
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  Bar, Baz                    47397052              63404470  
+  Bar, null       1786890 [INTERESTING]  1103834 [INTERESTING]  
+  Baz, Bar                    34897270              51648254  
+  Baz, null       1566086 [INTERESTING]  1093528 [INTERESTING]  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.library.Library_01_CHM.BrokenMultimap (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.library.Library_01_CHM.CorrectJDK8Multimap
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  Bar, Baz                    39321270              57608770  
+  Bar, null              0 [FORBIDDEN]         0 [FORBIDDEN]  
+  Baz, Bar                    32530280              40788546  
+  Baz, null              0 [FORBIDDEN]         0 [FORBIDDEN]  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.library.Library_01_CHM.CorrectJDK8Multimap (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.library.Library_01_CHM.CorrectMultimap
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  Bar, Baz                    40431588              49290380  
+  Bar, null              0 [FORBIDDEN]         0 [FORBIDDEN]  
+  Baz, Bar                    25135358              59645272  
+  Baz, null              0 [FORBIDDEN]         0 [FORBIDDEN]  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.library.Library_01_CHM.CorrectMultimap (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.mutex.Mutex_01_PetersonAlgorithm
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  1, 1                   0 [FORBIDDEN]         0 [FORBIDDEN]  
+  1, 2                        34645182              36602588  
+  2, 1                        24430580              28709228  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.mutex.Mutex_01_PetersonAlgorithm (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.mutex.Mutex_02_DekkerAlgorithm
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  1, 1                   0 [FORBIDDEN]         0 [FORBIDDEN]  
+  1, 2                        41076846              47214226  
+  2, 1                        16734612              27425736  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.mutex.Mutex_02_DekkerAlgorithm (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.mutex.Mutex_03_SpinLock
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  1, 1                   0 [FORBIDDEN]         0 [FORBIDDEN]  
+  1, 2                        40286942              60954212  
+  2, 1                        24782676              50447368  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.mutex.Mutex_03_SpinLock (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.mutex.Mutex_04_Synchronized
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  1, 1                   0 [FORBIDDEN]         0 [FORBIDDEN]  
+  1, 2                        39513022              34828336  
+  2, 1                        27790650              37805080  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.mutex.Mutex_04_Synchronized (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.mutex.Mutex_05_ReentrantLock
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  1, 1                   0 [FORBIDDEN]         0 [FORBIDDEN]  
+  1, 2                        33543782              45203358  
+  2, 1                        22869474              45040874  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.mutex.Mutex_05_ReentrantLock (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.mutex.Mutex_06_Semaphore
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  1, 1                   0 [FORBIDDEN]         0 [FORBIDDEN]  
+  1, 2                        37918620              47934298  
+  2, 1                        23768616              43894160  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.mutex.Mutex_06_Semaphore (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.rmw.RMW_01_UncontendedSuccess.Strong
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  false                  0 [FORBIDDEN]         0 [FORBIDDEN]  
+  true                       289243478             266186866  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.rmw.RMW_01_UncontendedSuccess.Strong (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.rmw.RMW_01_UncontendedSuccess.Weak
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  false                0 [INTERESTING]       0 [INTERESTING]  
+  true                       253608278             250396786  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.rmw.RMW_01_UncontendedSuccess.Weak (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.rmw.RMW_02_ContendedSuccess.Strong
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  false, false           0 [FORBIDDEN]         0 [FORBIDDEN]  
+  false, true                 35105582              88032292  
+  true, false                 52478608             103714134  
+  true, true             0 [FORBIDDEN]         0 [FORBIDDEN]  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.rmw.RMW_02_ContendedSuccess.Strong (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.rmw.RMW_02_ContendedSuccess.Weak
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  false, false         0 [INTERESTING]       0 [INTERESTING]  
+  false, true                 49243884              72148626  
+  true, false                 64976002              85021864  
+  true, true             0 [FORBIDDEN]         0 [FORBIDDEN]  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.rmw.RMW_02_ContendedSuccess.Weak (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.rmw.RMW_03_ConflictSameValue.Strong
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  false                  0 [FORBIDDEN]         0 [FORBIDDEN]  
+  true                       131471278             218325676  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.rmw.RMW_03_ConflictSameValue.Strong (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.rmw.RMW_03_ConflictSameValue.Weak
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  false                0 [INTERESTING]       0 [INTERESTING]  
+  true                        94460692             210598266  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.rmw.RMW_03_ConflictSameValue.Weak (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.rmw.RMW_04_ConflictCoherence
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  false, false                 6049454               1077188  
+  false, true                 29987092               9896620  
+  true, false                 66927818              22441302  
+  true, true             0 [FORBIDDEN]         0 [FORBIDDEN]  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.rmw.RMW_04_ConflictCoherence (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.rmw.RMW_05_AcquireOnSuccess
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0, 0                        25546390              35968714  
+  0, 1                         1397312               1493622  
+  1, 0                   0 [FORBIDDEN]         0 [FORBIDDEN]  
+  1, 1                        59709564              79518660  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.rmw.RMW_05_AcquireOnSuccess (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.rmw.RMW_06_ReleaseOnSuccess
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0, 0                        35029474              71845776  
+  0, 1                         2270460               2626672  
+  1, 0                   0 [FORBIDDEN]         0 [FORBIDDEN]  
+  1, 1                        47307150              55830842  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.rmw.RMW_06_ReleaseOnSuccess (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.rmw.RMW_07_AcquireOnFailure
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0, 0                        22027174              54327396  
+  0, 1                         1171782               2428646  
+  1, 0                   0 [FORBIDDEN]         0 [FORBIDDEN]  
+  1, 1                        63736388              88598064  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.rmw.RMW_07_AcquireOnFailure (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.rmw.RMW_08_ReleaseOnFailure
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0, 0                        37039844              65157956  
+  0, 1                        53630602              75589480  
+  1, 0                   0 [FORBIDDEN]         0 [FORBIDDEN]  
+  1, 1                   0 [FORBIDDEN]         0 [FORBIDDEN]  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.rmw.RMW_08_ReleaseOnFailure (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.rmw.RMW_09_GAS_Effects.CAS_CAS
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0, 0                 0 [INTERESTING]       0 [INTERESTING]  
+  0, 1                        47940960              66824600  
+  1, 0                        42081656              68060656  
+  1, 1                         2873980               5317880  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.rmw.RMW_09_GAS_Effects.CAS_CAS (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.rmw.RMW_09_GAS_Effects.CTS_CTS
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0, 0            2301230 [INTERESTING]  6308322 [INTERESTING]  
+  0, 1                        58290590              96616650  
+  1, 0                        17391570              30552350  
+  1, 1                          523508                777954  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.rmw.RMW_09_GAS_Effects.CTS_CTS (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.rmw.RMW_09_GAS_Effects.GAS_CAS
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0, 0                   0 [FORBIDDEN]         0 [FORBIDDEN]  
+  0, 1                        40941878              52328690  
+  1, 0                        29880440              62939140  
+  1, 1                         2558004               2232750  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.rmw.RMW_09_GAS_Effects.GAS_CAS (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.rmw.RMW_09_GAS_Effects.GTS_CAS
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0, 0            277137 [INTERESTING]  407758 [INTERESTING]  
+  0, 1                        56898010              70659384  
+  1, 0                        28788680              54265270  
+  1, 1                          889720               1772684  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.rmw.RMW_09_GAS_Effects.GTS_CAS (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.rmw.RMW_10_FailureWitness.BooleanCAS
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  false, 1                    21010996              10086172  
+  true, 1                     87067796              36312062  
+  false, 0         15479 [INTERESTING]   16638 [INTERESTING]  
+  true, 0                        15261                 11396  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.rmw.RMW_10_FailureWitness.BooleanCAS (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.rmw.RMW_10_FailureWitness.WitnessCAS
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  false, 0               0 [FORBIDDEN]         0 [FORBIDDEN]  
+  false, 1                    19440944              15045026  
+  true, 0                     88983750              44468492  
+  true, 1                            0                     0  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.rmw.RMW_10_FailureWitness.WitnessCAS (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.rmw.RMW_11_FailureWitnessRWL
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  WRITE-BLOCKED, WRITE-BLOCKED, WRITE-BLOCKED, write-lock              26736060               5217129  
+  WRITE-BLOCKED, WRITE-BLOCKED, write-lock, WRITE-BLOCKED              47726474               9688986  
+  read-lock-1, read-lock-2, READ-BLOCKED, READ-BLOCKED             405641752             128695992  
+  read-lock-2, read-lock-1, READ-BLOCKED, READ-BLOCKED              91278776              18797758  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.rmw.RMW_11_FailureWitnessRWL (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.rmw.RMW_12_FailureWitnessLoops.NormalLoop
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  2, 4, 4                    154023406             334583904  
+  4, 2, 4                    131892630             367745612  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.rmw.RMW_12_FailureWitnessLoops.NormalLoop (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.rmw.RMW_12_FailureWitnessLoops.WitnessLoop
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  2, 4, 4                    146693424             356935392  
+  4, 2, 4                    114976750             365151414  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.rmw.RMW_12_FailureWitnessLoops.WitnessLoop (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.singletons.Singleton_01_BrokenUnsynchronized.Final
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  data1, data1                56392522              71599196  
+  data1, data2    21491228 [INTERESTING]  35572050 [INTERESTING]  
+  data2, data2                39838060              69764350  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.singletons.Singleton_01_BrokenUnsynchronized.Final (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.singletons.Singleton_01_BrokenUnsynchronized.NonFinal
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  data1, data1                48569520              75813308  
+  data1, data2    18284862 [INTERESTING]  25328888 [INTERESTING]  
+  data2, data2                38991018              76448760  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.singletons.Singleton_01_BrokenUnsynchronized.NonFinal (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.singletons.Singleton_02_BrokenVolatile.Final
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  data1, data1                56931620              78942312  
+  data1, data2    7885734 [INTERESTING]  16349992 [INTERESTING]  
+  data2, data2                39122780              68597532  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.singletons.Singleton_02_BrokenVolatile.Final (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.singletons.Singleton_02_BrokenVolatile.NonFinal
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  data1, data1                57285278              85805186  
+  data1, data2    7888470 [INTERESTING]  10519422 [INTERESTING]  
+  data2, data2                41709504              61843826  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.singletons.Singleton_02_BrokenVolatile.NonFinal (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.singletons.Singleton_03_InefficientCAS.Final
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  data1, data1                56755432              82526626  
+  data2, data2                42657192              65409766  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.singletons.Singleton_03_InefficientCAS.Final (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.singletons.Singleton_03_InefficientCAS.NonFinal
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  data1, data1                58118002              86841208  
+  data2, data2                39247738              64329868  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.singletons.Singleton_03_InefficientCAS.NonFinal (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.singletons.Singleton_04_InefficientSynchronized.Final
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  data1, data1                56031142              67039194  
+  data2, data2                42445730              71207320  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.singletons.Singleton_04_InefficientSynchronized.Final (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.singletons.Singleton_04_InefficientSynchronized.NonFinal
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  data1, data1                55004784              78362930  
+  data2, data2                49515262              76843386  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.singletons.Singleton_04_InefficientSynchronized.NonFinal (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.singletons.Singleton_05_DCL.Final
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  data1, data1                52274858              79195570  
+  data2, data2                39040010              74415022  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.singletons.Singleton_05_DCL.Final (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.singletons.Singleton_05_DCL.NonFinal
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  data1, data1                56626802              75457744  
+  data2, data2                40710282              66047452  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.singletons.Singleton_05_DCL.NonFinal (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.singletons.Singleton_06_AcquireReleaseDCL.Final
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  data1, data1                47016012              84793686  
+  data2, data2                49543764              73130020  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.singletons.Singleton_06_AcquireReleaseDCL.Final (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.singletons.Singleton_06_AcquireReleaseDCL.NonFinal
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  data1, data1                53820952              96992862  
+  data2, data2                40815204              64197404  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.singletons.Singleton_06_AcquireReleaseDCL.NonFinal (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.singletons.Singleton_07_BrokenNonVolatileDCL.Final
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  data1, data1                55387988              87447256  
+  data2, data2                42914790              74562210  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.singletons.Singleton_07_BrokenNonVolatileDCL.Final (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.singletons.Singleton_07_BrokenNonVolatileDCL.NonFinal
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  data1, data1                56955734              57401776  
+  data1, null-data       0 [INTERESTING]       0 [INTERESTING]  
+  data2, data2                46599134              78020860  
+  null-data, data2       0 [INTERESTING]       0 [INTERESTING]  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.singletons.Singleton_07_BrokenNonVolatileDCL.NonFinal (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.singletons.Singleton_08_FinalWrapper.Final
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  data1, data1                57340920              74780232  
+  data2, data2                42785076              83467700  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.singletons.Singleton_08_FinalWrapper.Final (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.singletons.Singleton_08_FinalWrapper.NonFinal
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  data1, data1                38907432              83557168  
+  data2, data2                45002294              68847178  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.singletons.Singleton_08_FinalWrapper.NonFinal (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.singletons.Singleton_09_Holder.Final
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  data, data                 131003346             175326560  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.singletons.Singleton_09_Holder.Final (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.singletons.Singleton_09_Holder.NonFinal
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  data, data                 112968046             193170540  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.singletons.Singleton_09_Holder.NonFinal (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.singletons.Singleton_10_ThreadLocalWitness.Final
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  data1, data1                25709422              23481442  
+  data2, data2                14464056              14818202  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.singletons.Singleton_10_ThreadLocalWitness.Final (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.primitives.singletons.Singleton_10_ThreadLocalWitness.NonFinal
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  data1, data1                27640060              19527754  
+  data2, data2                15097246              15153762  
+
+  No observer effect detected for org.openjdk.jcstress.samples.primitives.singletons.Singleton_10_ThreadLocalWitness.NonFinal (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.problems.classic.Classic_01_DiningPhilosophers.Arbitrator
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  true                        92334694              31142114  
+
+  No observer effect detected for org.openjdk.jcstress.samples.problems.classic.Classic_01_DiningPhilosophers.Arbitrator (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.problems.classic.Classic_01_DiningPhilosophers.OneDinerFewer
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  true                       119858236              43855274  
+
+  No observer effect detected for org.openjdk.jcstress.samples.problems.classic.Classic_01_DiningPhilosophers.OneDinerFewer (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.problems.classic.Classic_01_DiningPhilosophers.ResourceHierarchy
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  true                        83353948              27032408  
+
+  No observer effect detected for org.openjdk.jcstress.samples.problems.classic.Classic_01_DiningPhilosophers.ResourceHierarchy (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.problems.classic.Classic_02_ProducerConsumerProblem.AtomicIntegers
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  true                        76670652             138351276  
+
+  No observer effect detected for org.openjdk.jcstress.samples.problems.classic.Classic_02_ProducerConsumerProblem.AtomicIntegers (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.problems.classic.Classic_02_ProducerConsumerProblem.FixedTwoProducersOneConsumer
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0, 0, 0                      2953220               1412543  
+  0, 0, 1                     32167988              14509180  
+  0, 0, 2              0 [INTERESTING]       0 [INTERESTING]  
+  0, 1, 0                       344833                161575  
+  0, 1, 1                       947766                385438  
+  0, 1, 2                     54637954              20034184  
+  1, 0, 0                       368195                174688  
+  1, 0, 1                       763599                361998  
+  1, 0, 2                     19560190               6822398  
+
+  No observer effect detected for org.openjdk.jcstress.samples.problems.classic.Classic_02_ProducerConsumerProblem.FixedTwoProducersOneConsumer (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.problems.classic.Classic_02_ProducerConsumerProblem.FlawedTwoProducersOneConsumer
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0, 0, 0                      2115335               1417980  
+  0, 0, 1                     33499762              15704158  
+  0, 0, 2         320282 [INTERESTING]   77965 [INTERESTING]  
+  0, 1, 0                        98166                 56695  
+  0, 1, 1                       259944                122835  
+  0, 1, 2                     56473546              20412612  
+  1, 0, 0                       109519                 64792  
+  1, 0, 1                       190453                102161  
+  1, 0, 2                     14177740               4837072  
+
+  No observer effect detected for org.openjdk.jcstress.samples.problems.classic.Classic_02_ProducerConsumerProblem.FlawedTwoProducersOneConsumer (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.problems.classic.Classic_02_ProducerConsumerProblem.Lock
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  0, 0, 1                     21510638               7755420  
+  0, 0, 2              0 [INTERESTING]       0 [INTERESTING]  
+  0, 1, 2                     53925802              19483534  
+  1, 0, 2                     22203582               7063060  
+
+  No observer effect detected for org.openjdk.jcstress.samples.problems.classic.Classic_02_ProducerConsumerProblem.Lock (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.problems.classic.Classic_02_ProducerConsumerProblem.OneProducerOneConsumer
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  true                       115846732             297747116  
+
+  No observer effect detected for org.openjdk.jcstress.samples.problems.classic.Classic_02_ProducerConsumerProblem.OneProducerOneConsumer (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.problems.racecondition.RaceCondition_01_RMW.Racy
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  150, 100, 150               34290346              90125858  
+  250, 100, 100   3800014 [INTERESTING]  5691170 [INTERESTING]  
+  250, 100, 250   3413350 [INTERESTING]  5237380 [INTERESTING]  
+  250, 150, 150               62321414              67422948  
+
+  No observer effect detected for org.openjdk.jcstress.samples.problems.racecondition.RaceCondition_01_RMW.Racy (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.problems.racecondition.RaceCondition_01_RMW.Sync
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  150, 100, 150               33859484              72037252  
+  250, 100, 100          0 [FORBIDDEN]         0 [FORBIDDEN]  
+  250, 100, 250          0 [FORBIDDEN]         0 [FORBIDDEN]  
+  250, 150, 150               49597014              78452330  
+
+  No observer effect detected for org.openjdk.jcstress.samples.problems.racecondition.RaceCondition_01_RMW.Sync (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.problems.racecondition.RaceCondition_02_CheckThenReact.Atomic
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  false, true                 45221098              97344820  
+  true, false                 63319358             105655366  
+  true, true             0 [FORBIDDEN]         0 [FORBIDDEN]  
+
+  No observer effect detected for org.openjdk.jcstress.samples.problems.racecondition.RaceCondition_02_CheckThenReact.Atomic (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.problems.racecondition.RaceCondition_02_CheckThenReact.Racy
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  false, true                 38868038             100405646  
+  true, false                 61834392             124594518  
+  true, true      7372408 [INTERESTING]  17304456 [INTERESTING]  
+
+  No observer effect detected for org.openjdk.jcstress.samples.problems.racecondition.RaceCondition_02_CheckThenReact.Racy (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Scenario: org.openjdk.jcstress.samples.problems.racecondition.RaceCondition_02_CheckThenReact.Sync
+======================================================================
+  Running plain (no agent)...
+  Running with capture agent...
+  Outcome             Plain (no agent)       Capture (agent)  Observer Effect
+  ------------------------------------------------------------------------------------------
+  false, true                 49647752              86916328  
+  true, false                 66311704              82154948  
+  true, true             0 [FORBIDDEN]         0 [FORBIDDEN]  
+
+  No observer effect detected for org.openjdk.jcstress.samples.problems.racecondition.RaceCondition_02_CheckThenReact.Sync (forbidden outcomes may need more iterations, or may not appear on this hardware)
+
+======================================================================
+Summary: 3 / 140 tests showed observer-effect suppression
+======================================================================
+

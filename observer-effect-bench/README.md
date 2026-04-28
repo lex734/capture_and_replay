@@ -1,160 +1,126 @@
-# Observer Effect Benchmark Suite
+# Observer Effect Benchmark
 
-This benchmark measures whether the capture agent changes concurrency behavior
-while observing a program.
+This module is a thin launcher around JCStress.
 
-For each selected JCStress test, the suite runs:
+For each scenario, it runs:
 
-| Run | Configuration |
-|---|---|
-| Plain | No agent attached |
-| Capture | `trace-capture-agent.jar` attached |
+- `plain`
+- `capture` with the attached `trace-capture-agent.jar`
 
-It then compares outcome distributions and flags observer effect when a
-`FORBIDDEN` or `INTERESTING` outcome appears in plain mode but is suppressed in
-capture mode.
+and saves the raw artifacts for both runs under a local `results/` directory.
 
-## Test Suite Selection
+The goal is to keep the experiment simple and trustworthy: run JCStress, keep
+everything it produces, and inspect or post-process the artifacts later.
 
-Primary workload is the official JCStress samples jar. The runner selects:
+## What Gets Saved
 
-- `org.openjdk.jcstress.samples.jmm.*`
-- `org.openjdk.jcstress.samples.primitives.*`
-- `org.openjdk.jcstress.samples.problems.*`
+Each run creates a directory like:
 
-The runner excludes:
+```text
+observer-effect-bench/results/run-YYYYMMDD-HHMMSS/
+```
 
-- `org.openjdk.jcstress.samples.api.*` (API tutorial tests)
+Inside it, each scenario gets its own folder:
 
-If the target jar does not contain JCStress sample tests, the runner falls back
-to local `observer.Scenario*` tests in this module.
+```text
+<scenario>/
+  plain/
+    jcstress.log
+    jcstress-results-....bin.gz
+    results/
+  capture/
+    jcstress.log
+    jcstress-results-....bin.gz
+    results/
+    trace-....bin
+```
 
-## What The Different Tests Are About
-
-### JMM Family
-
-`org.openjdk.jcstress.samples.jmm.basic.*`
-
-- Data races and visibility with plain vs volatile/opaque/synchronized access
-- Atomicity and word tearing behavior
-- Coherence and causality constraints
-- Progress/liveness differences across memory access modes
-
-`org.openjdk.jcstress.samples.jmm.advanced.*`
-
-- Multi-copy atomicity and IRIW-style outcomes
-- Release/acquire ordering pitfalls
-- Misplaced or partial synchronization patterns
-- Volatile vs final publication effects
-- Cases where synchronization is present but insufficient as a fence
-
-### Concurrency Family
-
-`org.openjdk.jcstress.samples.primitives.lazy.*`
-
-- Lazy initialization correctness under races
-- One-shot publication variants and broken wrappers
-
-`org.openjdk.jcstress.samples.primitives.singletons.*`
-
-- Singleton construction/publication patterns
-- Broken DCL variants vs correct implementations
-
-`org.openjdk.jcstress.samples.primitives.rmw.*`
-
-- CAS/RMW semantics under contention
-- Success/failure ordering effects and witness behavior
-
-`org.openjdk.jcstress.samples.primitives.mutex.*`
-
-- Mutual exclusion algorithm correctness
-- Locking primitives and critical section safety
-
-`org.openjdk.jcstress.samples.primitives.library.*`
-
-- Library usage patterns under concurrent access
-- Correct vs incorrect composition of thread-safe components
-
-`org.openjdk.jcstress.samples.problems.classic.*`
-
-- Classical concurrency problems (for example dining philosophers,
-  producer-consumer)
-
-`org.openjdk.jcstress.samples.problems.racecondition.*`
-
-- Read-modify-write races
-- Check-then-act race patterns
-
-## Why This Is A Good Workload
-
-- Broad coverage: avoids cherry-picking a few litmus tests
-- Standardized expectations: JCStress already encodes acceptable vs forbidden
-  outcomes
-- Reproducible methodology: same tests, same harness, plain vs capture delta
+These raw logs and JCStress artifacts are the ground truth.
 
 ## Prerequisites
 
-- JDK 11+ on `PATH`
-- Maven 3.x on `PATH`
-- Capture agent jar in `<repo-root>/capture/target/trace-capture-agent.jar` or
-  `<repo-root>/libs/trace-capture-agent.jar`
+- JDK on `PATH`
+- Maven on `PATH`
+- Capture agent jar at one of:
+  - `capture/target/trace-capture-agent.jar`
+  - `libs/trace-capture-agent.jar`
+- A JCStress workload jar
 
-Build project agents from repo root if needed:
+For the official sample suite, point `JCSTRESS_JAR` at the upstream samples jar,
+for example:
 
 ```bash
-mvn -DskipTests package
+JCSTRESS_JAR=/tmp/jcstress-src/jcstress-samples/target/jcstress.jar
 ```
 
-## Build This Module
+## Build
+
+From `observer-effect-bench`:
 
 ```bash
-cd observer-effect-bench
-./build.sh
-```
-
-## Build Official JCStress Samples
-
-```bash
-git clone --depth 1 https://github.com/openjdk/jcstress.git /tmp/jcstress-src
-cd /tmp/jcstress-src
-mvn clean verify -pl jcstress-samples -am -DskipTests
-```
-
-This produces:
-
-```bash
-/tmp/jcstress-src/jcstress-samples/target/jcstress.jar
+mvn -q -DskipTests package
 ```
 
 ## Run
 
-Run with official samples (recommended):
+Run the full suite:
 
 ```bash
-cd <repo-root>/observer-effect-bench
 JCSTRESS_JAR=/tmp/jcstress-src/jcstress-samples/target/jcstress.jar ./run.sh
 ```
 
-Run with local fallback suite:
+Run one scenario and save both `plain` and `capture` artifacts:
 
 ```bash
+JCSTRESS_JAR=/tmp/jcstress-src/jcstress-samples/target/jcstress.jar \
+./run.sh 'org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_01_SynchronizedBarriers'
+```
+
+Run one scenario in raw `plain` mode only:
+
+```bash
+JCSTRESS_JAR=/tmp/jcstress-src/jcstress-samples/target/jcstress.jar \
+./run.sh 'org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_01_SynchronizedBarriers' plain
+```
+
+Run one scenario in raw `capture` mode only:
+
+```bash
+JCSTRESS_JAR=/tmp/jcstress-src/jcstress-samples/target/jcstress.jar \
+./run.sh 'org.openjdk.jcstress.samples.jmm.advanced.AdvancedJMM_01_SynchronizedBarriers' capture
+```
+
+## Results Directory
+
+By default results are written under:
+
+```bash
+observer-effect-bench/results/run-<timestamp>
+```
+
+You can override that with:
+
+```bash
+OBSERVER_RESULTS_DIR=/path/to/results \
+JCSTRESS_JAR=/tmp/jcstress-src/jcstress-samples/target/jcstress.jar \
 ./run.sh
 ```
 
-## Useful Environment Variables
+## Modes
 
-- `JCSTRESS_JAR`: target jcstress workload jar (defaults to local
-  `observer-effect-bench/target/jcstress.jar`)
-- `OBSERVER_TEST_TIME_SECS`: per-test time budget (default `5`)
-- `OBSERVER_TIMEOUT_SECS`: subprocess timeout in seconds (default `120`)
-- `OBSERVER_MAX_TESTS`: cap number of tests for smoke runs
+- default `./run.sh`
+  runs the full selected JCStress workload and saves artifacts for both modes
+- `./run.sh <ScenarioClass>`
+  runs one scenario in both `plain` and `capture`
+- `./run.sh <ScenarioClass> plain`
+  runs one scenario only in `plain`
+- `./run.sh <ScenarioClass> capture`
+  runs one scenario only in `capture`
 
-## Local Fallback Tests
+## Notes
 
-- `observer.ScenarioStoreBuf`
-- `observer.ScenarioDekker`
-- `observer.ScenarioMessagePass`
-- `observer.ScenarioLoadBuffer`
-- `observer.ScenarioLostUpdate`
-
-These are small litmus/control tests used only when samples are unavailable.
+- The runner no longer tries to compute outcome comparisons itself.
+- Use the saved `jcstress.log`, `jcstress-results-*.bin.gz`, and `results/`
+  directories for analysis.
+- `plain` and `capture` raw modes are useful when you want direct access to the
+  underlying JCStress output for a single scenario.

@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Run the observer-effect benchmark suite.
 #
-# Full suite (all scenarios, plain vs. capture comparison):
+# Full suite (all scenarios from the selected JCStress jar, plain vs. capture):
 #   ./run.sh
 #
-# Single scenario, specific mode:
+# Single scenario compare:
+#   ./run.sh <ScenarioClass>
+#
+# Single scenario raw modes:
 #   ./run.sh <ScenarioClass> [plain|capture]
-#   ./run.sh observer.ScenarioStoreBuf plain
-#   ./run.sh observer.ScenarioDekker capture
-#   ./run.sh observer.ScenarioMessagePass plain
 #
 # The capture agent is located automatically from:
 #   1. <repo-root>/libs/           (pre-built, no Maven required)
@@ -23,6 +23,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 RUNNER_JAR="$SCRIPT_DIR/target/jcstress.jar"
 JCSTRESS_JAR="${JCSTRESS_JAR:-$RUNNER_JAR}"
+RESULTS_ROOT="${OBSERVER_RESULTS_DIR:-$SCRIPT_DIR/results/run-$(date +%Y%m%d-%H%M%S)}"
 
 # ── Locate capture agent JAR ───────────────────────────────────────────────────
 find_jar() {
@@ -39,7 +40,9 @@ find_jar() {
     exit 1
 }
 
-CAPTURE_JAR="$REPO_ROOT/capture/target/trace-capture-agent.jar"
+CAPTURE_JAR=$(find_jar "capture agent" \
+    "$REPO_ROOT/capture/target/trace-capture-agent.jar" \
+    "$REPO_ROOT/libs/trace-capture-agent.jar")
 
 # ── Ensure local runner jar exists ─────────────────────────────────────────────
 if [ ! -f "$RUNNER_JAR" ]; then
@@ -57,18 +60,30 @@ fi
 # ── Single-scenario mode ───────────────────────────────────────────────────────
 if [ $# -ge 1 ]; then
     SCENARIO="$1"
-    MODE="${2:-plain}"
+    MODE="${2:-compare}"
 
     case "$MODE" in
+        compare)
+            java -cp "$RUNNER_JAR" observer.ObserverEffectRunner \
+                 "$CAPTURE_JAR" "$JCSTRESS_JAR" "$SCENARIO" "$RESULTS_ROOT"
+            ;;
         plain)
-            java -jar "$JCSTRESS_JAR" -t "$SCENARIO" -time 5
+            mkdir -p "$RESULTS_ROOT/$(printf '%s' "$SCENARIO" | sed 's/[^A-Za-z0-9_.-]/_/g')/plain"
+            (
+                cd "$RESULTS_ROOT/$(printf '%s' "$SCENARIO" | sed 's/[^A-Za-z0-9_.-]/_/g')/plain"
+                java -jar "$JCSTRESS_JAR" -t "$SCENARIO" -tb 5s -v | tee jcstress.log
+            )
             ;;
         capture)
-            java -jar "$JCSTRESS_JAR" -t "$SCENARIO" -time 5 \
-                 -jvmArgs "-javaagent:$CAPTURE_JAR=exclude=org/openjdk/jcstress"
+            mkdir -p "$RESULTS_ROOT/$(printf '%s' "$SCENARIO" | sed 's/[^A-Za-z0-9_.-]/_/g')/capture"
+            (
+                cd "$RESULTS_ROOT/$(printf '%s' "$SCENARIO" | sed 's/[^A-Za-z0-9_.-]/_/g')/capture"
+                java -jar "$JCSTRESS_JAR" -t "$SCENARIO" -tb 5s -v \
+                     -jvmArgsPrepend "-javaagent:$CAPTURE_JAR=exclude=org/openjdk/jcstress,include=org/openjdk/jcstress/samples" | tee jcstress.log
+            )
             ;;
         *)
-            echo "Unknown mode '$MODE'. Valid modes: plain | capture" >&2
+            echo "Unknown mode '$MODE'. Valid modes: compare | plain | capture" >&2
             exit 1
             ;;
     esac
@@ -77,4 +92,4 @@ fi
 
 # ── Full suite ─────────────────────────────────────────────────────────────────
 java -cp "$RUNNER_JAR" observer.ObserverEffectRunner \
-    "$CAPTURE_JAR" "$JCSTRESS_JAR"
+    "$CAPTURE_JAR" "$JCSTRESS_JAR" "" "$RESULTS_ROOT"

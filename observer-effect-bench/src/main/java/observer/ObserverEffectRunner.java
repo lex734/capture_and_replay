@@ -1,141 +1,124 @@
 package observer;
 
-import java.io.*;
-import java.nio.file.*;
-import java.util.*;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
-import java.util.regex.*;
+import java.util.regex.Pattern;
 
 /**
- * Runs each JCStress observer-effect scenario in two modes — plain (no agent)
- * and with the capture agent — and compares the observed outcome distributions.
- *
- * For each scenario the runner looks for outcomes marked FORBIDDEN or
- * INTERESTING that appeared in the plain run but were suppressed (count = 0)
- * in the capture run.  Such outcomes are flagged as "HIDDEN by agent", which
- * is the observer effect: the capture agent's synchronization prevents the
- * hardware-level behaviour that produces the forbidden outcome.
- *
- * Usage (invoked by run.sh):
- *   java -cp target/jcstress.jar observer.ObserverEffectRunner \
- *        <capture-agent.jar> <jcstress.jar>
+ * Runs JCStress scenarios in plain and capture modes and preserves raw artifacts.
  */
 public class ObserverEffectRunner {
+    static final DateTimeFormatter RUN_TS = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
 
-    static final String[] LOCAL_SCENARIOS = {
-        "observer.ScenarioStoreBuf",
-        "observer.ScenarioDekker",
-        "observer.ScenarioMessagePass",
-        "observer.ScenarioLoadBuffer",
-        "observer.ScenarioLostUpdate",
-    };
-
-    // Per-test wall-clock budget in seconds passed to JCStress via -time.
     static final int TEST_TIME_SECS = intFromEnv("OBSERVER_TEST_TIME_SECS", 5);
-    // Hard timeout per JCStress subprocess (should be >> TEST_TIME_SECS).
-    static final int TIMEOUT_SECS   = intFromEnv("OBSERVER_TIMEOUT_SECS", 120);
-    // Optional cap for quick smoke runs.
-    static final int MAX_TESTS      = intFromEnv("OBSERVER_MAX_TESTS", Integer.MAX_VALUE);
+    static final int TIMEOUT_SECS = intFromEnv("OBSERVER_TIMEOUT_SECS", Math.max(900, TEST_TIME_SECS * 120));
+    static final int MAX_TESTS = intFromEnv("OBSERVER_MAX_TESTS", Integer.MAX_VALUE);
 
-    // JCStress prints per-fork outcome tables that look like:
-    //
-    //   RESULT  SAMPLES     FREQ      EXPECT  DESCRIPTION
-    //     0, 0        9    0.18%   Forbidden  Store buffering ...
-    //     0, 1       42    0.82%  Acceptable  Sequentially consistent
-    //     1, 0    5,040   99.00%  Acceptable  Sequentially consistent
-    //
-    // Multiple forks each emit their own table; counts are summed across forks.
-    // This regex captures: (state) (count-with-optional-commas) (Forbidden|Acceptable|Interesting)
-    static final Pattern OUTCOME_LINE = Pattern.compile(
-        "^\\s+(\\S.*?)\\s{2,}([\\d,]+)\\s+[\\d.]+%\\s+(Forbidden|Acceptable|Interesting)\\b.*$"
-    );
     static final Pattern TEST_NAME_LINE = Pattern.compile("^[A-Za-z_]\\w*(\\.[A-Za-z_]\\w*)+$");
+
     static String timeArgName = "-time";
+
+    static final class RunResult {
+        final boolean success;
+        final Path runDir;
+        final Path logFile;
+        final String diagnostic;
+
+        RunResult(boolean success, Path runDir, Path logFile, String diagnostic) {
+            this.success = success;
+            this.runDir = runDir;
+            this.logFile = logFile;
+            this.diagnostic = diagnostic;
+        }
+    }
 
     public static void main(String[] args) throws Exception {
         if (args.length < 2) {
-            System.err.println("Usage: ObserverEffectRunner <capture-agent.jar> <jcstress.jar>");
+            System.err.println("Usage: ObserverEffectRunner <capture-agent.jar> <jcstress.jar> [scenario] [results-dir]");
             System.exit(1);
         }
 
-        Path captureJar = Paths.get(args[0]).toAbsolutePath();
-        Path jcstressJar = Paths.get(args[1]).toAbsolutePath();
+        Path captureJar = Path.of(args[0]).toAbsolutePath();
+        Path jcstressJar = Path.of(args[1]).toAbsolutePath();
+        String scenarioFilter = args.length >= 3 ? args[2] : null;
+        Path resultsRoot = args.length >= 4
+            ? Path.of(args[3]).toAbsolutePath()
+            : Path.of("results", "run-" + RUN_TS.format(LocalDateTime.now())).toAbsolutePath();
 
-        if (!Files.exists(captureJar))
-            throw new FileNotFoundException("capture agent not found: " + captureJar);
-        if (!Files.exists(jcstressJar))
-            throw new FileNotFoundException("jcstress jar not found: " + jcstressJar);
+        if (!Files.exists(captureJar)) {
+            throw new IOException("capture agent not found: " + captureJar);
+        }
+        if (!Files.exists(jcstressJar)) {
+            throw new IOException("jcstress jar not found: " + jcstressJar);
+        }
+
+        Files.createDirectories(resultsRoot);
+        Path metaWorkDir = resultsRoot.resolve("_runner");
+        Files.createDirectories(metaWorkDir);
+        timeArgName = detectTimeArgName(jcstressJar, metaWorkDir);
+        List<String> scenarios = selectScenarios(jcstressJar, metaWorkDir, scenarioFilter);
 
         System.out.println("Observer Effect Test Suite");
         System.out.println("Capture agent : " + captureJar);
         System.out.println("JCStress jar  : " + jcstressJar);
-        System.out.printf ("Test duration : %ds per test per mode%n%n", TEST_TIME_SECS);
+        System.out.printf("Test duration : %ds per test per mode%n%n", TEST_TIME_SECS);
+        System.out.println("Results dir   : " + resultsRoot);
+        System.out.println();
 
-        Path workDir = Files.createTempDirectory("observer-effect-");
-        try {
-            timeArgName = detectTimeArgName(jcstressJar, workDir);
-            List<String> scenarios = selectScenarios(jcstressJar, workDir);
-            if (MAX_TESTS < scenarios.size()) {
-                scenarios = scenarios.subList(0, MAX_TESTS);
-            }
-
-            int hiddenCount = 0;
-            for (String scenario : scenarios) {
-                if (runScenario(scenario, captureJar, jcstressJar, workDir)) {
-                    hiddenCount++;
+        int completedCount = 0;
+        for (String scenario : scenarios) {
+            try {
+                if (runScenario(scenario, captureJar, jcstressJar, resultsRoot)) {
+                    completedCount++;
                 }
-            }
-
-            System.out.println("=".repeat(70));
-            System.out.printf("Summary: %d / %d tests showed observer-effect suppression%n",
-                hiddenCount, scenarios.size());
-            System.out.println("=".repeat(70));
-            System.out.println();
-            if (hiddenCount == 0) {
-                System.out.println("No suppressions observed. This can happen if:");
-                System.out.println("  - the selected tests are not memory-order sensitive, or");
-                System.out.println("  - forbidden outcomes need longer run time on this hardware.");
+            } catch (Exception e) {
+                System.out.println("  Scenario failed: " + scenario);
+                System.out.println("  Reason: " + e.getMessage());
                 System.out.println();
             }
-        } finally {
-            deleteDir(workDir);
         }
+
+        System.out.println("=".repeat(70));
+        System.out.printf("Summary: %d / %d scenarios completed and saved artifacts%n",
+            completedCount, scenarios.size());
+        System.out.println("=".repeat(70));
     }
 
-    // ── Per-scenario ──────────────────────────────────────────────────────────
-
-    static boolean runScenario(String scenario, Path captureJar, Path jcstressJar, Path workDir)
-            throws Exception {
-
+    static boolean runScenario(String scenario, Path captureJar, Path jcstressJar, Path resultsRoot) throws Exception {
         System.out.println("=".repeat(70));
         System.out.println("Scenario: " + scenario);
         System.out.println("=".repeat(70));
+        Path scenarioDir = resultsRoot.resolve(sanitizeForFile(scenario));
+        Files.createDirectories(scenarioDir);
+        System.out.println("  Artifact dir: " + scenarioDir);
 
-        // ── Plain run (no agent) ───────────────────────────────────────────
         System.out.println("  Running plain (no agent)...");
-        String plainOut = runJCStress(null, jcstressJar, scenario, workDir);
-        Map<String, long[]> plainMap = parseOutcomes(plainOut);
+        RunResult plain = runJCStress(null, jcstressJar, scenario, scenarioDir.resolve("plain"));
 
-        // ── Capture run (with agent, JCStress infra excluded) ─────────────
         System.out.println("  Running with capture agent...");
-        String captureOut = runJCStress(captureJar, jcstressJar, scenario, workDir);
-        Map<String, long[]> captureMap = parseOutcomes(captureOut);
+        RunResult capture = runJCStress(captureJar, jcstressJar, scenario, scenarioDir.resolve("capture"));
 
-        // ── Print comparison ───────────────────────────────────────────────
-        return printComparison(scenario, plainMap, captureMap);
+        System.out.println("  Plain artifacts  : " + plain.runDir);
+        if (plain.diagnostic != null) {
+            System.out.println("  [plain diagnostic] " + plain.diagnostic);
+        }
+        System.out.println("  Capture artifacts: " + capture.runDir);
+        if (capture.diagnostic != null) {
+            System.out.println("  [capture diagnostic] " + capture.diagnostic);
+        }
+        System.out.println();
+        return plain.success && capture.success;
     }
 
-    // ── JCStress invocation ───────────────────────────────────────────────────
-
-    /**
-     * Forks a JCStress subprocess for a single scenario.
-     * If agentJar is non-null, attaches it with exclude=org/openjdk/jcstress
-     * so JCStress's own infrastructure is not instrumented.
-     * Returns the combined stdout + stderr as a string.
-     */
-    static String runJCStress(Path agentJar, Path jcstressJar, String scenario, Path workDir)
-            throws Exception {
-
+    static RunResult runJCStress(Path agentJar, Path jcstressJar, String scenario, Path runDir) throws Exception {
+        Files.createDirectories(runDir);
         List<String> cmd = new ArrayList<>();
         cmd.add("java");
         cmd.add("-jar");
@@ -144,45 +127,125 @@ public class ObserverEffectRunner {
         cmd.add(scenario);
         cmd.add(timeArgName);
         cmd.add("-tb".equals(timeArgName) ? (TEST_TIME_SECS + "s") : String.valueOf(TEST_TIME_SECS));
-        cmd.add("-v"); // verbose: prints per-fork RESULT tables to stdout (required for parseOutcomes)
+        cmd.add("-v");
 
-        // Pass the agent to the forked test JVMs (not the orchestrator JVM).
-        // JCStress forks a child process per test; -jvmArgs propagates flags to those forks.
         if (agentJar != null) {
-            cmd.add("-jvmArgs");
-            cmd.add("-javaagent:" + agentJar.toString() + "=exclude=org/openjdk/jcstress");
+            String includePrefix = scenario.startsWith("org.openjdk.jcstress.samples.")
+                ? "org/openjdk/jcstress/samples"
+                : scenario.substring(0, Math.max(0, scenario.lastIndexOf('.'))).replace('.', '/');
+            String traceFile = "trace-" + sanitizeForFile(scenario) + "-capture.bin";
+            cmd.add("-jvmArgsPrepend");
+            cmd.add("-javaagent:" + agentJar
+                + "=exclude=org/openjdk/jcstress,include=" + includePrefix + ",trace=" + traceFile);
         }
+
+        ProcessBuilder pb = new ProcessBuilder(cmd);
+        pb.directory(runDir.toFile());
+        pb.redirectErrorStream(true);
+        Path logFile = runDir.resolve("jcstress.log");
+        pb.redirectOutput(logFile.toFile());
+
+        Process p = pb.start();
+        boolean done = p.waitFor(TIMEOUT_SECS, TimeUnit.SECONDS);
+        if (!done) {
+            destroyProcessTree(p);
+            String diagnostic = findDiagnosticLine(logFile);
+            throw new RuntimeException("JCStress timed out after " + TIMEOUT_SECS + "s"
+                + (diagnostic == null ? "" : "; diagnostic: " + diagnostic)
+                + "; log: " + logFile);
+        }
+
+        String diagnostic = findDiagnosticLine(logFile);
+        return new RunResult(p.exitValue() == 0, runDir, logFile, diagnostic);
+    }
+
+    static List<String> selectScenarios(Path jcstressJar, Path workDir, String scenarioFilter) throws Exception {
+        if (scenarioFilter != null && !scenarioFilter.isBlank()) {
+            return Collections.singletonList(scenarioFilter.trim());
+        }
+
+        List<String> available = listTests(jcstressJar, workDir);
+        List<String> sampleTests = new ArrayList<>();
+        for (String test : available) {
+            if (isJmmOrConcurrencySample(test)) {
+                sampleTests.add(test);
+            }
+        }
+
+        if (sampleTests.size() > MAX_TESTS) {
+            return sampleTests.subList(0, MAX_TESTS);
+        }
+        return sampleTests;
+    }
+
+    static List<String> listTests(Path jcstressJar, Path workDir) throws Exception {
+        List<String> cmd = new ArrayList<>();
+        cmd.add("java");
+        cmd.add("-jar");
+        cmd.add(jcstressJar.toString());
+        cmd.add("-l");
 
         ProcessBuilder pb = new ProcessBuilder(cmd);
         pb.directory(workDir.toFile());
         pb.redirectErrorStream(true);
-
         Process p = pb.start();
-
-        // Read stdout in a background thread so we can enforce the timeout
-        // without risking a deadlock from a full pipe buffer.
-        StringBuilder sb = new StringBuilder();
-        Thread reader = new Thread(() -> {
-            try (BufferedReader br = new BufferedReader(
-                     new InputStreamReader(p.getInputStream()))) {
-                String line;
-                while ((line = br.readLine()) != null) {
-                    sb.append(line).append('\n');
-                }
-            } catch (IOException ignored) {}
-        });
-        reader.setDaemon(true);
-        reader.start();
-
+        byte[] out = p.getInputStream().readAllBytes();
         boolean done = p.waitFor(TIMEOUT_SECS, TimeUnit.SECONDS);
         if (!done) {
-            p.destroyForcibly();
-            reader.join(2000);
-            throw new RuntimeException("JCStress timed out after " + TIMEOUT_SECS + "s for: " + scenario);
+            destroyProcessTree(p);
+            throw new RuntimeException("JCStress -l timed out after " + TIMEOUT_SECS + "s");
         }
-        reader.join(5000); // allow reader to drain any remaining output
 
-        return sb.toString();
+        List<String> tests = new ArrayList<>();
+        for (String line : new String(out).split("\n")) {
+            String s = line.trim();
+            if (TEST_NAME_LINE.matcher(s).matches()) {
+                tests.add(s);
+            }
+        }
+        return tests;
+    }
+
+    static boolean isJmmOrConcurrencySample(String testName) {
+        if (!testName.startsWith("org.openjdk.jcstress.samples.")) return false;
+        return !testName.startsWith("org.openjdk.jcstress.samples.api.");
+    }
+
+    static String findDiagnosticLine(Path outputFile) throws IOException {
+        Pattern p = Pattern.compile(
+            "(SocketException|No matching tests|Exception in thread|FATAL:|Caused by:|Error:)",
+            Pattern.CASE_INSENSITIVE);
+        String best = null;
+        try (var br = Files.newBufferedReader(outputFile)) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                if (p.matcher(line).find()) {
+                    String s = line.trim();
+                    if (s.equals("Error: Could not create the Java Virtual Machine.")) {
+                        continue;
+                    }
+                    if (s.equals("Error: A fatal exception has occurred. Program will exit.")) {
+                        continue;
+                    }
+                    if (s.contains("SocketException")) {
+                        return s;
+                    }
+                    if (s.contains("No matching tests")) {
+                        return s;
+                    }
+                    if (best == null) {
+                        best = s;
+                    } else if (!best.contains("Exception in thread") && s.contains("Exception in thread")) {
+                        best = s;
+                    }
+                }
+            }
+        }
+        return best;
+    }
+
+    static String sanitizeForFile(String s) {
+        return s.replaceAll("[^A-Za-z0-9_.-]", "_");
     }
 
     static String detectTimeArgName(Path jcstressJar, Path workDir) throws Exception {
@@ -203,7 +266,7 @@ public class ObserverEffectRunner {
         byte[] out = p.getInputStream().readAllBytes();
         boolean done = p.waitFor(TIMEOUT_SECS, TimeUnit.SECONDS);
         if (!done) {
-            p.destroyForcibly();
+            destroyProcessTree(p);
             return "-time";
         }
 
@@ -214,154 +277,21 @@ public class ObserverEffectRunner {
         return "-time";
     }
 
-    static List<String> selectScenarios(Path jcstressJar, Path workDir) throws Exception {
-        List<String> available = listTests(jcstressJar, workDir);
-        List<String> sampleTests = available.stream()
-            .filter(ObserverEffectRunner::isJmmOrConcurrencySample)
-            .collect(java.util.stream.Collectors.toList());
-
-        if (!sampleTests.isEmpty()) {
-            System.out.printf("Discovered %d JMM/Concurrency samples (APISample excluded).%n%n",
-                sampleTests.size());
-            return sampleTests;
+    static void destroyProcessTree(Process p) {
+        try {
+            ProcessHandle h = p.toHandle();
+            h.descendants().forEach(ph -> {
+                try {
+                    ph.destroyForcibly();
+                } catch (Exception ignored) {
+                }
+            });
+        } catch (Exception ignored) {
         }
-
-        System.out.println("No jcstress-samples classes found in the provided jar.");
-        System.out.println("Falling back to local observer scenarios.");
-        System.out.println();
-        return Arrays.asList(LOCAL_SCENARIOS);
-    }
-
-    static List<String> listTests(Path jcstressJar, Path workDir) throws Exception {
-        List<String> cmd = new ArrayList<>();
-        cmd.add("java");
-        cmd.add("-jar");
-        cmd.add(jcstressJar.toString());
-        cmd.add("-l");
-
-        ProcessBuilder pb = new ProcessBuilder(cmd);
-        pb.directory(workDir.toFile());
-        pb.redirectErrorStream(true);
-        Process p = pb.start();
-
-        byte[] out = p.getInputStream().readAllBytes();
-        boolean done = p.waitFor(TIMEOUT_SECS, TimeUnit.SECONDS);
-        if (!done) {
+        try {
             p.destroyForcibly();
-            throw new RuntimeException("JCStress -l timed out after " + TIMEOUT_SECS + "s");
+        } catch (Exception ignored) {
         }
-
-        List<String> tests = new ArrayList<>();
-        for (String line : new String(out).split("\n")) {
-            String s = line.trim();
-            if (TEST_NAME_LINE.matcher(s).matches()) {
-                tests.add(s);
-            }
-        }
-        return tests;
-    }
-
-    static boolean isJmmOrConcurrencySample(String testName) {
-        if (!testName.startsWith("org.openjdk.jcstress.samples.")) return false;
-        if (testName.startsWith("org.openjdk.jcstress.samples.api.")) return false;
-        return true;
-    }
-
-    // ── Output parsing ────────────────────────────────────────────────────────
-
-    /**
-     * Parses JCStress stdout for outcome lines across all forks.
-     * Returns a map: outcome-string → [total-count, expectation-code]
-     * where expectation-code is 0=ACCEPTABLE, 1=INTERESTING, 2=FORBIDDEN.
-     * Counts are summed across all forks that appear in the output.
-     */
-    static Map<String, long[]> parseOutcomes(String output) {
-        Map<String, long[]> map = new LinkedHashMap<>();
-        for (String line : output.split("\n")) {
-            Matcher m = OUTCOME_LINE.matcher(line);
-            if (!m.matches()) continue;
-            String state  = m.group(1).trim();
-            long   count  = Long.parseLong(m.group(2).replace(",", ""));
-            String expect = m.group(3);
-            int    code   = expect.equalsIgnoreCase("Forbidden")   ? 2
-                          : expect.equalsIgnoreCase("Interesting")  ? 1
-                          :                                           0;
-            long[] existing = map.get(state);
-            if (existing == null) {
-                map.put(state, new long[]{count, code});
-            } else {
-                existing[0] += count;
-                if (code > existing[1]) existing[1] = code;
-            }
-        }
-        return map;
-    }
-
-    // ── Result printing ───────────────────────────────────────────────────────
-
-    static boolean printComparison(String scenario,
-                                   Map<String, long[]> plain,
-                                   Map<String, long[]> capture) {
-
-        // Collect all outcome keys from both runs
-        Set<String> allOutcomes = new LinkedHashSet<>();
-        allOutcomes.addAll(plain.keySet());
-        allOutcomes.addAll(capture.keySet());
-
-        if (allOutcomes.isEmpty()) {
-            System.out.println("  (no outcome data parsed — check JCStress output above)");
-            System.out.println();
-            return false;
-        }
-
-        String fmt = "  %-14s  %20s  %20s  %s%n";
-        System.out.printf(fmt, "Outcome", "Plain (no agent)", "Capture (agent)", "Observer Effect");
-        System.out.println("  " + "-".repeat(90));
-
-        boolean anyHidden = false;
-
-        for (String outcome : allOutcomes) {
-            long[] pv = plain.getOrDefault(outcome,   new long[]{0, 0});
-            long[] cv = capture.getOrDefault(outcome, new long[]{0, 0});
-
-            long pCount = pv[0];
-            long cCount = cv[0];
-            int  code   = (int) Math.max(pv[1], cv[1]); // use highest expectation seen
-            String label = code == 2 ? " [FORBIDDEN]"
-                         : code == 1 ? " [INTERESTING]"
-                         :             "";
-
-            String effect = "";
-            // Flag FORBIDDEN/INTERESTING outcomes present in plain but gone in capture
-            if (code >= 1 && pCount > 0 && cCount == 0) {
-                effect = "*** HIDDEN — agent suppresses hardware-only outcome";
-                anyHidden = true;
-            }
-
-            System.out.printf(fmt,
-                outcome,
-                pCount + label,
-                cCount + label,
-                effect);
-        }
-
-        System.out.println();
-        if (anyHidden) {
-            System.out.println("  Observer effect DETECTED for " + scenario);
-        } else {
-            System.out.println("  No observer effect detected for " + scenario
-                + " (forbidden outcomes may need more iterations, or may not appear on this hardware)");
-        }
-        System.out.println();
-        return anyHidden;
-    }
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
-    static void deleteDir(Path dir) throws IOException {
-        Files.walk(dir)
-             .sorted(Comparator.reverseOrder())
-             .forEach(p -> { try { Files.delete(p); } catch (IOException ignored) {} });
     }
 
     static int intFromEnv(String key, int defaultValue) {

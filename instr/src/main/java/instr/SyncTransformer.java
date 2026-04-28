@@ -14,9 +14,14 @@ import org.w3c.dom.events.EventTarget;
 public class SyncTransformer implements ClassFileTransformer {
 
     private final String extraExclude; // optional extra package prefix to skip; may be null
+    private final String includePrefix; // optional package prefix to include; null means include all
 
-    public SyncTransformer()                    { this.extraExclude = null; }
-    public SyncTransformer(String extraExclude) { this.extraExclude = extraExclude; }
+    public SyncTransformer()                                    { this(null, null); }
+    public SyncTransformer(String extraExclude)                 { this(extraExclude, null); }
+    public SyncTransformer(String extraExclude, String includePrefix) {
+        this.extraExclude = extraExclude;
+        this.includePrefix = includePrefix;
+    }
 
     // ---- Site ID registry (assigned at class-load/transform time, not runtime) ----
     // Site IDs are derived from the site string content, not registration order.
@@ -101,6 +106,9 @@ public class SyncTransformer implements ClassFileTransformer {
             return null;
         }
         if (extraExclude != null && className.startsWith(extraExclude)) {
+            return null;
+        }
+        if (includePrefix != null && !className.startsWith(includePrefix)) {
             return null;
         }
 

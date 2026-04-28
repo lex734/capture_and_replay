@@ -7,6 +7,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class IdentityMapper {
+    public static final int IGNORED_ROLE_ID = -1;
+    public static final int GLOBAL_ROLE_ID = 0;
     // --- ID Spaces ---
     // 0 is reserved for GLOBAL/STATIC scope
     private static final AtomicInteger roleCounter = new AtomicInteger(1);
@@ -38,6 +40,7 @@ public class IdentityMapper {
     // Pool string literals (from LDC): keyed by string content so every reference
     // to the same literal resolves to the same BirthId.PoolString across runs.
     private static final ConcurrentHashMap<String, BirthId.PoolString> poolStringToId = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<Integer, Boolean> ignoredSites = new ConcurrentHashMap<>();
 
     private static final ConcurrentHashMap<Long, Integer> preAssignedRoles = new ConcurrentHashMap<>();
 
@@ -99,26 +102,48 @@ public class IdentityMapper {
      * Maps a thread ID to a logical Role ID.
      */
     public static int getRoleIdBySite(long tid, int siteId) {
+        if (isIgnoredSite(siteId)) {
+            return IGNORED_ROLE_ID;
+        }
         Thread current = Thread.currentThread();
-        String name = current.getName();
+        if (shouldSkipThread(current)) {
+            return IGNORED_ROLE_ID; // sentinel: caller should skip logging for this thread
+        }
+        Integer preAssigned = preAssignedRoles.get(tid);
+        int roleId = tidToRoleId.computeIfAbsent(tid, k -> roleCounter.getAndIncrement());
+        if (preAssigned != null) return preAssigned;
+        return roleId;
+    }
 
-        // JVM infrastructure threads — never assign roles to these,
-        // they are non-deterministic across runs and should not be replayed
-        if (name.startsWith("Finalizer")
+    public static boolean isIgnoredRole(int roleId) {
+        return roleId == IGNORED_ROLE_ID;
+    }
+
+    public static boolean shouldTraceCurrentThread(int siteId) {
+        return !isIgnoredRole(getRoleIdBySite(Thread.currentThread().getId(), siteId));
+    }
+
+    public static boolean shouldSkipThread(Thread thread) {
+        String name = thread.getName();
+        return name.startsWith("Finalizer")
                 || name.startsWith("Reference Handler")
                 || name.startsWith("Signal Dispatcher")
                 || name.startsWith("Notification Thread")
                 || name.startsWith("Common-Cleaner")
                 || name.startsWith("ForkJoinPool.commonPool")
                 || name.startsWith("ForkJoinPool-")
-                || current.isDaemon() && current.getThreadGroup() != null
-                        && "system".equals(current.getThreadGroup().getName())) {
-            return -1; // sentinel: caller should skip logging for this thread
-        }
-        Integer preAssigned = preAssignedRoles.get(tid);
-        int roleId = tidToRoleId.computeIfAbsent(tid, k -> roleCounter.getAndIncrement());
-        if (preAssigned != null) return preAssigned;
-        return roleId;
+                || name.equals("MonitorTimer")
+                || name.endsWith(" monitor")
+                || thread.isDaemon() && thread.getThreadGroup() != null
+                        && "system".equals(thread.getThreadGroup().getName());
+    }
+
+    public static void registerIgnoredSite(int siteId) {
+        if (siteId != 0) ignoredSites.put(siteId, Boolean.TRUE);
+    }
+
+    public static boolean isIgnoredSite(int siteId) {
+        return ignoredSites.containsKey(siteId);
     }
 
     /**
@@ -293,6 +318,7 @@ public class IdentityMapper {
         idToObj.clear();
         poolStringToId.clear();
         siteCounters.clear();
+        ignoredSites.clear();
         System.out.println("[IdentityMapper] All maps cleared for new trace.");
     }
 }

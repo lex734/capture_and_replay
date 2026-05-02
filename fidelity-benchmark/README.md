@@ -1,8 +1,9 @@
 # Fidelity Benchmark
 
 Measures how faithfully the replay agent reproduces captured runs across the
-SCTBench suite. For each class: captures one run unconditionally, then replays
-that trace N times (default 30) and reports per-class and aggregate metrics.
+SCTBench suite. For each class: runs 10 capture trials by default, replays each
+successful capture 10 times, and reports per-class and aggregate metrics
+grouped by whether the capture outcome was buggy or clean.
 
 ## What It Measures
 
@@ -58,7 +59,7 @@ Run from the repo root (the working directory is used for `trace.bin`):
 
 ```bash
 java -cp fidelity-benchmark/target/fidelity-benchmark.jar fidelity.FidelityBenchmark \
-     <capture-agent.jar> <replay-agent.jar> <sctbench.jar> [runs] [class-or-classlist.txt]
+     <capture-agent.jar> <replay-agent.jar> <sctbench.jar> [class-or-classlist.txt]
 ```
 
 **Arguments:**
@@ -68,10 +69,13 @@ java -cp fidelity-benchmark/target/fidelity-benchmark.jar fidelity.FidelityBench
 | `capture-agent.jar` | yes | — |
 | `replay-agent.jar` | yes | — |
 | `sctbench.jar` | yes | — |
-| `runs` | no | `30` |
 | `class-or-classlist.txt` | no | bundled `sctbench.txt` (all 28 classes) |
 
-**Example — full suite, 30 replays per class:**
+The benchmark currently uses:
+- `10` capture trials per class
+- `10` replay runs per successful capture
+
+**Example — full suite:**
 
 ```bash
 java -cp fidelity-benchmark/target/fidelity-benchmark.jar fidelity.FidelityBenchmark \
@@ -80,14 +84,14 @@ java -cp fidelity-benchmark/target/fidelity-benchmark.jar fidelity.FidelityBench
      benchmark/bms/SCTBench/build/libs/fray-benchmark-1.0-SNAPSHOT.jar
 ```
 
-**Example — single class, 50 replays:**
+**Example — single class:**
 
 ```bash
 java -cp fidelity-benchmark/target/fidelity-benchmark.jar fidelity.FidelityBenchmark \
      capture/target/trace-capture-agent.jar \
      replay/target/trace-replay-agent.jar \
      benchmark/bms/SCTBench/build/libs/fray-benchmark-1.0-SNAPSHOT.jar \
-     50 cmu.pasta.fray.benchmark.sctbench.cs.origin.AccountBad
+     cmu.pasta.fray.benchmark.sctbench.cs.origin.AccountBad
 ```
 
 **Example — custom class list:**
@@ -97,7 +101,7 @@ java -cp fidelity-benchmark/target/fidelity-benchmark.jar fidelity.FidelityBench
      capture/target/trace-capture-agent.jar \
      replay/target/trace-replay-agent.jar \
      benchmark/bms/SCTBench/build/libs/fray-benchmark-1.0-SNAPSHOT.jar \
-     30 my-classes.txt
+     my-classes.txt
 ```
 
 ## SCTBench Classes
@@ -110,29 +114,47 @@ Sync01Bad, Sync02Bad) treat process timeout as the bug signal.
 ## Sample Output
 
 ```
-=== Fidelity Benchmark: SCTBench (30 replay runs per class) ===
+=== Fidelity Benchmark: SCTBench (10 capture trials x 10 replays per capture) ===
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.AccountBad ---
-  Capture: bug (exit 1)
-  Fidelity score     : 94.3%
-  Outcome reproduced : 28 / 30  (93.3%)
-  Diverged           : 2 / 30
---- cmu.pasta.fray.benchmark.sctbench.cs.origin.Deadlock01Bad ---
-  Capture: bug (timed out)
-  Fidelity score     : 100.0%
-  Outcome reproduced : 30 / 30  (100.0%)
-  Diverged           : 0 / 30
+  Capture  1/10      : bug (exit 1)
+  ...
+  Capture 10/10      : clean (exit 0)
+  Successful captures: 10 / 10
+  bug   captures     : 7 / 10
+    Trace size         : 102 events
+    Replay runs        : 70
+    Complete runs      : 63 / 70
+    Outcome reproduced : 65 / 70  (92.86%)
+    ...complete runs   : 60 / 63
+    Matched (complete) : 102.00 avg / run  (100.00%)
+  clean captures     : 3 / 10
+    Trace size         : 98 events
+    Replay runs        : 30
+    Complete runs      : 29 / 30
+    Outcome reproduced : 28 / 30  (93.33%)
+    ...complete runs   : 27 / 29
+    Matched (complete) : 98.00 avg / run  (100.00%)
 
---- cmu.pasta.fray.benchmark.sctbench.cs.origin.FsbenchBad ---
-  Capture: no trace.bin produced (exit 1)
+--- cmu.pasta.fray.benchmark.sctbench.cs.origin.Deadlock01Bad ---
+  ...
 
 ...
 
 ===== SUMMARY =====
 Classes tested        : 28
 Classes replayed      : 22 / 28
-Mean fidelity score   : 91.7%
-Outcome reproduced    : 88.4%
-Divergence rate       : 4.2%
+Bug captures          : 110
+Bug replay runs       : 1100
+Bug complete runs     : 1009 / 1100 runs  (91.7%)
+Bug outcome repr.     : 972 / 1100 runs  (88.4%)
+Bug ...complete runs  : 930 / 1009 runs  (92.2%)
+Bug matched complete  : 96.1%
+Clean captures        : 87
+Clean replay runs     : 870
+Clean complete runs   : 801 / 870 runs  (92.1%)
+Clean outcome repr.   : 845 / 870 runs  (97.1%)
+Clean ...complete runs: 780 / 801 runs  (97.4%)
+Clean matched complete: 98.4%
 ===================
 ```

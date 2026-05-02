@@ -339,15 +339,15 @@ public class ReplayCoordinator {
         try {
             activateRole(roleId);
             Condition myTurn = conditionFor(roleId);
-            System.out.println(String.format("[awaitTurn] role=%d type=%d objSite=%d objCount=%d data=%d",
-                    roleId, packedType & 0xFF, objSite, objCount, data));
+            // System.out.println(String.format("[awaitTurn] role=%d type=%d objSite=%d objCount=%d data=%d",
+            //         roleId, packedType & 0xFF, objSite, objCount, data));
             while (true) {
                 long idx = currentIdx.get();
                 if (idx >= totalEvents) return;
 
                 long[] expected = sortedEvents[(int) idx];
-                System.out.println(String.format("[check] idx=%-4d expects role=%d type=%d objSite=%d objCount=%d data1=%d data2=%d",
-                    idx, (int) expected[1], (int) expected[2] & 0xFF, expected[3], expected[4], expected[5], expected[6]));
+                // System.out.println(String.format("[check] idx=%-4d expects role=%d type=%d objSite=%d objCount=%d data1=%d data2=%d",
+                //     idx, (int) expected[1], (int) expected[2] & 0xFF, expected[3], expected[4], expected[5], expected[6]));
 
                 if (advancePastBlockedRoles()) continue;
 

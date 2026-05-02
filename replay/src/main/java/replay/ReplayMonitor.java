@@ -1765,9 +1765,9 @@ public class ReplayMonitor {
             int packedType = BinarySchema.packType(BinarySchema.Event.EXCEPTION_THROW, BinarySchema.Flags.NONE);
             ReplayCoordinator.awaitTurn(roleId, packedType, birthId, siteId);
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format(
-                    "[CHECK-THROW] seq=%d role=%d  %s  site=%d objSite=%d objCount=%d",
-                    seq, roleId, exception.getClass().getName(), siteId, birthId.siteId, birthId.count));
+            // System.out.println(String.format(
+            //         "[CHECK-THROW] seq=%d role=%d  %s  site=%d objSite=%d objCount=%d",
+            //         seq, roleId, exception.getClass().getName(), siteId, birthId.siteId, birthId.count));
         } finally {
             isInside.set(false);
         }
@@ -1787,9 +1787,9 @@ public class ReplayMonitor {
             int packedType = BinarySchema.packType(BinarySchema.Event.NONDETERMINISTIC_INT, BinarySchema.Flags.NONE);
             int val = ReplayCoordinator.awaitTurnInt(roleId, packedType, siteId, 0);
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format(
-                    "[REPLAY-NONDET] epoch=%d seq=%d role=%d  nondet_int=%d  site=%d",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, val, siteId));
+            // System.out.println(String.format(
+            //         "[REPLAY-NONDET] epoch=%d seq=%d role=%d  nondet_int=%d  site=%d",
+            //         seq >>> 32, seq & 0xFFFFFFFFL, roleId, val, siteId));
             return val;
         } finally {
             isInside.set(false);
@@ -1807,9 +1807,9 @@ public class ReplayMonitor {
             int bits = ReplayCoordinator.awaitTurnInt(roleId, packedType, siteId, 0);
             float val = Float.intBitsToFloat(bits);
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format(
-                    "[REPLAY-NONDET] epoch=%d seq=%d role=%d  nondet_float=%f  site=%d",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, val, siteId));
+            // System.out.println(String.format(
+            //         "[REPLAY-NONDET] epoch=%d seq=%d role=%d  nondet_float=%f  site=%d",
+            //         seq >>> 32, seq & 0xFFFFFFFFL, roleId, val, siteId));
             return val;
         } finally {
             isInside.set(false);
@@ -1826,9 +1826,9 @@ public class ReplayMonitor {
             int packedType = BinarySchema.packType(BinarySchema.Event.NONDETERMINISTIC_LONG, BinarySchema.Flags.NONE);
             long val = ReplayCoordinator.awaitTurnLong(roleId, packedType, siteId, 0);
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format(
-                    "[REPLAY-NONDET] epoch=%d seq=%d role=%d  nondet_long=%d  site=%d",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, val, siteId));
+            // System.out.println(String.format(
+            //         "[REPLAY-NONDET] epoch=%d seq=%d role=%d  nondet_long=%d  site=%d",
+            //         seq >>> 32, seq & 0xFFFFFFFFL, roleId, val, siteId));
             return val;
         } finally {
             isInside.set(false);
@@ -1846,9 +1846,9 @@ public class ReplayMonitor {
             long bits = ReplayCoordinator.awaitTurnLong(roleId, packedType, siteId, 0);
             double val = Double.longBitsToDouble(bits);
             long seq = ReplayCoordinator.getLastMatchedSeq();
-            System.out.println(String.format(
-                    "[REPLAY-NONDET] epoch=%d seq=%d role=%d  nondet_double=%f  site=%d",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, val, siteId));
+            // System.out.println(String.format(
+            //         "[REPLAY-NONDET] epoch=%d seq=%d role=%d  nondet_double=%f  site=%d",
+            //         seq >>> 32, seq & 0xFFFFFFFFL, roleId, val, siteId));
             return val;
         } finally {
             isInside.set(false);

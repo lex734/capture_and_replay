@@ -10,23 +10,23 @@
   ...complete runs   : 30 / 30
   Matched (complete) : 43.00 avg / run  (100.00%)
   Valued events      : 40.00 avg / run
-  Natural agreement  : 39.93 / 40.00  (99.83%)
-  Injections         : 0.07 / 40.00  (0.17%)
+  Natural agreement  : 39.97 / 40.00  (99.92%)
+  Injections         : 0.03 / 40.00  (0.08%)
   No-inject disagree : 0.00 / 40.00  (0.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.chess.WorkStealQueue ---
   Capture            : clean (exit 0)
-  Trace size         : 176 events
+  Trace size         : 193 events
   Complete runs      : 30 / 30
   Incomplete runs    : 0 / 30
   Structural divs    : 0 / 30
   Outcome reproduced : 30 / 30  (100.00%)
   ...complete runs   : 30 / 30
-  Matched (complete) : 176.00 avg / run  (100.00%)
-  Valued events      : 163.00 avg / run
-  Natural agreement  : 161.97 / 163.00  (99.37%)
-  Injections         : 1.03 / 163.00  (0.63%)
-  No-inject disagree : 0.00 / 163.00  (0.00%)
+  Matched (complete) : 193.00 avg / run  (100.00%)
+  Valued events      : 180.00 avg / run
+  Natural agreement  : 179.30 / 180.00  (99.61%)
+  Injections         : 0.70 / 180.00  (0.39%)
+  No-inject disagree : 0.00 / 180.00  (0.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.hard.Reorder100Bad ---
   Capture            : clean (exit 0)
@@ -73,94 +73,80 @@
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.ArithmeticProgBad ---
   Capture            : bug (exit 1)
   Trace size         : 97 events
-  Complete runs      : 28 / 30
-  Incomplete runs    : 2 / 30
+  Complete runs      : 27 / 30
+  Incomplete runs    : 3 / 30
   Structural divs    : 0 / 30
-  Outcome reproduced : 28 / 30  (93.33%)
-  ...complete runs   : 28 / 28
-  ...incomplete runs : 0 / 2
+  Outcome reproduced : 27 / 30  (90.00%)
+  ...complete runs   : 27 / 27
+  ...incomplete runs : 0 / 3
   Matched (complete) : 97.00 avg / run  (100.00%)
-  Matched (incompl.) : 25.00 avg / run  (25.77%)
-  Remaining (incompl.): 72.00 avg / run  (74.23%)
-  Incomplete reasons : stalled_with_live_roles=2
-  Valued events      : 66.47 avg / run
-  Natural agreement  : 66.47 / 66.47  (100.00%)
-  Injections         : 0.00 / 66.47  (0.00%)
-  No-inject disagree : 0.00 / 66.47  (0.00%)
+  Matched (incompl.) : 50.33 avg / run  (51.89%)
+  Remaining (incompl.): 46.67 avg / run  (48.11%)
+  Incomplete reasons : stalled_with_live_roles=3
+  Valued events      : 66.63 avg / run
+  Natural agreement  : 66.63 / 66.63  (100.00%)
+  Injections         : 0.00 / 66.63  (0.00%)
+  No-inject disagree : 0.00 / 66.63  (0.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.BluetoothDriverBad ---
   Capture            : clean (exit 0)
   Trace size         : 25 events
-  Complete runs      : 18 / 30
-  Incomplete runs    : 12 / 30
+  Complete runs      : 30 / 30
+  Incomplete runs    : 0 / 30
   Structural divs    : 0 / 30
   Outcome reproduced : 30 / 30  (100.00%)
-  ...complete runs   : 18 / 18
-  ...incomplete runs : 12 / 12
+  ...complete runs   : 30 / 30
   Matched (complete) : 25.00 avg / run  (100.00%)
-  Matched (incompl.) : 10.00 avg / run  (40.00%)
-  Remaining (incompl.): 15.00 avg / run  (60.00%)
-  Incomplete reasons : stalled_with_live_roles=12
-  Valued events      : 12.40 avg / run
-  Natural agreement  : 11.40 / 12.40  (91.94%)
-  Injections         : 1.00 / 12.40  (8.06%)
-  No-inject disagree : 0.00 / 12.40  (0.00%)
+  Valued events      : 16.00 avg / run
+  Natural agreement  : 15.00 / 16.00  (93.75%)
+  Injections         : 1.00 / 16.00  (6.25%)
+  No-inject disagree : 0.00 / 16.00  (0.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.Carter01Bad ---
   Capture            : bug (exit 0)
   Trace size         : 78 events
-  Complete runs      : 29 / 30
+  Complete runs      : 30 / 30
   Incomplete runs    : 0 / 30
-  Structural divs    : 1 / 30
-  Outcome reproduced : 29 / 30  (96.67%)
-  ...complete runs   : 29 / 29
-  ...diverged runs   : 0 / 1
-  Matched (complete) : 78.00 avg / run  (100.00%)
-  Matched (pre-div)  : 39.00 avg / run  (50.00%)
-  Remaining (post-div): 39.00 avg / run  (50.00%)
-  Valued events      : 52.20 avg / run
-  Natural agreement  : 52.10 / 52.20  (99.81%)
-  Injections         : 0.10 / 52.20  (0.19%)
-  No-inject disagree : 0.00 / 52.20  (0.00%)
-
---- cmu.pasta.fray.benchmark.sctbench.cs.origin.CircularBufferBad ---
-  Capture            : clean (exit 0)
-  Trace size         : 275 events
-  Complete runs      : 15 / 30
-  Incomplete runs    : 15 / 30
   Structural divs    : 0 / 30
   Outcome reproduced : 30 / 30  (100.00%)
-  ...complete runs   : 15 / 15
-  ...incomplete runs : 15 / 15
-  Matched (complete) : 275.00 avg / run  (100.00%)
-  Matched (incompl.) : 64.40 avg / run  (23.42%)
-  Remaining (incompl.): 210.60 avg / run  (76.58%)
-  Incomplete reasons : stalled_with_live_roles=14, role_not_started=1
-  Valued events      : 146.57 avg / run
-  Natural agreement  : 146.57 / 146.57  (100.00%)
-  Injections         : 0.00 / 146.57  (0.00%)
-  No-inject disagree : 0.00 / 146.57  (0.00%)
+  ...complete runs   : 30 / 30
+  Matched (complete) : 78.00 avg / run  (100.00%)
+  Valued events      : 53.00 avg / run
+  Natural agreement  : 52.67 / 53.00  (99.37%)
+  Injections         : 0.33 / 53.00  (0.63%)
+  No-inject disagree : 0.00 / 53.00  (0.00%)
+
+--- cmu.pasta.fray.benchmark.sctbench.cs.origin.CircularBufferBad ---
+  Capture            : bug (exit 0)
+  Trace size         : 88 events
+  Complete runs      : 1 / 30
+  Incomplete runs    : 29 / 30
+  Structural divs    : 0 / 30
+  Outcome reproduced : 1 / 30  (3.33%)
+  ...complete runs   : 1 / 1
+  ...incomplete runs : 0 / 29
+  Matched (complete) : 88.00 avg / run  (100.00%)
+  Matched (incompl.) : 15.00 avg / run  (17.05%)
+  Remaining (incompl.): 73.00 avg / run  (82.95%)
+  Incomplete reasons : stalled_with_live_roles=29
+  Valued events      : 11.67 avg / run
+  Natural agreement  : 11.67 / 11.67  (100.00%)
+  Injections         : 0.00 / 11.67  (0.00%)
+  No-inject disagree : 0.00 / 11.67  (0.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.Deadlock01Bad ---
-  Capture            : bug (exit 0)
-  Trace size         : 30 events
-  Complete runs      : 27 / 30
-  Incomplete runs    : 2 / 30
-  Structural divs    : 1 / 30
-  Outcome reproduced : 28 / 30  (93.33%)
-  ...complete runs   : 27 / 27
-  ...incomplete runs : 0 / 2
-  ...diverged runs   : 1 / 1
-  Matched (complete) : 30.00 avg / run  (100.00%)
-  Matched (incompl.) : 15.00 avg / run  (50.00%)
-  Remaining (incompl.): 15.00 avg / run  (50.00%)
-  Incomplete reasons : stalled_with_live_roles=2
-  Matched (pre-div)  : 19.00 avg / run  (63.33%)
-  Remaining (post-div): 11.00 avg / run  (36.67%)
-  Valued events      : 14.47 avg / run
-  Natural agreement  : 14.43 / 14.47  (99.77%)
-  Injections         : 0.03 / 14.47  (0.23%)
-  No-inject disagree : 0.00 / 14.47  (0.00%)
+  Capture            : clean (exit 0)
+  Trace size         : 35 events
+  Complete runs      : 30 / 30
+  Incomplete runs    : 0 / 30
+  Structural divs    : 0 / 30
+  Outcome reproduced : 30 / 30  (100.00%)
+  ...complete runs   : 30 / 30
+  Matched (complete) : 35.00 avg / run  (100.00%)
+  Valued events      : 19.00 avg / run
+  Natural agreement  : 19.00 / 19.00  (100.00%)
+  Injections         : 0.00 / 19.00  (0.00%)
+  No-inject disagree : 0.00 / 19.00  (0.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.FsbenchBad ---
   Capture            : bug (exit 0)
@@ -179,56 +165,48 @@
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.Lazy01Bad ---
   Capture            : bug (exit 0)
   Trace size         : 34 events
+  Complete runs      : 30 / 30
+  Incomplete runs    : 0 / 30
+  Structural divs    : 0 / 30
+  Outcome reproduced : 30 / 30  (100.00%)
+  ...complete runs   : 30 / 30
+  Matched (complete) : 34.00 avg / run  (100.00%)
+  Valued events      : 15.00 avg / run
+  Natural agreement  : 15.00 / 15.00  (100.00%)
+  Injections         : 0.00 / 15.00  (0.00%)
+  No-inject disagree : 0.00 / 15.00  (0.00%)
+
+--- cmu.pasta.fray.benchmark.sctbench.cs.origin.Phase01Bad ---
+  Capture            : bug (exit 0)
+  Trace size         : 31 events
+  Complete runs      : 30 / 30
+  Incomplete runs    : 0 / 30
+  Structural divs    : 0 / 30
+  Outcome reproduced : 30 / 30  (100.00%)
+  ...complete runs   : 30 / 30
+  Matched (complete) : 31.00 avg / run  (100.00%)
+  Valued events      : 15.00 avg / run
+  Natural agreement  : 14.00 / 15.00  (93.33%)
+  Injections         : 1.00 / 15.00  (6.67%)
+  No-inject disagree : 0.00 / 15.00  (0.00%)
+
+--- cmu.pasta.fray.benchmark.sctbench.cs.origin.QueueBad ---
+  Capture            : bug (exit 143)
+  Trace size         : 82 events
   Complete runs      : 28 / 30
   Incomplete runs    : 2 / 30
   Structural divs    : 0 / 30
   Outcome reproduced : 28 / 30  (93.33%)
   ...complete runs   : 28 / 28
   ...incomplete runs : 0 / 2
-  Matched (complete) : 34.00 avg / run  (100.00%)
-  Matched (incompl.) : 17.00 avg / run  (50.00%)
-  Remaining (incompl.): 17.00 avg / run  (50.00%)
-  Incomplete reasons : stalled_with_live_roles=2
-  Valued events      : 14.60 avg / run
-  Natural agreement  : 14.60 / 14.60  (100.00%)
-  Injections         : 0.00 / 14.60  (0.00%)
-  No-inject disagree : 0.00 / 14.60  (0.00%)
-
---- cmu.pasta.fray.benchmark.sctbench.cs.origin.Phase01Bad ---
-  Capture            : clean (exit 143)
-  Trace size         : 34 events
-  Complete runs      : 29 / 30
-  Incomplete runs    : 1 / 30
-  Structural divs    : 0 / 30
-  Outcome reproduced : 30 / 30  (100.00%)
-  ...complete runs   : 29 / 29
-  ...incomplete runs : 1 / 1
-  Matched (complete) : 34.00 avg / run  (100.00%)
-  Matched (incompl.) : 12.00 avg / run  (35.29%)
-  Remaining (incompl.): 22.00 avg / run  (64.71%)
-  Incomplete reasons : stalled_with_live_roles=1
-  Valued events      : 17.63 avg / run
-  Natural agreement  : 17.63 / 17.63  (100.00%)
-  Injections         : 0.00 / 17.63  (0.00%)
-  No-inject disagree : 0.00 / 17.63  (0.00%)
-
---- cmu.pasta.fray.benchmark.sctbench.cs.origin.QueueBad ---
-  Capture            : bug (exit 143)
-  Trace size         : 82 events
-  Complete runs      : 29 / 30
-  Incomplete runs    : 1 / 30
-  Structural divs    : 0 / 30
-  Outcome reproduced : 29 / 30  (96.67%)
-  ...complete runs   : 29 / 29
-  ...incomplete runs : 0 / 1
   Matched (complete) : 82.00 avg / run  (100.00%)
   Matched (incompl.) : 44.00 avg / run  (53.66%)
   Remaining (incompl.): 38.00 avg / run  (46.34%)
-  Incomplete reasons : stalled_with_live_roles=1
-  Valued events      : 67.93 avg / run
-  Natural agreement  : 67.93 / 67.93  (100.00%)
-  Injections         : 0.00 / 67.93  (0.00%)
-  No-inject disagree : 0.00 / 67.93  (0.00%)
+  Incomplete reasons : stalled_with_live_roles=2
+  Valued events      : 66.87 avg / run
+  Natural agreement  : 66.87 / 66.87  (100.00%)
+  Injections         : 0.00 / 66.87  (0.00%)
+  No-inject disagree : 0.00 / 66.87  (0.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.Reorder10Bad ---
   Capture            : clean (exit 0)
@@ -303,37 +281,37 @@
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.StackBad ---
   Capture            : clean (exit 0)
   Trace size         : 253 events
-  Complete runs      : 27 / 30
-  Incomplete runs    : 3 / 30
+  Complete runs      : 13 / 30
+  Incomplete runs    : 17 / 30
   Structural divs    : 0 / 30
   Outcome reproduced : 30 / 30  (100.00%)
-  ...complete runs   : 27 / 27
-  ...incomplete runs : 3 / 3
+  ...complete runs   : 13 / 13
+  ...incomplete runs : 17 / 17
   Matched (complete) : 253.00 avg / run  (100.00%)
-  Matched (incompl.) : 76.00 avg / run  (30.04%)
-  Remaining (incompl.): 177.00 avg / run  (69.96%)
-  Incomplete reasons : stalled_with_live_roles=3
-  Valued events      : 190.53 avg / run
-  Natural agreement  : 190.53 / 190.53  (100.00%)
-  Injections         : 0.00 / 190.53  (0.00%)
-  No-inject disagree : 0.00 / 190.53  (0.00%)
+  Matched (incompl.) : 53.65 avg / run  (21.20%)
+  Remaining (incompl.): 199.35 avg / run  (78.80%)
+  Incomplete reasons : stalled_with_live_roles=17
+  Valued events      : 112.47 avg / run
+  Natural agreement  : 112.47 / 112.47  (100.00%)
+  Injections         : 0.00 / 112.47  (0.00%)
+  No-inject disagree : 0.00 / 112.47  (0.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.Sync01Bad ---
   Capture            : bug (exit 0)
-  Trace size         : 44 events
-  Complete runs      : 22 / 30
+  Trace size         : 40 events
+  Complete runs      : 18 / 30
   Incomplete runs    : 0 / 30
-  Structural divs    : 8 / 30
+  Structural divs    : 12 / 30
   Outcome reproduced : 30 / 30  (100.00%)
-  ...complete runs   : 22 / 22
-  ...diverged runs   : 8 / 8
-  Matched (complete) : 44.00 avg / run  (100.00%)
-  Matched (pre-div)  : 20.38 avg / run  (46.31%)
-  Remaining (post-div): 23.63 avg / run  (53.69%)
-  Valued events      : 23.90 avg / run
-  Natural agreement  : 23.90 / 23.90  (100.00%)
-  Injections         : 0.00 / 23.90  (0.00%)
-  No-inject disagree : 0.00 / 23.90  (0.00%)
+  ...complete runs   : 18 / 18
+  ...diverged runs   : 12 / 12
+  Matched (complete) : 40.00 avg / run  (100.00%)
+  Matched (pre-div)  : 18.00 avg / run  (45.00%)
+  Remaining (post-div): 22.00 avg / run  (55.00%)
+  Valued events      : 20.00 avg / run
+  Natural agreement  : 20.00 / 20.00  (100.00%)
+  Injections         : 0.00 / 20.00  (0.00%)
+  No-inject disagree : 0.00 / 20.00  (0.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.Sync02Bad ---
   Capture            : bug (exit 0)
@@ -351,17 +329,21 @@
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.TokenRingBad ---
   Capture            : clean (exit 0)
-  Trace size         : 37 events
-  Complete runs      : 30 / 30
-  Incomplete runs    : 0 / 30
+  Trace size         : 39 events
+  Complete runs      : 2 / 30
+  Incomplete runs    : 28 / 30
   Structural divs    : 0 / 30
   Outcome reproduced : 30 / 30  (100.00%)
-  ...complete runs   : 30 / 30
-  Matched (complete) : 37.00 avg / run  (100.00%)
-  Valued events      : 23.00 avg / run
-  Natural agreement  : 23.00 / 23.00  (100.00%)
-  Injections         : 0.00 / 23.00  (0.00%)
-  No-inject disagree : 0.00 / 23.00  (0.00%)
+  ...complete runs   : 2 / 2
+  ...incomplete runs : 28 / 28
+  Matched (complete) : 39.00 avg / run  (100.00%)
+  Matched (incompl.) : 18.00 avg / run  (46.15%)
+  Remaining (incompl.): 21.00 avg / run  (53.85%)
+  Incomplete reasons : role_not_started=28
+  Valued events      : 11.93 avg / run
+  Natural agreement  : 11.93 / 11.93  (100.00%)
+  Injections         : 0.00 / 11.93  (0.00%)
+  No-inject disagree : 0.00 / 11.93  (0.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.Twostage100Bad ---
   Capture            : clean (exit 0)
@@ -371,13 +353,13 @@
   Structural divs    : 0 / 30
   Outcome reproduced : 30 / 30  (100.00%)
   ...incomplete runs : 30 / 30
-  Matched (incompl.) : 249.00 avg / run  (13.70%)
-  Remaining (incompl.): 1568.00 avg / run  (86.30%)
+  Matched (incompl.) : 94.13 avg / run  (5.18%)
+  Remaining (incompl.): 1722.87 avg / run  (94.82%)
   Incomplete reasons : role_not_started=30
-  Valued events      : 170.67 avg / run
-  Natural agreement  : 170.67 / 170.67  (100.00%)
-  Injections         : 0.00 / 170.67  (0.00%)
-  No-inject disagree : 0.00 / 170.67  (0.00%)
+  Valued events      : 67.43 avg / run
+  Natural agreement  : 67.43 / 67.43  (100.00%)
+  Injections         : 0.00 / 67.43  (0.00%)
+  No-inject disagree : 0.00 / 67.43  (0.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.TwostageBad ---
   Capture            : clean (exit 0)
@@ -438,20 +420,20 @@
 ===== SUMMARY =====
 Classes tested        : 28
 Classes replayed      : 28 / 28
-Complete runs         : 762 / 840 runs  (90.7%)
-Incomplete runs       : 68 / 840 runs  (8.1%)
-Structural divs       : 10 / 840 runs  (1.2%)
-Outcome reproduced    : 832 / 840 runs  (99.0%)
-...complete runs      : 762 / 762 runs  (100.0%)
-...incomplete runs    : 61 / 68 runs  (89.7%)
-...diverged runs      : 9 / 10 runs  (90.0%)
+Complete runs         : 719 / 840 runs  (85.6%)
+Incomplete runs       : 109 / 840 runs  (13.0%)
+Structural divs       : 12 / 840 runs  (1.4%)
+Outcome reproduced    : 806 / 840 runs  (96.0%)
+...complete runs      : 719 / 719 runs  (100.0%)
+...incomplete runs    : 75 / 109 runs  (68.8%)
+...diverged runs      : 12 / 12 runs  (100.0%)
 Matched (complete)    : 100.0%
-Matched (incomplete)  : 14.9%
-Remaining (incomplete): 85.1%
-Matched (pre-div)     : 48.0%
-Remaining (post-div)  : 52.0%
-Valued events         : 109391
-Natural agreement     : 109324 / 109391  (99.9%)
-Injections            : 67 / 109391  (0.1%)
-No-inject disagreements: 0 / 109391  (0.0%)
+Matched (incomplete)  : 7.8%
+Remaining (incomplete): 92.2%
+Matched (pre-div)     : 45.0%
+Remaining (post-div)  : 55.0%
+Valued events         : 100140
+Natural agreement     : 100048 / 100140  (99.9%)
+Injections            : 92 / 100140  (0.1%)
+No-inject disagreements: 0 / 100140  (0.0%)
 ===================

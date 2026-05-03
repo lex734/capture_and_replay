@@ -1,0 +1,100 @@
+Capture agent : /home/enxing/capture_and_replay/capture/target/trace-capture-agent.jar
+Replay agent  : /home/enxing/capture_and_replay/replay/target/trace-replay-agent.jar
+Classpath     : /home/enxing/capture_and_replay/benchmark/bms/SCTBench/build/libs/fray-benchmark-1.0-SNAPSHOT.jar
+Workload src  : /home/enxing/capture_and_replay/benchmark/fray_benchmark/assets/sctbench.txt
+Workloads     : 28
+Extra JVM args: --add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.util.concurrent=ALL-UNNAMED --add-opens java.base/java.util.concurrent.locks=ALL-UNNAMED
+Warmup rounds : 3  |  Replay rounds: 10  |  Window: 30s  |  Timeout: 8s
+
+[1/28] Running cmu.pasta.fray.benchmark.sctbench.cb.StringBufferJDK
+[2/28] Running cmu.pasta.fray.benchmark.sctbench.chess.WorkStealQueue
+[3/28] Running cmu.pasta.fray.benchmark.sctbench.cs.hard.Reorder100Bad
+[4/28] Running cmu.pasta.fray.benchmark.sctbench.cs.hard.Reorder50Bad
+[5/28] Running cmu.pasta.fray.benchmark.sctbench.cs.origin.AccountBad
+[6/28] Running cmu.pasta.fray.benchmark.sctbench.cs.origin.ArithmeticProgBad
+[7/28] Running cmu.pasta.fray.benchmark.sctbench.cs.origin.BluetoothDriverBad
+[8/28] Running cmu.pasta.fray.benchmark.sctbench.cs.origin.Carter01Bad
+[9/28] Running cmu.pasta.fray.benchmark.sctbench.cs.origin.CircularBufferBad
+[10/28] Running cmu.pasta.fray.benchmark.sctbench.cs.origin.Deadlock01Bad
+[11/28] Running cmu.pasta.fray.benchmark.sctbench.cs.origin.FsbenchBad
+[12/28] Running cmu.pasta.fray.benchmark.sctbench.cs.origin.Lazy01Bad
+[13/28] Running cmu.pasta.fray.benchmark.sctbench.cs.origin.Phase01Bad
+[14/28] Running cmu.pasta.fray.benchmark.sctbench.cs.origin.QueueBad
+[15/28] Running cmu.pasta.fray.benchmark.sctbench.cs.origin.Reorder10Bad
+[16/28] Running cmu.pasta.fray.benchmark.sctbench.cs.origin.Reorder20Bad
+[17/28] Running cmu.pasta.fray.benchmark.sctbench.cs.origin.Reorder3Bad
+[18/28] Running cmu.pasta.fray.benchmark.sctbench.cs.origin.Reorder4Bad
+[19/28] Running cmu.pasta.fray.benchmark.sctbench.cs.origin.Reorder5Bad
+[20/28] Running cmu.pasta.fray.benchmark.sctbench.cs.origin.StackBad
+[21/28] Running cmu.pasta.fray.benchmark.sctbench.cs.origin.Sync01Bad
+[22/28] Running cmu.pasta.fray.benchmark.sctbench.cs.origin.Sync02Bad
+[23/28] Running cmu.pasta.fray.benchmark.sctbench.cs.origin.TokenRingBad
+[24/28] Running cmu.pasta.fray.benchmark.sctbench.cs.origin.Twostage100Bad
+[25/28] Running cmu.pasta.fray.benchmark.sctbench.cs.origin.TwostageBad
+[26/28] Running cmu.pasta.fray.benchmark.sctbench.cs.origin.Wronglock1Bad
+[27/28] Running cmu.pasta.fray.benchmark.sctbench.cs.origin.Wronglock3Bad
+[28/28] Running cmu.pasta.fray.benchmark.sctbench.cs.origin.WronglockBad
+
+Buggy Outcomes
+Workload                         Baseline (ms)      Capture (ms)       Replay (ms)    PlainBug      CapBug  Cap/Base  Rep/Base
+-------------------------------------------------------------------------------------------------------------------------------
+StringBufferJDK                            N/A    147.0 +-    0.0    201.9 +-   14.9       0/721       1/208       N/A       N/A
+WorkStealQueue                             N/A               N/A               N/A       0/642       0/201       N/A       N/A
+Reorder100Bad                              N/A               N/A               N/A       0/665       0/201       N/A       N/A
+Reorder50Bad                               N/A               N/A               N/A       0/667       0/201       N/A       N/A
+AccountBad                                 N/A               N/A               N/A       0/771       0/242       N/A       N/A
+ArithmeticProgBad                52.8 +-    9.7    141.5 +-   16.9    188.8 +-   15.8     563/563     157/157     2.68x     3.57x
+BluetoothDriverBad                         N/A               N/A               N/A       0/564       0/217       N/A       N/A
+Carter01Bad                      37.0 +-    0.0    151.5 +-   11.6    187.0 +-   10.9       1/748     135/144     4.10x     5.05x
+CircularBufferBad                39.0 +-    0.0    153.8 +-   14.8    180.0 +-   24.1       1/778     125/142     3.94x     4.61x
+Deadlock01Bad                    41.0 +-    5.0    134.9 +-    9.2   2225.5 +- 3423.8       2/790     148/166     3.29x    54.28x
+FsbenchBad                       41.7 +-    6.4    148.4 +-   15.8    212.5 +-    9.8     710/710     151/151     3.56x     5.09x
+Lazy01Bad                        38.3 +-    4.9    135.9 +-   15.4    177.9 +-   16.5     754/775     136/172     3.55x     4.65x
+Phase01Bad                       64.1 +-  368.7   8001.3 +-    0.4        INCOMPLETE     465/465         4/4   124.85x       N/A
+QueueBad                         36.0 +-    0.0   8001.0 +-    0.0    299.7 +-   17.5       1/801         4/4   222.25x     8.33x
+Reorder10Bad                               N/A               N/A               N/A       0/779       0/225       N/A       N/A
+Reorder20Bad                               N/A               N/A               N/A       0/753       0/231       N/A       N/A
+Reorder3Bad                                N/A               N/A               N/A       0/703       0/232       N/A       N/A
+Reorder4Bad                                N/A               N/A               N/A       0/736       0/234       N/A       N/A
+Reorder5Bad                                N/A               N/A               N/A       0/656       0/232       N/A       N/A
+StackBad                                   N/A    152.8 +-   15.6    190.4 +-   18.9       0/598      98/164       N/A       N/A
+Sync01Bad                        41.3 +-    6.8    140.4 +-    5.2    178.2 +-    6.9     718/718     157/157     3.40x     4.32x
+Sync02Bad                      8001.5 +-    0.5    140.8 +-   17.6    187.7 +-   32.4         4/4     158/158     0.02x     0.02x
+TokenRingBad                     40.5 +-    1.5    150.0 +-    0.0        INCOMPLETE       2/686       1/214     3.70x       N/A
+Twostage100Bad                             N/A               N/A               N/A       0/528       0/189       N/A       N/A
+TwostageBad                                N/A               N/A               N/A       0/738       0/226       N/A       N/A
+Wronglock1Bad                              N/A    149.0 +-   16.9    184.9 +-   17.9       0/666       5/222       N/A       N/A
+Wronglock3Bad                              N/A    143.5 +-    4.5    188.7 +-   16.6       0/732       2/216       N/A       N/A
+WronglockBad                               N/A    138.5 +-    9.2    179.5 +-   11.1       0/757       8/222       N/A       N/A
+
+Clean Outcomes
+Workload                         Baseline (ms)      Capture (ms)       Replay (ms)  PlainClean    CapClean  Cap/Base  Rep/Base
+-------------------------------------------------------------------------------------------------------------------------------
+StringBufferJDK                  41.1 +-    9.5    151.1 +-   16.7    200.8 +-   13.5     721/721     132/132     3.68x     4.88x
+WorkStealQueue                   46.3 +-    4.4    154.7 +-   11.3    201.3 +-    7.4     642/642     143/145     3.34x     4.35x
+Reorder100Bad                    44.6 +-    4.4    152.2 +-   18.4    220.1 +-   12.4     665/665     148/148     3.41x     4.93x
+Reorder50Bad                     44.5 +-    9.4    137.4 +-   13.5    188.3 +-    9.3     667/667     160/160     3.09x     4.23x
+AccountBad                       38.4 +-    5.5    126.4 +-   17.0    175.5 +-   10.4     771/771     170/170     3.29x     4.57x
+ArithmeticProgBad                          N/A               N/A               N/A       0/563       0/177       N/A       N/A
+BluetoothDriverBad               52.7 +-   14.9    134.5 +-   18.6    184.2 +-   11.1     564/564     148/149     2.55x     3.49x
+Carter01Bad                      39.6 +-    6.3    154.5 +-   14.1    197.1 +-   14.1     747/748       6/192     3.90x     4.97x
+CircularBufferBad                38.1 +-    4.8    128.0 +-    4.1    175.5 +-    7.2     777/778      20/210     3.36x     4.61x
+Deadlock01Bad                    37.5 +-    5.1    127.8 +-    8.6    176.1 +-   11.8     788/790      20/212     3.41x     4.70x
+FsbenchBad                                 N/A               N/A               N/A       0/710       0/193       N/A       N/A
+Lazy01Bad                        35.8 +-    3.5    123.2 +-    9.3    173.2 +-    8.0      21/775      32/218     3.44x     4.84x
+Phase01Bad                                 N/A               N/A               N/A       0/465         0/4       N/A       N/A
+QueueBad                         37.0 +-    4.6               N/A               N/A     800/801         0/4       N/A       N/A
+Reorder10Bad                     38.0 +-    4.7    129.6 +-   16.6    174.6 +-    9.3     779/779     167/167     3.41x     4.59x
+Reorder20Bad                     39.4 +-    5.0    141.6 +-   24.2    184.8 +-   14.6     753/753     144/144     3.60x     4.70x
+Reorder3Bad                      42.2 +-   10.2    132.2 +-   20.3    182.4 +-   13.8     703/703     152/152     3.13x     4.32x
+Reorder4Bad                      40.3 +-    8.3    130.2 +-   20.3    179.0 +-   11.9     736/736     156/156     3.23x     4.44x
+Reorder5Bad                      45.2 +-   11.4    128.7 +-   13.2    184.7 +-   14.7     656/656     165/165     2.85x     4.08x
+StackBad                         49.7 +-   12.2    133.6 +-    9.9    200.1 +-   26.1     598/598      71/189     2.69x     4.03x
+Sync01Bad                                  N/A               N/A               N/A       0/718       0/191       N/A       N/A
+Sync02Bad                                  N/A               N/A               N/A         0/4       0/101       N/A       N/A
+TokenRingBad                     43.3 +-    8.5    156.3 +-   84.0    179.2 +-   19.2     684/686     142/143     3.61x     4.14x
+Twostage100Bad                   56.3 +-   29.3    159.3 +-   18.6    245.9 +-   13.3     528/528     143/143     2.83x     4.37x
+TwostageBad                      40.1 +-    8.5    145.8 +-   15.8    199.1 +-   20.9     738/738     147/147     3.63x     4.96x
+Wronglock1Bad                    44.5 +-   10.6    133.6 +-   11.4    178.5 +-   19.6     666/666     160/162     3.00x     4.01x
+Wronglock3Bad                    40.5 +-    7.5    136.4 +-   10.6    185.7 +-   14.6     732/732     154/158     3.37x     4.59x
+WronglockBad                     39.1 +-    5.9    131.3 +-   10.0    181.8 +-   11.0     757/757     163/168     3.36x     4.65x

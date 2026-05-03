@@ -1,234 +1,630 @@
-=== Fidelity Benchmark: SCTBench (30 replay runs per class) ===
+=== Fidelity Benchmark: SCTBench (10 capture trials x 10 replays per capture) ===
 
 --- cmu.pasta.fray.benchmark.sctbench.cb.StringBufferJDK ---
-  Capture            : clean (exit 0)
-  Trace size         : 56 events
-  Complete runs      : 30 / 30
-  Outcome reproduced : 30 / 30  (100.00%)
-  ...complete runs   : 30 / 30
-  Matched (complete) : 56.00 avg / run  (100.00%)
+  Capture  1/10       : clean (exit 0)
+  Capture  2/10       : clean (exit 0)
+  Capture  3/10       : clean (exit 0)
+  Capture  4/10       : clean (exit 0)
+  Capture  5/10       : clean (exit 0)
+  Capture  6/10       : clean (exit 0)
+  Capture  7/10       : clean (exit 0)
+  Capture  8/10       : clean (exit 0)
+  Capture  9/10       : clean (exit 0)
+  Capture 10/10       : clean (exit 0)
+  Successful captures: 10 / 10
+  bug   captures       : 0 / 10
+  clean captures       : 10 / 10
+    Trace size         : 56 events
+    Replay runs        : 100
+    Complete runs      : 100 / 100
+    Outcome reproduced : 100 / 100  (100.00%)
+    ...complete runs   : 100 / 100
+    Matched (complete) : 56.00 avg / run  (100.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.chess.WorkStealQueue ---
-  Capture            : clean (exit 0)
-  Trace size         : 162 events
-  Complete runs      : 30 / 30
-  Outcome reproduced : 30 / 30  (100.00%)
-  ...complete runs   : 30 / 30
-  Matched (complete) : 162.00 avg / run  (100.00%)
+  Capture  1/10       : clean (exit 0)
+  Capture  2/10       : clean (exit 0)
+  Capture  3/10       : clean (exit 0)
+  Capture  4/10       : clean (exit 0)
+  Capture  5/10       : clean (exit 0)
+  Capture  6/10       : clean (exit 0)
+  Capture  7/10       : clean (exit 0)
+  Capture  8/10       : clean (exit 0)
+  Capture  9/10       : clean (exit 0)
+  Capture 10/10       : clean (exit 0)
+  Successful captures: 10 / 10
+  bug   captures       : 0 / 10
+  clean captures       : 10 / 10
+    Trace size         : 178 events
+    Replay runs        : 100
+    Complete runs      : 100 / 100
+    Outcome reproduced : 100 / 100  (100.00%)
+    ...complete runs   : 100 / 100
+    Matched (complete) : 168.10 avg / run  (100.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.hard.Reorder100Bad ---
-  Capture            : clean (exit 0)
-  Trace size         : 1015 events
-  Complete runs      : 30 / 30
-  Outcome reproduced : 30 / 30  (100.00%)
-  ...complete runs   : 30 / 30
-  Matched (complete) : 1015.00 avg / run  (100.00%)
+  Capture  1/10       : clean (exit 0)
+  Capture  2/10       : clean (exit 0)
+  Capture  3/10       : clean (exit 0)
+  Capture  4/10       : clean (exit 0)
+  Capture  5/10       : clean (exit 0)
+  Capture  6/10       : clean (exit 0)
+  Capture  7/10       : clean (exit 0)
+  Capture  8/10       : clean (exit 0)
+  Capture  9/10       : clean (exit 0)
+  Capture 10/10       : clean (exit 0)
+  Successful captures: 10 / 10
+  bug   captures       : 0 / 10
+  clean captures       : 10 / 10
+    Trace size         : 1015 events
+    Replay runs        : 100
+    Complete runs      : 100 / 100
+    Outcome reproduced : 100 / 100  (100.00%)
+    ...complete runs   : 100 / 100
+    Matched (complete) : 1015.00 avg / run  (100.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.hard.Reorder50Bad ---
-  Capture            : clean (exit 0)
-  Trace size         : 515 events
-  Complete runs      : 30 / 30
-  Outcome reproduced : 30 / 30  (100.00%)
-  ...complete runs   : 30 / 30
-  Matched (complete) : 515.00 avg / run  (100.00%)
+  Capture  1/10       : clean (exit 0)
+  Capture  2/10       : clean (exit 0)
+  Capture  3/10       : clean (exit 0)
+  Capture  4/10       : clean (exit 0)
+  Capture  5/10       : clean (exit 0)
+  Capture  6/10       : clean (exit 0)
+  Capture  7/10       : clean (exit 0)
+  Capture  8/10       : clean (exit 0)
+  Capture  9/10       : clean (exit 0)
+  Capture 10/10       : clean (exit 0)
+  Successful captures: 10 / 10
+  bug   captures       : 0 / 10
+  clean captures       : 10 / 10
+    Trace size         : 515 events
+    Replay runs        : 100
+    Complete runs      : 100 / 100
+    Outcome reproduced : 100 / 100  (100.00%)
+    ...complete runs   : 100 / 100
+    Matched (complete) : 515.00 avg / run  (100.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.AccountBad ---
-  Capture            : clean (exit 0)
-  Trace size         : 34 events
-  Complete runs      : 30 / 30
-  Outcome reproduced : 30 / 30  (100.00%)
-  ...complete runs   : 30 / 30
-  Matched (complete) : 34.00 avg / run  (100.00%)
+  Capture  1/10       : clean (exit 0)
+  Capture  2/10       : clean (exit 0)
+  Capture  3/10       : clean (exit 0)
+  Capture  4/10       : clean (exit 0)
+  Capture  5/10       : clean (exit 0)
+  Capture  6/10       : clean (exit 0)
+  Capture  7/10       : clean (exit 0)
+  Capture  8/10       : clean (exit 0)
+  Capture  9/10       : clean (exit 0)
+  Capture 10/10       : clean (exit 0)
+  Successful captures: 10 / 10
+  bug   captures       : 0 / 10
+  clean captures       : 10 / 10
+    Trace size         : 34 events
+    Replay runs        : 100
+    Complete runs      : 100 / 100
+    Outcome reproduced : 100 / 100  (100.00%)
+    ...complete runs   : 100 / 100
+    Matched (complete) : 34.00 avg / run  (100.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.ArithmeticProgBad ---
-  Capture            : bug (exit 1)
-  Trace size         : 97 events
-  Complete runs      : 30 / 30
-  Outcome reproduced : 30 / 30  (100.00%)
-  ...complete runs   : 30 / 30
-  Matched (complete) : 97.00 avg / run  (100.00%)
+  Capture  1/10       : bug (exit 1)
+  Capture  2/10       : bug (exit 1)
+  Capture  3/10       : bug (exit 1)
+  Capture  4/10       : bug (exit 1)
+  Capture  5/10       : bug (exit 1)
+  Capture  6/10       : bug (exit 1)
+  Capture  7/10       : bug (exit 1)
+  Capture  8/10       : bug (exit 1)
+  Capture  9/10       : bug (exit 1)
+  Capture 10/10       : bug (exit 1)
+  Successful captures: 10 / 10
+  bug   captures       : 10 / 10
+    Trace size         : 101 events
+    Replay runs        : 100
+    Complete runs      : 100 / 100
+    Outcome reproduced : 100 / 100  (100.00%)
+    ...complete runs   : 100 / 100
+    Matched (complete) : 90.20 avg / run  (100.00%)
+  clean captures       : 0 / 10
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.BluetoothDriverBad ---
-  Capture            : clean (exit 0)
-  Trace size         : 28 events
-  Complete runs      : 30 / 30
-  Outcome reproduced : 30 / 30  (100.00%)
-  ...complete runs   : 30 / 30
-  Matched (complete) : 28.00 avg / run  (100.00%)
+  Capture  1/10       : clean (exit 0)
+  Capture  2/10       : clean (exit 0)
+  Capture  3/10       : clean (exit 0)
+  Capture  4/10       : clean (exit 0)
+  Capture  5/10       : clean (exit 0)
+  Capture  6/10       : clean (exit 0)
+  Capture  7/10       : clean (exit 0)
+  Capture  8/10       : clean (exit 0)
+  Capture  9/10       : clean (exit 0)
+  Capture 10/10       : clean (exit 0)
+  Successful captures: 10 / 10
+  bug   captures       : 0 / 10
+  clean captures       : 10 / 10
+    Trace size         : 28 events
+    Replay runs        : 100
+    Complete runs      : 100 / 100
+    Outcome reproduced : 100 / 100  (100.00%)
+    ...complete runs   : 100 / 100
+    Matched (complete) : 28.00 avg / run  (100.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.Carter01Bad ---
-  Capture            : bug (exit 0)
-  Trace size         : 79 events
-  Complete runs      : 30 / 30
-  Outcome reproduced : 30 / 30  (100.00%)
-  ...complete runs   : 30 / 30
-  Matched (complete) : 79.00 avg / run  (100.00%)
+  Capture  1/10       : bug (exit 0)
+  Capture  2/10       : bug (exit 0)
+  Capture  3/10       : bug (exit 0)
+  Capture  4/10       : bug (exit 0)
+  Capture  5/10       : bug (exit 0)
+  Capture  6/10       : clean (exit 0)
+  Capture  7/10       : bug (exit 0)
+  Capture  8/10       : bug (exit 0)
+  Capture  9/10       : bug (exit 0)
+  Capture 10/10       : bug (exit 0)
+  Successful captures: 10 / 10
+  bug   captures       : 9 / 10
+    Trace size         : 79 events
+    Replay runs        : 90
+    Complete runs      : 90 / 90
+    Outcome reproduced : 90 / 90  (100.00%)
+    ...complete runs   : 90 / 90
+    Matched (complete) : 78.67 avg / run  (100.00%)
+  clean captures       : 1 / 10
+    Trace size         : 80 events
+    Replay runs        : 10
+    Complete runs      : 10 / 10
+    Outcome reproduced : 10 / 10  (100.00%)
+    ...complete runs   : 10 / 10
+    Matched (complete) : 80.00 avg / run  (100.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.CircularBufferBad ---
-  Capture            : bug (exit 0)
-  Trace size         : 123 events
-  Complete runs      : 30 / 30
-  Outcome reproduced : 30 / 30  (100.00%)
-  ...complete runs   : 30 / 30
-  Matched (complete) : 123.00 avg / run  (100.00%)
+  Capture  1/10       : bug (exit 0)
+  Capture  2/10       : bug (exit 0)
+  Capture  3/10       : bug (exit 0)
+  Capture  4/10       : bug (exit 0)
+  Capture  5/10       : bug (exit 0)
+  Capture  6/10       : bug (exit 0)
+  Capture  7/10       : bug (exit 0)
+  Capture  8/10       : bug (exit 0)
+  Capture  9/10       : bug (exit 0)
+  Capture 10/10       : bug (exit 0)
+  Successful captures: 10 / 10
+  bug   captures       : 10 / 10
+    Trace size         : 181 events
+    Replay runs        : 100
+    Complete runs      : 100 / 100
+    Outcome reproduced : 100 / 100  (100.00%)
+    ...complete runs   : 100 / 100
+    Matched (complete) : 132.30 avg / run  (100.00%)
+  clean captures       : 0 / 10
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.Deadlock01Bad ---
-  Capture            : clean (exit 0)
-  Trace size         : 35 events
-  Complete runs      : 30 / 30
-  Outcome reproduced : 30 / 30  (100.00%)
-  ...complete runs   : 30 / 30
-  Matched (complete) : 35.00 avg / run  (100.00%)
+  Capture  1/10       : clean (exit 0)
+  Capture  2/10       : bug (exit 0)
+  Capture  3/10       : bug (exit 0)
+  Capture  4/10       : clean (exit 0)
+  Capture  5/10       : bug (exit 0)
+  Capture  6/10       : bug (exit 0)
+  Capture  7/10       : clean (exit 0)
+  Capture  8/10       : bug (exit 0)
+  Capture  9/10       : bug (exit 0)
+  Capture 10/10       : bug (exit 0)
+  Successful captures: 10 / 10
+  bug   captures       : 7 / 10
+    Trace size         : 30 events
+    Replay runs        : 70
+    Complete runs      : 59 / 70
+    Outcome reproduced : 59 / 70  (84.29%)
+    ...complete runs   : 59 / 59
+    Matched (complete) : 25.68 avg / run  (100.00%)
+  clean captures       : 3 / 10
+    Trace size         : 35 events
+    Replay runs        : 30
+    Complete runs      : 30 / 30
+    Outcome reproduced : 30 / 30  (100.00%)
+    ...complete runs   : 30 / 30
+    Matched (complete) : 35.00 avg / run  (100.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.FsbenchBad ---
-  Capture            : bug (exit 0)
-  Trace size         : 1031 events
-  Complete runs      : 30 / 30
-  Outcome reproduced : 30 / 30  (100.00%)
-  ...complete runs   : 30 / 30
-  Matched (complete) : 1031.00 avg / run  (100.00%)
+  Capture  1/10       : bug (exit 0)
+  Capture  2/10       : bug (exit 0)
+  Capture  3/10       : bug (exit 0)
+  Capture  4/10       : bug (exit 0)
+  Capture  5/10       : bug (exit 0)
+  Capture  6/10       : bug (exit 0)
+  Capture  7/10       : bug (exit 0)
+  Capture  8/10       : bug (exit 0)
+  Capture  9/10       : bug (exit 0)
+  Capture 10/10       : bug (exit 0)
+  Successful captures: 10 / 10
+  bug   captures       : 10 / 10
+    Trace size         : 1031 events
+    Replay runs        : 100
+    Complete runs      : 100 / 100
+    Outcome reproduced : 100 / 100  (100.00%)
+    ...complete runs   : 100 / 100
+    Matched (complete) : 1031.00 avg / run  (100.00%)
+  clean captures       : 0 / 10
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.Lazy01Bad ---
-  Capture            : bug (exit 0)
-  Trace size         : 32 events
-  Complete runs      : 30 / 30
-  Outcome reproduced : 30 / 30  (100.00%)
-  ...complete runs   : 30 / 30
-  Matched (complete) : 32.00 avg / run  (100.00%)
+  Capture  1/10       : clean (exit 0)
+  Capture  2/10       : bug (exit 0)
+  Capture  3/10       : bug (exit 0)
+  Capture  4/10       : bug (exit 0)
+  Capture  5/10       : bug (exit 0)
+  Capture  6/10       : clean (exit 0)
+  Capture  7/10       : bug (exit 0)
+  Capture  8/10       : clean (exit 0)
+  Capture  9/10       : clean (exit 0)
+  Capture 10/10       : bug (exit 0)
+  Successful captures: 10 / 10
+  bug   captures       : 6 / 10
+    Trace size         : 32 events
+    Replay runs        : 60
+    Complete runs      : 60 / 60
+    Outcome reproduced : 60 / 60  (100.00%)
+    ...complete runs   : 60 / 60
+    Matched (complete) : 32.00 avg / run  (100.00%)
+  clean captures       : 4 / 10
+    Trace size         : 30 events
+    Replay runs        : 40
+    Complete runs      : 40 / 40
+    Outcome reproduced : 40 / 40  (100.00%)
+    ...complete runs   : 40 / 40
+    Matched (complete) : 30.00 avg / run  (100.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.Phase01Bad ---
-  Capture            : clean (exit 143)
-  Trace size         : 34 events
-  Complete runs      : 30 / 30
-  Outcome reproduced : 30 / 30  (100.00%)
-  ...complete runs   : 30 / 30
-  Matched (complete) : 34.00 avg / run  (100.00%)
+  Capture  1/10       : clean (exit 143)
+  Capture  2/10       : clean (exit 143)
+  Capture  3/10       : clean (exit 143)
+  Capture  4/10       : clean (exit 143)
+  Capture  5/10       : clean (exit 143)
+  Capture  6/10       : clean (exit 143)
+  Capture  7/10       : clean (exit 143)
+  Capture  8/10       : clean (exit 143)
+  Capture  9/10       : clean (exit 143)
+  Capture 10/10       : clean (exit 143)
+  Successful captures: 10 / 10
+  bug   captures       : 0 / 10
+  clean captures       : 10 / 10
+    Trace size         : 34 events
+    Replay runs        : 100
+    Complete runs      : 100 / 100
+    Outcome reproduced : 100 / 100  (100.00%)
+    ...complete runs   : 100 / 100
+    Matched (complete) : 33.60 avg / run  (100.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.QueueBad ---
-  Capture            : bug (exit 143)
-  Trace size         : 117 events
-  Complete runs      : 30 / 30
-  Outcome reproduced : 30 / 30  (100.00%)
-  ...complete runs   : 30 / 30
-  Matched (complete) : 117.00 avg / run  (100.00%)
+  Capture  1/10       : bug (exit 143)
+  Capture  2/10       : bug (exit 143)
+  Capture  3/10       : bug (exit 143)
+  Capture  4/10       : bug (exit 143)
+  Capture  5/10       : bug (exit 143)
+  Capture  6/10       : bug (exit 143)
+  Capture  7/10       : bug (exit 143)
+  Capture  8/10       : bug (exit 143)
+  Capture  9/10       : bug (exit 143)
+  Capture 10/10       : bug (exit 143)
+  Successful captures: 10 / 10
+  bug   captures       : 10 / 10
+    Trace size         : 240 events
+    Replay runs        : 100
+    Complete runs      : 100 / 100
+    Outcome reproduced : 100 / 100  (100.00%)
+    ...complete runs   : 100 / 100
+    Matched (complete) : 107.20 avg / run  (100.00%)
+  clean captures       : 0 / 10
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.Reorder10Bad ---
-  Capture            : clean (exit 0)
-  Trace size         : 115 events
-  Complete runs      : 30 / 30
-  Outcome reproduced : 30 / 30  (100.00%)
-  ...complete runs   : 30 / 30
-  Matched (complete) : 115.00 avg / run  (100.00%)
+  Capture  1/10       : clean (exit 0)
+  Capture  2/10       : clean (exit 0)
+  Capture  3/10       : clean (exit 0)
+  Capture  4/10       : clean (exit 0)
+  Capture  5/10       : clean (exit 0)
+  Capture  6/10       : clean (exit 0)
+  Capture  7/10       : clean (exit 0)
+  Capture  8/10       : clean (exit 0)
+  Capture  9/10       : clean (exit 0)
+  Capture 10/10       : clean (exit 0)
+  Successful captures: 10 / 10
+  bug   captures       : 0 / 10
+  clean captures       : 10 / 10
+    Trace size         : 115 events
+    Replay runs        : 100
+    Complete runs      : 100 / 100
+    Outcome reproduced : 100 / 100  (100.00%)
+    ...complete runs   : 100 / 100
+    Matched (complete) : 115.00 avg / run  (100.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.Reorder20Bad ---
-  Capture            : clean (exit 0)
-  Trace size         : 224 events
-  Complete runs      : 30 / 30
-  Outcome reproduced : 30 / 30  (100.00%)
-  ...complete runs   : 30 / 30
-  Matched (complete) : 224.00 avg / run  (100.00%)
+  Capture  1/10       : clean (exit 0)
+  Capture  2/10       : clean (exit 0)
+  Capture  3/10       : clean (exit 0)
+  Capture  4/10       : clean (exit 0)
+  Capture  5/10       : clean (exit 0)
+  Capture  6/10       : clean (exit 0)
+  Capture  7/10       : clean (exit 0)
+  Capture  8/10       : clean (exit 0)
+  Capture  9/10       : clean (exit 0)
+  Capture 10/10       : clean (exit 0)
+  Successful captures: 10 / 10
+  bug   captures       : 0 / 10
+  clean captures       : 10 / 10
+    Trace size         : 224 events
+    Replay runs        : 100
+    Complete runs      : 100 / 100
+    Outcome reproduced : 100 / 100  (100.00%)
+    ...complete runs   : 100 / 100
+    Matched (complete) : 224.00 avg / run  (100.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.Reorder3Bad ---
-  Capture            : clean (exit 0)
-  Trace size         : 45 events
-  Complete runs      : 30 / 30
-  Outcome reproduced : 30 / 30  (100.00%)
-  ...complete runs   : 30 / 30
-  Matched (complete) : 45.00 avg / run  (100.00%)
+  Capture  1/10       : clean (exit 0)
+  Capture  2/10       : clean (exit 0)
+  Capture  3/10       : clean (exit 0)
+  Capture  4/10       : clean (exit 0)
+  Capture  5/10       : clean (exit 0)
+  Capture  6/10       : clean (exit 0)
+  Capture  7/10       : clean (exit 0)
+  Capture  8/10       : clean (exit 0)
+  Capture  9/10       : clean (exit 0)
+  Capture 10/10       : clean (exit 0)
+  Successful captures: 10 / 10
+  bug   captures       : 0 / 10
+  clean captures       : 10 / 10
+    Trace size         : 45 events
+    Replay runs        : 100
+    Complete runs      : 100 / 100
+    Outcome reproduced : 100 / 100  (100.00%)
+    ...complete runs   : 100 / 100
+    Matched (complete) : 45.00 avg / run  (100.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.Reorder4Bad ---
-  Capture            : clean (exit 0)
-  Trace size         : 55 events
-  Complete runs      : 30 / 30
-  Outcome reproduced : 30 / 30  (100.00%)
-  ...complete runs   : 30 / 30
-  Matched (complete) : 55.00 avg / run  (100.00%)
+  Capture  1/10       : clean (exit 0)
+  Capture  2/10       : clean (exit 0)
+  Capture  3/10       : clean (exit 0)
+  Capture  4/10       : clean (exit 0)
+  Capture  5/10       : clean (exit 0)
+  Capture  6/10       : clean (exit 0)
+  Capture  7/10       : clean (exit 0)
+  Capture  8/10       : clean (exit 0)
+  Capture  9/10       : clean (exit 0)
+  Capture 10/10       : clean (exit 0)
+  Successful captures: 10 / 10
+  bug   captures       : 0 / 10
+  clean captures       : 10 / 10
+    Trace size         : 55 events
+    Replay runs        : 100
+    Complete runs      : 100 / 100
+    Outcome reproduced : 100 / 100  (100.00%)
+    ...complete runs   : 100 / 100
+    Matched (complete) : 55.00 avg / run  (100.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.Reorder5Bad ---
-  Capture            : clean (exit 0)
-  Trace size         : 65 events
-  Complete runs      : 30 / 30
-  Outcome reproduced : 30 / 30  (100.00%)
-  ...complete runs   : 30 / 30
-  Matched (complete) : 65.00 avg / run  (100.00%)
+  Capture  1/10       : clean (exit 0)
+  Capture  2/10       : clean (exit 0)
+  Capture  3/10       : clean (exit 0)
+  Capture  4/10       : clean (exit 0)
+  Capture  5/10       : clean (exit 0)
+  Capture  6/10       : clean (exit 0)
+  Capture  7/10       : clean (exit 0)
+  Capture  8/10       : clean (exit 0)
+  Capture  9/10       : clean (exit 0)
+  Capture 10/10       : clean (exit 0)
+  Successful captures: 10 / 10
+  bug   captures       : 0 / 10
+  clean captures       : 10 / 10
+    Trace size         : 65 events
+    Replay runs        : 100
+    Complete runs      : 100 / 100
+    Outcome reproduced : 100 / 100  (100.00%)
+    ...complete runs   : 100 / 100
+    Matched (complete) : 65.00 avg / run  (100.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.StackBad ---
-  Capture            : bug (exit 0)
-  Trace size         : 164 events
-  Complete runs      : 30 / 30
-  Outcome reproduced : 30 / 30  (100.00%)
-  ...complete runs   : 30 / 30
-  Matched (complete) : 164.00 avg / run  (100.00%)
+  Capture  1/10       : clean (exit 0)
+  Capture  2/10       : bug (exit 0)
+  Capture  3/10       : bug (exit 0)
+  Capture  4/10       : bug (exit 0)
+  Capture  5/10       : bug (exit 0)
+  Capture  6/10       : bug (exit 0)
+  Capture  7/10       : bug (exit 0)
+  Capture  8/10       : clean (exit 0)
+  Capture  9/10       : clean (exit 0)
+  Capture 10/10       : clean (exit 0)
+  Successful captures: 10 / 10
+  bug   captures       : 6 / 10
+    Trace size         : 186 events
+    Replay runs        : 60
+    Complete runs      : 60 / 60
+    Outcome reproduced : 60 / 60  (100.00%)
+    ...complete runs   : 60 / 60
+    Matched (complete) : 164.00 avg / run  (100.00%)
+  clean captures       : 4 / 10
+    Trace size         : 232 events
+    Replay runs        : 40
+    Complete runs      : 40 / 40
+    Outcome reproduced : 40 / 40  (100.00%)
+    ...complete runs   : 40 / 40
+    Matched (complete) : 232.00 avg / run  (100.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.Sync01Bad ---
-  Capture            : bug (exit 0)
-  Trace size         : 46 events
-  Complete runs      : 30 / 30
-  Outcome reproduced : 30 / 30  (100.00%)
-  ...complete runs   : 30 / 30
-  Matched (complete) : 46.00 avg / run  (100.00%)
+  Capture  1/10       : bug (exit 0)
+  Capture  2/10       : bug (exit 0)
+  Capture  3/10       : bug (exit 0)
+  Capture  4/10       : bug (exit 0)
+  Capture  5/10       : bug (exit 0)
+  Capture  6/10       : bug (exit 0)
+  Capture  7/10       : bug (exit 0)
+  Capture  8/10       : bug (exit 0)
+  Capture  9/10       : bug (exit 0)
+  Capture 10/10       : bug (exit 0)
+  Successful captures: 10 / 10
+  bug   captures       : 10 / 10
+    Trace size         : 46 events
+    Replay runs        : 100
+    Complete runs      : 100 / 100
+    Outcome reproduced : 100 / 100  (100.00%)
+    ...complete runs   : 100 / 100
+    Matched (complete) : 46.00 avg / run  (100.00%)
+  clean captures       : 0 / 10
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.Sync02Bad ---
-  Capture            : bug (exit 0)
-  Trace size         : 57 events
-  Complete runs      : 30 / 30
-  Outcome reproduced : 30 / 30  (100.00%)
-  ...complete runs   : 30 / 30
-  Matched (complete) : 57.00 avg / run  (100.00%)
+  Capture  1/10       : bug (exit 0)
+  Capture  2/10       : bug (exit 0)
+  Capture  3/10       : bug (exit 0)
+  Capture  4/10       : bug (exit 0)
+  Capture  5/10       : bug (exit 0)
+  Capture  6/10       : bug (exit 0)
+  Capture  7/10       : bug (exit 0)
+  Capture  8/10       : bug (exit 0)
+  Capture  9/10       : bug (exit 0)
+  Capture 10/10       : bug (exit 0)
+  Successful captures: 10 / 10
+  bug   captures       : 10 / 10
+    Trace size         : 64 events
+    Replay runs        : 100
+    Complete runs      : 100 / 100
+    Outcome reproduced : 100 / 100  (100.00%)
+    ...complete runs   : 100 / 100
+    Matched (complete) : 61.90 avg / run  (100.00%)
+  clean captures       : 0 / 10
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.TokenRingBad ---
-  Capture            : clean (exit 0)
-  Trace size         : 36 events
-  Complete runs      : 29 / 30
-  Outcome reproduced : 30 / 30  (100.00%)
-  ...complete runs   : 29 / 29
-  Matched (complete) : 36.00 avg / run  (100.00%)
+  Capture  1/10       : clean (exit 0)
+  Capture  2/10       : clean (exit 0)
+  Capture  3/10       : clean (exit 0)
+  Capture  4/10       : clean (exit 0)
+  Capture  5/10       : clean (exit 0)
+  Capture  6/10       : clean (exit 0)
+  Capture  7/10       : clean (exit 0)
+  Capture  8/10       : clean (exit 0)
+  Capture  9/10       : clean (exit 0)
+  Capture 10/10       : clean (exit 0)
+  Successful captures: 10 / 10
+  bug   captures       : 0 / 10
+  clean captures       : 10 / 10
+    Trace size         : 36 events
+    Replay runs        : 100
+    Complete runs      : 76 / 100
+    Outcome reproduced : 100 / 100  (100.00%)
+    ...complete runs   : 76 / 76
+    Matched (complete) : 35.74 avg / run  (100.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.Twostage100Bad ---
-  Capture            : clean (exit 0)
-  Trace size         : 1816 events
-  Complete runs      : 30 / 30
-  Outcome reproduced : 30 / 30  (100.00%)
-  ...complete runs   : 30 / 30
-  Matched (complete) : 1816.00 avg / run  (100.00%)
+  Capture  1/10       : clean (exit 0)
+  Capture  2/10       : clean (exit 0)
+  Capture  3/10       : clean (exit 0)
+  Capture  4/10       : clean (exit 0)
+  Capture  5/10       : clean (exit 0)
+  Capture  6/10       : clean (exit 0)
+  Capture  7/10       : clean (exit 0)
+  Capture  8/10       : clean (exit 0)
+  Capture  9/10       : clean (exit 0)
+  Capture 10/10       : clean (exit 0)
+  Successful captures: 10 / 10
+  bug   captures       : 0 / 10
+  clean captures       : 10 / 10
+    Trace size         : 1816 events
+    Replay runs        : 100
+    Complete runs      : 100 / 100
+    Outcome reproduced : 100 / 100  (100.00%)
+    ...complete runs   : 100 / 100
+    Matched (complete) : 1816.00 avg / run  (100.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.TwostageBad ---
-  Capture            : clean (exit 0)
-  Trace size         : 56 events
-  Complete runs      : 30 / 30
-  Outcome reproduced : 30 / 30  (100.00%)
-  ...complete runs   : 30 / 30
-  Matched (complete) : 56.00 avg / run  (100.00%)
+  Capture  1/10       : clean (exit 0)
+  Capture  2/10       : clean (exit 0)
+  Capture  3/10       : clean (exit 0)
+  Capture  4/10       : clean (exit 0)
+  Capture  5/10       : clean (exit 0)
+  Capture  6/10       : clean (exit 0)
+  Capture  7/10       : clean (exit 0)
+  Capture  8/10       : clean (exit 0)
+  Capture  9/10       : clean (exit 0)
+  Capture 10/10       : clean (exit 0)
+  Successful captures: 10 / 10
+  bug   captures       : 0 / 10
+  clean captures       : 10 / 10
+    Trace size         : 56 events
+    Replay runs        : 100
+    Complete runs      : 100 / 100
+    Outcome reproduced : 100 / 100  (100.00%)
+    ...complete runs   : 100 / 100
+    Matched (complete) : 56.00 avg / run  (100.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.Wronglock1Bad ---
-  Capture            : clean (exit 0)
-  Trace size         : 44 events
-  Complete runs      : 30 / 30
-  Outcome reproduced : 30 / 30  (100.00%)
-  ...complete runs   : 30 / 30
-  Matched (complete) : 44.00 avg / run  (100.00%)
+  Capture  1/10       : clean (exit 0)
+  Capture  2/10       : clean (exit 0)
+  Capture  3/10       : clean (exit 0)
+  Capture  4/10       : clean (exit 0)
+  Capture  5/10       : clean (exit 0)
+  Capture  6/10       : clean (exit 0)
+  Capture  7/10       : clean (exit 0)
+  Capture  8/10       : clean (exit 0)
+  Capture  9/10       : clean (exit 0)
+  Capture 10/10       : clean (exit 0)
+  Successful captures: 10 / 10
+  bug   captures       : 0 / 10
+  clean captures       : 10 / 10
+    Trace size         : 44 events
+    Replay runs        : 100
+    Complete runs      : 100 / 100
+    Outcome reproduced : 100 / 100  (100.00%)
+    ...complete runs   : 100 / 100
+    Matched (complete) : 44.00 avg / run  (100.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.Wronglock3Bad ---
-  Capture            : clean (exit 0)
-  Trace size         : 72 events
-  Complete runs      : 30 / 30
-  Outcome reproduced : 30 / 30  (100.00%)
-  ...complete runs   : 30 / 30
-  Matched (complete) : 72.00 avg / run  (100.00%)
+  Capture  1/10       : clean (exit 0)
+  Capture  2/10       : clean (exit 0)
+  Capture  3/10       : clean (exit 0)
+  Capture  4/10       : clean (exit 0)
+  Capture  5/10       : clean (exit 0)
+  Capture  6/10       : clean (exit 0)
+  Capture  7/10       : clean (exit 0)
+  Capture  8/10       : clean (exit 0)
+  Capture  9/10       : clean (exit 0)
+  Capture 10/10       : clean (exit 0)
+  Successful captures: 10 / 10
+  bug   captures       : 0 / 10
+  clean captures       : 10 / 10
+    Trace size         : 72 events
+    Replay runs        : 100
+    Complete runs      : 100 / 100
+    Outcome reproduced : 100 / 100  (100.00%)
+    ...complete runs   : 100 / 100
+    Matched (complete) : 72.00 avg / run  (100.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.WronglockBad ---
-  Capture            : clean (exit 0)
-  Trace size         : 128 events
-  Complete runs      : 30 / 30
-  Outcome reproduced : 30 / 30  (100.00%)
-  ...complete runs   : 30 / 30
-  Matched (complete) : 128.00 avg / run  (100.00%)
+  Capture  1/10       : clean (exit 0)
+  Capture  2/10       : clean (exit 0)
+  Capture  3/10       : clean (exit 0)
+  Capture  4/10       : clean (exit 0)
+  Capture  5/10       : clean (exit 0)
+  Capture  6/10       : clean (exit 0)
+  Capture  7/10       : clean (exit 0)
+  Capture  8/10       : clean (exit 0)
+  Capture  9/10       : clean (exit 0)
+  Capture 10/10       : clean (exit 0)
+  Successful captures: 10 / 10
+  bug   captures       : 0 / 10
+  clean captures       : 10 / 10
+    Trace size         : 128 events
+    Replay runs        : 100
+    Complete runs      : 100 / 100
+    Outcome reproduced : 100 / 100  (100.00%)
+    ...complete runs   : 100 / 100
+    Matched (complete) : 128.00 avg / run  (100.00%)
 
 ===== SUMMARY =====
 Classes tested        : 28
 Classes replayed      : 28 / 28
-Complete runs         : 839 / 840 runs  (99.9%)
-Outcome reproduced    : 840 / 840 runs  (100.0%)
-...complete runs      : 839 / 839 runs  (100.0%)
-Matched (complete)    : 100.0%
+Bug captures         : 88
+Bug replay runs      : 880
+Bug complete runs    : 869 / 880 runs  (98.8%)
+Bug outcome repr.    : 869 / 880 runs  (98.8%)
+Bug ...complete runs : 869 / 869 runs  (100.0%)
+Bug matched complete : 100.0%
+Clean captures         : 192
+Clean replay runs      : 1920
+Clean complete runs    : 1896 / 1920 runs  (98.8%)
+Clean outcome repr.    : 1920 / 1920 runs  (100.0%)
+Clean ...complete runs : 1896 / 1896 runs  (100.0%)
+Clean matched complete : 100.0%
 ===================

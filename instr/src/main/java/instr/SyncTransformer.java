@@ -1,5 +1,6 @@
 package instr;
 
+import common.BinarySchema;
 import common.ReplayBoundaryRegistry;
 import common.TraceSemantics;
 import java.lang.instrument.ClassFileTransformer;
@@ -806,6 +807,7 @@ public class SyncTransformer implements ClassFileTransformer {
             if (owner.startsWith("java/util/concurrent/atomic/Atomic")) {
                 int atomicEventType = classifyAtomicOp(name);
                 if (atomicEventType != -1) {
+                    recordReplayBoundary(siteId, atomicEventType);
                     boolean isArrayAtomic = isAtomicArrayClass(owner);
                     Type[] argTypes = Type.getArgumentTypes(descriptor);
                     char returnTypeChar = getReturnType(descriptor);
@@ -821,33 +823,20 @@ public class SyncTransformer implements ClassFileTransformer {
                     mv.visitVarInsn(Opcodes.ASTORE, receiverSlot);
 
                     if (isReplay) {
-                        if (atomicEventType == 26) {
-                            // ATOMIC_CAS: outcome is non-deterministic across schedules — inject
-                            // captured result without executing; divergence is NOT a bug
+                        // Replay executes atomics naturally, then consumes any schedule
+                        // boundary without altering the returned value.
+                        mv.visitVarInsn(Opcodes.ALOAD, receiverSlot);
+                        for (int i = 0; i < argTypes.length; i++) {
+                            mv.visitVarInsn(argTypes[i].getOpcode(Opcodes.ILOAD), argSlots[i]);
+                        }
+                        super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
+                        if (returnTypeChar != 'V') {
+                            Type retType = Type.getReturnType(descriptor);
+                            int retLocal = newLocal(retType);
+                            mv.visitVarInsn(retType.getOpcode(Opcodes.ISTORE), retLocal);
+                            mv.visitVarInsn(retType.getOpcode(Opcodes.ILOAD), retLocal);
                             mv.visitVarInsn(Opcodes.ALOAD, receiverSlot);
                             if (isArrayAtomic && argTypes.length > 0) {
-                                mv.visitVarInsn(Opcodes.ILOAD, argSlots[0]);
-                            } else {
-                                mv.visitLdcInsn(-1);
-                            }
-                            mv.visitLdcInsn(atomicEventType);
-                            mv.visitLdcInsn(siteId);
-                            emitAtomicInjectCall(returnTypeChar);
-                        } else {
-                            // ATOMIC_READ / ATOMIC_WRITE / ATOMIC_RMW:
-                            // execute naturally, then consume+check against the trace.
-                            mv.visitVarInsn(Opcodes.ALOAD, receiverSlot);
-                            for (int i = 0; i < argTypes.length; i++) {
-                                mv.visitVarInsn(argTypes[i].getOpcode(Opcodes.ILOAD), argSlots[i]);
-                            }
-                            super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
-                            if (returnTypeChar != 'V') {
-                                Type retType = Type.getReturnType(descriptor);
-                                int retLocal = newLocal(retType);
-                                mv.visitVarInsn(retType.getOpcode(Opcodes.ISTORE), retLocal);
-                                mv.visitVarInsn(retType.getOpcode(Opcodes.ILOAD), retLocal);
-                                mv.visitVarInsn(Opcodes.ALOAD, receiverSlot);
-                                if (isArrayAtomic && argTypes.length > 0) {
                                 mv.visitVarInsn(Opcodes.ILOAD, argSlots[0]);
                             } else {
                                 mv.visitLdcInsn(-1);
@@ -860,16 +849,14 @@ public class SyncTransformer implements ClassFileTransformer {
                                 emitAtomicCheckCall(returnTypeChar);
                             }
                         } else if (argTypes.length > 0) {
-                            // Void atomics (e.g., set/lazySet): compare the written value
-                            // against the trace so the event is consumed in replay order.
                             Type valueType = argTypes[argTypes.length - 1];
 
                             mv.visitVarInsn(valueType.getOpcode(Opcodes.ILOAD), argSlots[argTypes.length - 1]);
                             mv.visitVarInsn(Opcodes.ALOAD, receiverSlot);
                             if (isArrayAtomic && argTypes.length > 0) {
                                 mv.visitVarInsn(Opcodes.ILOAD, argSlots[0]);
-                                } else {
-                                    mv.visitLdcInsn(-1);
+                            } else {
+                                mv.visitLdcInsn(-1);
                             }
                             mv.visitLdcInsn(atomicEventType);
                             mv.visitLdcInsn(siteId);
@@ -884,10 +871,7 @@ public class SyncTransformer implements ClassFileTransformer {
                             }
                             mv.visitInsn(valueType.getSize() == 2 ? Opcodes.POP2 : Opcodes.POP);
                         }
-                    }
-                    return;
-                } else {
-
+                    } else {
                         // 2. Restore the stack exactly as it was and execute the original call
                         mv.visitVarInsn(Opcodes.ALOAD, receiverSlot);
                         for (int i = 0; i < argTypes.length; i++) {
@@ -926,29 +910,20 @@ public class SyncTransformer implements ClassFileTransformer {
                             mv.visitLdcInsn(siteId);
                             emitAtomicLogCall(returnTypeChar);
                         }
-                        return;
                     }
+                    return;
                 }
             }
 
             // Detect nondeterministic calls (Random, System time, Math.random).
-            // Capture: execute the real call then log the return value.
-            // Replay: skip the real call and return the captured value.
+            // Capture logs the returned value. Replay executes these calls naturally.
             String nondetType = classifyNondetOp(owner, name);
             if (nondetType != null) {
                 Type[] argTypes = Type.getArgumentTypes(descriptor);
                 boolean isStaticCall = (opcode == Opcodes.INVOKESTATIC);
 
                 if (isReplay) {
-                    // Pop all args (top to bottom), then pop receiver if instance method
-                    for (int i = argTypes.length - 1; i >= 0; i--) {
-                        mv.visitInsn(argTypes[i].getSize() == 2 ? Opcodes.POP2 : Opcodes.POP);
-                    }
-                    if (!isStaticCall) {
-                        mv.visitInsn(Opcodes.POP); // pop receiver
-                    }
-                    mv.visitLdcInsn(siteId);
-                    emitNondetReplayCall(nondetType);
+                    super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
                 } else {
                     // Save args and receiver (for instance methods) before the call
                     int[] argSlots = new int[argTypes.length];
@@ -1051,20 +1026,6 @@ public class SyncTransformer implements ClassFileTransformer {
             }
         }
 
-        // CAS: inject captured result without divergence check
-        private void emitAtomicInjectCall(char returnTypeChar) {
-            if (returnTypeChar == 'J' || returnTypeChar == 'D') {
-                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "injectAtomicCasLong",
-                        "(Ljava/lang/Object;III)J", false);
-            } else if (returnTypeChar == 'L' || returnTypeChar == '[') {
-                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "injectAtomicCasObj",
-                        "(Ljava/lang/Object;III)Ljava/lang/Object;", false);
-            } else {
-                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "injectAtomicCasInt",
-                        "(Ljava/lang/Object;III)I", false);
-            }
-        }
-
         // RMW: execute + divergence check; (naturalValue, receiver, index, eventType, siteId) → naturalValue
         private void emitAtomicRmwCheckCall(char returnTypeChar) {
             if (returnTypeChar == 'J' || returnTypeChar == 'D') {
@@ -1125,24 +1086,6 @@ public class SyncTransformer implements ClassFileTransformer {
             }
         }
 
-        /** Emits a call to replayNondet*(siteId) in ReplayMonitor. Stack: [..., siteId] → [..., value] */
-        private void emitNondetReplayCall(String nondetType) {
-            switch (nondetType) {
-                case "INT":
-                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayNondetInt", "(I)I", false);
-                    break;
-                case "FLOAT":
-                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayNondetFloat", "(I)F", false);
-                    break;
-                case "LONG":
-                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayNondetLong", "(I)J", false);
-                    break;
-                case "DOUBLE":
-                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayNondetDouble", "(I)D", false);
-                    break;
-            }
-        }
-
         private boolean isBlockingCall(String owner, String name) {
             return (owner.equals("java/lang/Thread") && (name.equals("join") || name.equals("sleep"))) ||
                     (owner.equals("java/lang/Object") && name.equals("wait")) ||
@@ -1166,8 +1109,8 @@ public class SyncTransformer implements ClassFileTransformer {
                     name.equals("getAcquire") || name.equals("getReference") || name.equals("getStamp") ||
                     name.equals("isMarked"))
                 return 20; // ATOMIC_READ
-            // CAS operations: outcome is non-deterministic by design (different schedules
-            // may produce different success/failure) — inject captured value during replay
+            // CAS operations: outcome is non-deterministic by design and still count as
+            // epoch/replay-boundary events, but replay executes them naturally.
             if (name.startsWith("compareAndSet") || name.startsWith("compareAndExchange") ||
                     name.startsWith("weakCompareAndSet"))
                 return 26; // ATOMIC_CAS
@@ -1197,17 +1140,15 @@ public class SyncTransformer implements ClassFileTransformer {
             boolean isStatic = (opcode == Opcodes.GETSTATIC || opcode == Opcodes.PUTSTATIC);
             boolean isVolatile = SyncTransformer.isFieldVolatile(loader, owner, name);
             int siteId = SyncTransformer.registerSiteId(className + "." + methodName + "#" + instructionId++);
+            if (isVolatile && eventType == BinarySchema.Event.FIELD_WRITE) {
+                recordReplayBoundary(siteId, eventType);
+            }
 
             if (isReplay) {
                 /**
-                 * REPLAY: execute the field access naturally to get the real current value,
-                 * then call checkFieldT(naturalValue, ...) which compares it against the
-                 * trace.  If they match, the natural value is returned unchanged (no
-                 * injection).  If they diverge, the trace value is returned and injected.
-                 *
-                 * Writes: the computed value is NOT discarded; it is passed to checkField
-                 * so divergence can be detected, and the approved value (natural or trace)
-                 * is what gets written to the field.
+                 * REPLAY: execute the field access naturally. Only replay-boundary field
+                 * events are coordinated; all other field accesses stay on the program's
+                 * natural execution path.
                  */
                 int valLocal   = newLocal(fieldType);
 
@@ -1242,7 +1183,7 @@ public class SyncTransformer implements ClassFileTransformer {
                     mv.visitLdcInsn(owner);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkField" + typeSuffix,
                             checkDesc, false);
-                    // Stack: [result] — natural value, or trace value if divergent.
+                    // Stack: [result] — always the natural value.
 
                 } else {
                     // --- WRITE (PUTFIELD / PUTSTATIC) ---

@@ -10,8 +10,14 @@ import java.io.RandomAccessFile;
 import java.lang.instrument.Instrumentation;
 import java.nio.channels.FileChannel;
 import java.nio.MappedByteBuffer;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 public class ReplayAgent {
+    private static final String STATIC_ANALYSIS_PATH_PROPERTY = "tool.static.analysis.path";
+    private static final String STATIC_ANALYSIS_STATUS_PROPERTY = "tool.static.analysis.status";
+    private static final String STATIC_ANALYSIS_REASON_PROPERTY = "tool.static.analysis.reason";
 
     public static void premain(String agentArgs, Instrumentation inst) {
         // System.out.println("[ReplayAgent] Initializing Enforcer...");
@@ -28,6 +34,33 @@ public class ReplayAgent {
                 // System.err.println("[ReplayAgent] ERROR: trace.bin not found!");
                 return;
             }
+
+            // 2a. Distill the schedule artifact and run the mandatory static analysis
+            Path tracePath = traceFile.toPath();
+            Path boundariesPath = ScheduleDistiller.DEFAULT_BOUNDARIES;
+            Path schedulePath = ScheduleDistiller.DEFAULT_OUTPUT;
+            List<ScheduleDistiller.ScheduleEntry> scheduleEntries =
+                    ScheduleDistiller.distill(tracePath, boundariesPath);
+            ScheduleDistiller.write(schedulePath, scheduleEntries);
+            ReplayBoundaryRegistry.loadIntoRegistry(boundariesPath);
+            ReplayCoordinator.loadScheduleArtifact(scheduleEntries);
+
+            Path analysisPath = resolveStaticAnalysisPath();
+            ScheduleStaticAnalyzer.Result staticResult =
+                    ScheduleStaticAnalyzer.analyze(schedulePath, analysisPath);
+            System.setProperty(STATIC_ANALYSIS_STATUS_PROPERTY, staticResult.status.name());
+            if (staticResult.status != ScheduleStaticAnalyzer.Status.APPLICABLE) {
+                String firstReason = staticResult.reasons.isEmpty()
+                        ? "unknown static incompatibility"
+                        : staticResult.reasons.get(0);
+                System.setProperty(STATIC_ANALYSIS_REASON_PROPERTY, firstReason);
+                System.err.println("[STATIC] Replay is statically inapplicable.");
+                for (String reason : staticResult.reasons) {
+                    System.err.println("[STATIC] " + reason);
+                }
+                return;
+            }
+            System.clearProperty(STATIC_ANALYSIS_REASON_PROPERTY);
 
             long fileSize = traceFile.length();
             long totalEvents = fileSize / BinarySchema.RECORD_SIZE;
@@ -76,5 +109,44 @@ public class ReplayAgent {
             // System.err.println("[ReplayAgent] Failed to initialize:");
             e.printStackTrace();
         }
+    }
+
+    private static Path resolveStaticAnalysisPath() {
+        String explicit = System.getProperty(STATIC_ANALYSIS_PATH_PROPERTY);
+        if (explicit != null && !explicit.isBlank()) {
+            return Path.of(explicit);
+        }
+
+        String classPath = System.getProperty("java.class.path", "");
+        String[] rawEntries = classPath.split(File.pathSeparator);
+        List<Path> existingEntries = new ArrayList<>();
+        List<Path> jarEntries = new ArrayList<>();
+        List<Path> directoryEntries = new ArrayList<>();
+
+        for (String rawEntry : rawEntries) {
+            if (rawEntry == null || rawEntry.isBlank()) continue;
+            Path entry = Path.of(rawEntry);
+            if (!entry.toFile().exists()) continue;
+            existingEntries.add(entry);
+            if (rawEntry.endsWith(".jar")) {
+                jarEntries.add(entry);
+            } else if (entry.toFile().isDirectory()) {
+                directoryEntries.add(entry);
+            }
+        }
+
+        if (existingEntries.size() == 1) {
+            return existingEntries.get(0);
+        }
+        if (jarEntries.size() == 1) {
+            return jarEntries.get(0);
+        }
+        if (directoryEntries.size() == 1) {
+            return directoryEntries.get(0);
+        }
+
+        throw new IllegalStateException(
+                "Unable to resolve mandatory static-analysis path from java.class.path; "
+                        + "set -D" + STATIC_ANALYSIS_PATH_PROPERTY + "=<jar-or-classes-dir>");
     }
 }

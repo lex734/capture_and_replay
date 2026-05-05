@@ -2,6 +2,8 @@ package replay;
 
 import common.BinarySchema;
 import common.IdentityMapper;
+import common.ReplayBoundaryRegistry;
+import common.ReplayBoundaryRegistry.BoundaryMeta;
 import common.TraceSemantics;
 import java.io.FileWriter;
 import java.io.IOException;
@@ -10,6 +12,7 @@ import java.nio.MappedByteBuffer;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
@@ -17,8 +20,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class ReplayCoordinator {
-    // Pre-sorted event array: each element is [seq, roleId, packedType, objSite,
-    // objCount, data]
+    // Pre-sorted boundary event array: each element is [seq, roleId, packedType,
+    // objSite, objCount, data1, data2].
     private static long[][] sortedEvents;
     private static long totalEvents;
     private static final AtomicLong currentIdx = new AtomicLong(0);
@@ -60,6 +63,8 @@ public class ReplayCoordinator {
     private static volatile boolean isIncomplete = false;
     private static volatile String incompleteReason = "";
     private static volatile String incompleteDetails = "";
+    private static final ArrayList<ScheduleDistiller.ScheduleEntry> scheduleEntries = new ArrayList<>();
+    private static final AtomicLong currentScheduleIdx = new AtomicLong(0);
 
     public static boolean hasDiverged() { return hasDiverged; }
 
@@ -71,11 +76,8 @@ public class ReplayCoordinator {
     // Counts all valued events (reads + writes) where we have a trace event to compare.
     private static final AtomicLong totalValuedEvents = new AtomicLong(0);
     private static final AtomicLong naturalAgreements = new AtomicLong(0);
-    // Counts events (reads or writes) where the natural value differed from the trace.
-    private static final AtomicLong injectedEvents    = new AtomicLong(0);
-    // Counts valued events where natural != trace but replay intentionally keeps the
-    // natural value (no injection applied).
-    private static final AtomicLong noInjectDisagreements = new AtomicLong(0);
+    // Counts valued events where the natural value differed from the trace.
+    private static final AtomicLong naturalDisagreements = new AtomicLong(0);
 
     // key  = (objSite << 32) | (objCount & 0xFFFFFFFFL)
     // v[0] = captured final value (packed data1<<32|data2)
@@ -100,14 +102,15 @@ public class ReplayCoordinator {
         isIncomplete = false;
         incompleteReason = "";
         incompleteDetails = "";
+        currentScheduleIdx.set(0);
         eventsMatched.set(0);
         totalValuedEvents.set(0);
         naturalAgreements.set(0);
-        injectedEvents.set(0);
-        noInjectDisagreements.set(0);
+        naturalDisagreements.set(0);
         finalStateMap.clear();
 
         ArrayList<long[]> allEvents = new ArrayList<>();
+        ArrayList<long[]> boundaryEvents = new ArrayList<>();
         long maxSlots = traceBuffer.capacity() / BinarySchema.RECORD_SIZE;
 
         for (long i = 0; i < maxSlots; i++) {
@@ -115,7 +118,7 @@ public class ReplayCoordinator {
             long seq = traceBuffer.getLong(pos);
             if (seq == 0) continue; // Quick skip
 
-            allEvents.add(new long[] {
+            long[] event = new long[] {
                 seq,                               // [0] Full Seq (Epoch | Local)
                 traceBuffer.getLong(pos + 8),      // [1] roleId
                 traceBuffer.getInt(pos + 16),      // [2] packedType
@@ -123,20 +126,27 @@ public class ReplayCoordinator {
                 traceBuffer.getInt(pos + 24),      // [4] objCount
                 traceBuffer.getInt(pos + 28),      // [5] data1
                 traceBuffer.getInt(pos + 32)       // [6] data2
-            });
+            };
+            allEvents.add(event);
+            if (TraceSemantics.isReplayBoundary((int) event[2])) {
+                boundaryEvents.add(event);
+            }
         }
 
-        // Sort globally once to maintain the 'ideal' trace order
+        // Sort globally once to maintain the captured causal order.
         allEvents.sort(Comparator.comparingLong(a -> a[0]));
+        boundaryEvents.sort(Comparator.comparingLong(a -> a[0]));
+        sortedEvents = boundaryEvents.toArray(new long[0][]);
 
-        // Distribute into Per-Role Queues
-        for (long[] event : allEvents) {
+        // Distribute replay boundaries into per-role queues. Schedule replay no longer
+        // coordinates non-boundary events.
+        for (long[] event : boundaryEvents) {
             int rId = (int) event[1];
             roleQueues.computeIfAbsent(rId, k -> new LinkedList<>()).add(event);
             pendingRoles.add(rId); 
         }
 
-        totalEvents = allEvents.size();
+        totalEvents = boundaryEvents.size();
         // System.out.println("[Replay] Distributed " + totalEvents + " events into " + roleQueues.keySet().size() + " role queues.");
 
         // Pre-compute captured final state for fidelity tracking.
@@ -149,6 +159,15 @@ public class ReplayCoordinator {
                 finalStateMap.compute(key, (k, v) ->
                     v == null ? new long[]{val, Long.MIN_VALUE} : new long[]{val, v[1]});
             }
+        }
+    }
+
+    public static void loadScheduleArtifact(List<ScheduleDistiller.ScheduleEntry> entries) {
+        synchronized (controlLock) {
+            scheduleEntries.clear();
+            scheduleEntries.addAll(entries);
+            scheduleEntries.sort(Comparator.comparingLong(e -> e.seq));
+            currentScheduleIdx.set(0);
         }
     }
     /**
@@ -166,7 +185,7 @@ public class ReplayCoordinator {
                     "role=%d epoch=%d expectedType=0x%02x actualType=0x%02x | %s",
                     roleId, epoch, expectedType & 0xFF, actualType & 0xFF, extra);
             System.err.println("[DIVERGENCE] Replay has structurally diverged: " + firstDivergenceInfo);
-            System.err.println("[DIVERGENCE] Synchronization and injection will no longer be applied.");
+            System.err.println("[DIVERGENCE] Synchronization guidance will no longer be applied.");
             controlLock.notifyAll();
         }
     }
@@ -179,7 +198,7 @@ public class ReplayCoordinator {
             hasDiverged = true;
             firstDivergenceInfo = "role=" + roleId + " | " + extra;
             System.err.println("[DIVERGENCE] Replay has structurally diverged: " + firstDivergenceInfo);
-            System.err.println("[DIVERGENCE] Synchronization and injection will no longer be applied.");
+            System.err.println("[DIVERGENCE] Synchronization guidance will no longer be applied.");
             controlLock.notifyAll();
         }
     }
@@ -294,8 +313,8 @@ public class ReplayCoordinator {
     }
 
     /**
-     * Blocks the calling thread until its event matches the next expected event
-     * in the captured total order.
+     * Legacy strict-replay path retained for compatibility with older call sites.
+     * Schedule replay primarily coordinates through {@link #awaitScheduleTurn}.
      *
      * Parameters mirror the fields written by BinarySchema.write() during capture
      * (minus seq, which is only used for ordering):
@@ -398,7 +417,78 @@ public class ReplayCoordinator {
         }
     }
 
-    /** Convenience overload for events that carry no natural value (e.g. NONDETERMINISTIC_INT). */
+    public static void awaitScheduleTurn(int roleId, int packedType, int rawSiteId) {
+        activateRole(roleId);
+        int eventType = packedType & 0xFF;
+        BoundaryMeta actual = ReplayBoundaryRegistry.get(rawSiteId);
+
+        synchronized (controlLock) {
+            while (true) {
+                if (hasDiverged) { controlLock.notifyAll(); return; }
+
+                long idx = currentScheduleIdx.get();
+                if (idx >= scheduleEntries.size()) {
+                    controlLock.notifyAll();
+                    return;
+                }
+
+                ScheduleDistiller.ScheduleEntry expected = scheduleEntries.get((int) idx);
+
+                if (expected.roleId != roleId) {
+                    try {
+                        controlLock.wait(100);
+                        continue;
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                }
+
+                if (actual == null) {
+                    reportDivergence(roleId, expected.epoch, expected.eventType, eventType,
+                            "missing replay boundary metadata for rawSiteId=" + rawSiteId);
+                    return;
+                }
+
+                if (expected.eventType == eventType
+                        && expected.className.equals(actual.className)
+                        && expected.methodName.equals(actual.methodName)) {
+                    currentScheduleIdx.incrementAndGet();
+                    lastMatchedSeq.set(expected.seq);
+                    consumeStrictBoundaryHead(roleId, expected.seq, packedType);
+                    controlLock.notifyAll();
+                    return;
+                }
+
+                reportDivergence(roleId, expected.epoch, expected.eventType, eventType,
+                        "schedule boundary mismatch: expected="
+                                + expected.className + "." + expected.methodName
+                                + " actual=" + actual.className + "." + actual.methodName
+                                + " rawSiteId=" + rawSiteId);
+                return;
+            }
+        }
+    }
+
+    private static void consumeStrictBoundaryHead(int roleId, long expectedSeq, int packedType) {
+        LinkedList<long[]> myQueue = roleQueues.get(roleId);
+        if (myQueue == null) return;
+        long[] head = myQueue.peek();
+        if (head == null) return;
+        if (head[0] != expectedSeq) return;
+
+        myQueue.poll();
+        if (fidelityEnabled) eventsMatched.incrementAndGet();
+
+        int headPackedType = (int) head[2];
+        long epoch = expectedSeq >>> 32;
+        if (isReleaseEvent(headPackedType)) {
+            releasedEpoch.set(epoch);
+            pendingTargetEpoch.compareAndSet(epoch, Long.MAX_VALUE);
+        }
+    }
+
+    /** Compatibility overload for non-boundary legacy paths. */
     public static int awaitTurnInt(int roleId, int packedType, int objSite, int objCount) {
         return awaitTurnInt(roleId, packedType, objSite, objCount, 0);
     }
@@ -426,16 +516,10 @@ public class ReplayCoordinator {
                 if (packedType == (int) expected[2] && objSite == (int) expected[3] && objCount == (int) expected[4]) {
                     myQueue.poll();
                     if (fidelityEnabled) eventsMatched.incrementAndGet();
-                    int traceValue = (int) expected[6];
                     lastMatchedSeq.set(eSeq);
                     if (isReleaseEvent(packedType)) releasedEpoch.set(eEpoch);
                     controlLock.notifyAll();
                     trackFidelityInt(packedType, objSite, objCount, naturalValue, expected);
-                    if (naturalValue != traceValue) {
-                        System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnInt role=%d: natural=%d trace=%d",
-                                roleId, naturalValue, traceValue));
-                        return traceValue;
-                    }
                     return naturalValue;
                 }
                 myQueue.poll();
@@ -449,7 +533,7 @@ public class ReplayCoordinator {
         }
     }
 
-    /** Convenience overload for events that carry no natural value (e.g. NONDETERMINISTIC_LONG). */
+    /** Compatibility overload for non-boundary legacy paths. */
     public static long awaitTurnLong(int roleId, int packedType, int objSite, int objCount) {
         return awaitTurnLong(roleId, packedType, objSite, objCount, 0L);
     }
@@ -476,16 +560,10 @@ public class ReplayCoordinator {
                 if (packedType == eType && objSite == (int) expected[3] && objCount == (int) expected[4]) {
                     myQueue.poll();
                     if (fidelityEnabled) eventsMatched.incrementAndGet();
-                    long traceValue = ((long) expected[5] << 32) | (expected[6] & 0xFFFFFFFFL);
                     lastMatchedSeq.set(eSeq);
                     if (isReleaseEvent(packedType)) releasedEpoch.set(eEpoch);
                     controlLock.notifyAll();
                     trackFidelityLong(packedType, objSite, objCount, naturalValue, expected);
-                    if (naturalValue != traceValue) {
-                        System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnLong role=%d: natural=%d trace=%d",
-                                roleId, naturalValue, traceValue));
-                        return traceValue;
-                    }
                     return naturalValue;
                 }
                 myQueue.poll();
@@ -521,19 +599,9 @@ public class ReplayCoordinator {
                 if (packedType == eType && objSite == (int) expected[3] && objCount == (int) expected[4]) {
                     myQueue.poll();
                     if (fidelityEnabled) eventsMatched.incrementAndGet();
-                    Object traceValue = IdentityMapper.resolveByBirthId((int) expected[5], (int) expected[6]);
                     lastMatchedSeq.set(eSeq);
                     if (isReleaseEvent(packedType)) releasedEpoch.set(eEpoch);
                     controlLock.notifyAll();
-                    if (traceValue == null && naturalValue != null) {
-                        IdentityMapper.registerByBirthId((int) expected[5], (int) expected[6], naturalValue);
-                        return naturalValue;
-                    }
-                    if (naturalValue != traceValue) {
-                        System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnObj role=%d: natural=%s trace=%s",
-                                roleId, naturalValue, traceValue));
-                        return traceValue;
-                    }
                     return naturalValue;
                 }
                 myQueue.poll();
@@ -547,26 +615,23 @@ public class ReplayCoordinator {
         }
     }
 
-    // ---- CAS injection methods ----
-    // Return the captured value directly; any value difference is expected (CAS is
-    // non-deterministic) so no divergence log is emitted.
+    // ---- CAS-valued helpers ----
+    // Retained only for compatibility with older call paths. Schedule replay does
+    // not alter natural values.
 
     public static int awaitTurnCasInt(int roleId, int packedType, int objSite, int objCount) {
-        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount);
-        if (ev == null) return 0;
-        return (int) ev[6];
+        doAwaitTurnValued(roleId, packedType, objSite, objCount);
+        return 0;
     }
 
     public static long awaitTurnCasLong(int roleId, int packedType, int objSite, int objCount) {
-        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount);
-        if (ev == null) return 0L;
-        return ((long) ev[5] << 32) | (ev[6] & 0xFFFFFFFFL);
+        doAwaitTurnValued(roleId, packedType, objSite, objCount);
+        return 0L;
     }
 
     public static Object awaitTurnCasObj(int roleId, int packedType, int objSite, int objCount) {
-        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount);
-        if (ev == null) return null;
-        return IdentityMapper.resolveByBirthId((int) ev[5], (int) ev[6]);
+        doAwaitTurnValued(roleId, packedType, objSite, objCount);
+        return null;
     }
 
     // ---- RMW divergence-check methods ----
@@ -579,7 +644,7 @@ public class ReplayCoordinator {
         if (ev == null) return naturalValue;
         int traceValue = (int) ev[6];
         if (naturalValue != traceValue) {
-            if (fidelityEnabled) noInjectDisagreements.incrementAndGet();
+            if (fidelityEnabled) naturalDisagreements.incrementAndGet();
             reportDivergence(roleId, ev[0] >>> 32, (int) ev[2], packedType,
                     "RMW value mismatch: natural=" + naturalValue + " trace=" + traceValue);
         }
@@ -592,7 +657,7 @@ public class ReplayCoordinator {
         if (ev == null) return naturalValue;
         long traceValue = ((long) ev[5] << 32) | (ev[6] & 0xFFFFFFFFL);
         if (naturalValue != traceValue) {
-            if (fidelityEnabled) noInjectDisagreements.incrementAndGet();
+            if (fidelityEnabled) naturalDisagreements.incrementAndGet();
             reportDivergence(roleId, ev[0] >>> 32, (int) ev[2], packedType,
                     "RMW value mismatch: natural=" + naturalValue + " trace=" + traceValue);
         }
@@ -605,16 +670,16 @@ public class ReplayCoordinator {
         if (ev == null) return naturalValue;
         Object traceValue = IdentityMapper.resolveByBirthId((int) ev[5], (int) ev[6]);
         if (naturalValue != traceValue) {
-            if (fidelityEnabled) noInjectDisagreements.incrementAndGet();
+            if (fidelityEnabled) naturalDisagreements.incrementAndGet();
             reportDivergence(roleId, ev[0] >>> 32, (int) ev[2], packedType,
                     "RMW value mismatch: natural=" + naturalValue + " trace=" + traceValue);
         }
         return naturalValue;
     }
 
-    public static void recordNoInjectDisagreement() {
+    public static void recordNaturalDisagreement() {
         if (!fidelityEnabled) return;
-        noInjectDisagreements.incrementAndGet();
+        naturalDisagreements.incrementAndGet();
     }
 
     // ---- Value-returning field turn methods ----
@@ -704,12 +769,6 @@ public class ReplayCoordinator {
                     pendingTargetEpoch.compareAndSet(eEpoch, Long.MAX_VALUE);
                 }
                 controlLock.notifyAll();
-                // CAS is special: its boolean result drives if-branches, so keep
-                // injecting even on identity/type mismatch (Option B). For all other
-                // operations, stop synchronization — there is no safe value to inject.
-                if ((packedType & 0xFF) == BinarySchema.Event.ATOMIC_CAS) {
-                    return expected;
-                }
                 reportDivergence(roleId, eEpoch, (int) expected[2], packedType,
                         "valued event mismatch: expected objSite=" + (int) expected[3]
                         + " objCount=" + (int) expected[4]
@@ -722,45 +781,18 @@ public class ReplayCoordinator {
     public static int awaitTurnFieldInt(int roleId, int packedType, int objSite, int objCount, int naturalValue) {
         long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount);
         trackFidelityInt(packedType, objSite, objCount, naturalValue, ev);
-        if (ev == null) return naturalValue;
-        int traceValue = (int) ev[6];
-        if (naturalValue != traceValue) {
-            System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnFieldInt role=%d: natural=%d trace=%d",
-                    roleId, naturalValue, traceValue));
-            return traceValue;
-        }
         return naturalValue;
     }
 
     public static long awaitTurnFieldLong(int roleId, int packedType, int objSite, int objCount, long naturalValue) {
         long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount);
         trackFidelityLong(packedType, objSite, objCount, naturalValue, ev);
-        if (ev == null) return naturalValue;
-        long traceValue = ((long) ev[5] << 32) | (ev[6] & 0xFFFFFFFFL);
-        if (naturalValue != traceValue) {
-            System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnFieldLong role=%d: natural=%d trace=%d",
-                    roleId, naturalValue, traceValue));
-            return traceValue;
-        }
         return naturalValue;
     }
 
     public static Object awaitTurnFieldObj(int roleId, int packedType, int objSite, int objCount, Object naturalValue) {
         long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount);
-        if (ev == null) return naturalValue;
-        Object traceValue = IdentityMapper.resolveByBirthId((int) ev[5], (int) ev[6]);
-        if (traceValue == null && naturalValue != null) {
-            IdentityMapper.registerByBirthId((int) ev[5], (int) ev[6], naturalValue);
-            // lookupBirthId(naturalValue) now returns the trace birth ID — counts as agreement.
-            trackFidelityObj(packedType, objSite, objCount, naturalValue, ev);
-            return naturalValue;
-        }
         trackFidelityObj(packedType, objSite, objCount, naturalValue, ev);
-        if (naturalValue != traceValue) {
-            System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnFieldObj role=%d: natural=%s trace=%s",
-                    roleId, naturalValue, traceValue));
-            return traceValue;
-        }
         return naturalValue;
     }
 
@@ -773,44 +805,18 @@ public class ReplayCoordinator {
         long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount);
         // For arrays: objSite=array-birthId.count, objCount=element-index — key is per element.
         trackFidelityInt(packedType, objSite, objCount, naturalValue, ev);
-        if (ev == null) return naturalValue;
-        int traceValue = (int) ev[6];
-        if (naturalValue != traceValue) {
-            System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnArrayInt role=%d: natural=%d trace=%d",
-                    roleId, naturalValue, traceValue));
-            return traceValue;
-        }
         return naturalValue;
     }
 
     public static long awaitTurnArrayLong(int roleId, int packedType, int objSite, int objCount, long naturalValue) {
         long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount);
         trackFidelityLong(packedType, objSite, objCount, naturalValue, ev);
-        if (ev == null) return naturalValue;
-        long traceValue = ((long) ev[5] << 32) | (ev[6] & 0xFFFFFFFFL);
-        if (naturalValue != traceValue) {
-            System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnArrayLong role=%d: natural=%d trace=%d",
-                    roleId, naturalValue, traceValue));
-            return traceValue;
-        }
         return naturalValue;
     }
 
     public static Object awaitTurnArrayObj(int roleId, int packedType, int objSite, int objCount, Object naturalValue) {
         long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount);
-        if (ev == null) return naturalValue;
-        Object traceValue = IdentityMapper.resolveByBirthId((int) ev[5], (int) ev[6]);
-        if (traceValue == null && naturalValue != null) {
-            IdentityMapper.registerByBirthId((int) ev[5], (int) ev[6], naturalValue);
-            trackFidelityObj(packedType, objSite, objCount, naturalValue, ev);
-            return naturalValue;
-        }
         trackFidelityObj(packedType, objSite, objCount, naturalValue, ev);
-        if (naturalValue != traceValue) {
-            System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnArrayObj role=%d: natural=%s trace=%s",
-                    roleId, naturalValue, traceValue));
-            return traceValue;
-        }
         return naturalValue;
     }
 
@@ -853,7 +859,7 @@ public class ReplayCoordinator {
         if (ev != null && isTrackedEvent(baseType)) {
             totalValuedEvents.incrementAndGet();
             if (naturalValue == (int) ev[6]) naturalAgreements.incrementAndGet();
-            else if (baseType != BinarySchema.Event.ATOMIC_RMW) injectedEvents.incrementAndGet();
+            else if (baseType != BinarySchema.Event.ATOMIC_RMW) naturalDisagreements.incrementAndGet();
         }
     }
 
@@ -870,7 +876,7 @@ public class ReplayCoordinator {
             long traceValue = ((long) ev[5] << 32) | (ev[6] & 0xFFFFFFFFL);
             totalValuedEvents.incrementAndGet();
             if (naturalValue == traceValue) naturalAgreements.incrementAndGet();
-            else if (baseType != BinarySchema.Event.ATOMIC_RMW) injectedEvents.incrementAndGet();
+            else if (baseType != BinarySchema.Event.ATOMIC_RMW) naturalDisagreements.incrementAndGet();
         }
     }
 
@@ -912,7 +918,7 @@ public class ReplayCoordinator {
             totalValuedEvents.incrementAndGet();
             if (natBirthId == capturedBirthId) naturalAgreements.incrementAndGet();
             else if (baseType != BinarySchema.Event.ATOMIC_RMW && !isArrayValued) {
-                injectedEvents.incrementAndGet();
+                naturalDisagreements.incrementAndGet();
             }
         }
     }
@@ -973,8 +979,7 @@ public class ReplayCoordinator {
 
         long total    = totalValuedEvents.get();
         long agreed   = naturalAgreements.get();
-        long injected = injectedEvents.get();
-        long noInject = noInjectDisagreements.get();
+        long naturalDisagreed = naturalDisagreements.get();
 
         int locs = finalStateMap.size(), matched = 0, unseen = 0;
         for (long[] v : finalStateMap.values()) {
@@ -996,8 +1001,7 @@ public class ReplayCoordinator {
         p.setProperty("events_total",          String.valueOf(totalEvents));
         p.setProperty("valued_events",         String.valueOf(total));
         p.setProperty("natural_agreements",    String.valueOf(agreed));
-        p.setProperty("injections",            String.valueOf(injected));
-        p.setProperty("no_inject_disagreements", String.valueOf(noInject));
+        p.setProperty("natural_disagreements", String.valueOf(naturalDisagreed));
         p.setProperty("locations_matched",     String.valueOf(matched));
         p.setProperty("locations_total",       String.valueOf(locs));
         p.setProperty("locations_unseen",      String.valueOf(unseen));

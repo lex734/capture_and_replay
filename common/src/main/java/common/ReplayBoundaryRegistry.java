@@ -82,6 +82,10 @@ public final class ReplayBoundaryRegistry {
         return Map.copyOf(boundaries);
     }
 
+    public static BoundaryMeta get(int rawSiteId) {
+        return boundaries.get(rawSiteId);
+    }
+
     public static Map<Integer, BoundaryMeta> loadFromFile(Path path) {
         ConcurrentHashMap<Integer, BoundaryMeta> loaded = new ConcurrentHashMap<>();
         try (BufferedReader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
@@ -114,6 +118,11 @@ public final class ReplayBoundaryRegistry {
             throw new UncheckedIOException("Failed to read replay boundary metadata from " + path, e);
         }
         return Map.copyOf(loaded);
+    }
+
+    public static void loadIntoRegistry(Path path) {
+        boundaries.clear();
+        boundaries.putAll(loadFromFile(path));
     }
 
     public static void reset() {

@@ -88,6 +88,8 @@ public class TraceLogger {
     //   Int:  data1=0,              data2=value
     //   Long: data1=value>>32,      data2=(int)value
     //   Obj:  data1=valueSiteId,    data2=valueCount
+    // For replay-boundary volatile writes, data2 is repurposed to carry
+    // currentSiteId so schedule distillation can recover the boundary site.
 
     public static void logFieldInt(int value, int eventType, Object owner, int currentSiteId,
             boolean isVolatile, boolean isStatic, String fieldName, String ownerName) {
@@ -102,7 +104,11 @@ public class TraceLogger {
         debug("[FIELD]  epoch=%d seq=%d role=%d  %-5s%s %s.%s = %d",
                 seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
                 isVolatile ? "(volatile)" : "", ownerName, fieldName, value);
-        BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, 0, value);
+        if (advanceEpoch) {
+            BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, 0, currentSiteId);
+        } else {
+            BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, 0, value);
+        }
     }
 
     public static void logFieldLong(long value, int eventType, Object owner, int currentSiteId,
@@ -118,8 +124,12 @@ public class TraceLogger {
         debug("[FIELD]  epoch=%d seq=%d role=%d  %-5s%s %s.%s = %dL",
                 seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
                 isVolatile ? "(volatile)" : "", ownerName, fieldName, value);
-        BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count,
-                (int) (value >> 32), (int) value);
+        if (advanceEpoch) {
+            BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, 0, currentSiteId);
+        } else {
+            BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count,
+                    (int) (value >> 32), (int) value);
+        }
     }
 
     public static void logFieldObj(Object value, int eventType, Object owner, int currentSiteId,
@@ -138,8 +148,13 @@ public class TraceLogger {
                 isVolatile ? "(volatile)" : "", ownerName, fieldName,
                 value != null ? value.getClass().getSimpleName()
                         + "@" + Integer.toHexString(System.identityHashCode(value)) : "null");
-        BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count,
-                valueBirth.siteId, valueBirth.count);
+        if (advanceEpoch) {
+            BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count,
+                    valueBirth.siteId, currentSiteId);
+        } else {
+            BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count,
+                    valueBirth.siteId, valueBirth.count);
+        }
     }
 
     // ---- Array loggers (capture) ----
@@ -221,6 +236,9 @@ public class TraceLogger {
     // objCount = array index (WHERE within the array)
     // data = value (WHAT was written/read)
     //
+    // For schedule replay, the raw boundary site is also needed during
+    // distillation. Boundary atomics therefore store currentSiteId in data2.
+    //
     // Binary record layout — SCALAR atomics (no flag):
     // objSite = receiver BirthId.siteId
     // objCount = receiver BirthId.count
@@ -265,10 +283,10 @@ public class TraceLogger {
 
         if (isArray) {
             int packedType = packAtomicArrayType(eventType, birthId.siteId);
-            BinarySchema.write(seq, (long) roleId, packedType, birthId.count, index, intValue);
+            BinarySchema.write(seq, (long) roleId, packedType, birthId.count, index, intValue, currentSiteId);
         } else {
             int packedType = BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
-            BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, intValue);
+            BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, intValue, currentSiteId);
         }
     }
 
@@ -303,11 +321,11 @@ public class TraceLogger {
         if (isArray) {
             int packedType = packAtomicArrayType(eventType, birthId.siteId);
             BinarySchema.write(seq, (long) roleId, packedType, birthId.count, index, (int) (longValue >> 32),
-                    (int) longValue);
+                    currentSiteId);
         } else {
             int packedType = BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
             BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, (int) (longValue >> 32),
-                    (int) longValue);
+                    currentSiteId);
         }
     }
 
@@ -346,11 +364,11 @@ public class TraceLogger {
         if (isArray) {
             int packedType = packAtomicArrayType(eventType, receiverBirth.siteId);
             BinarySchema.write(seq, (long) roleId, packedType, receiverBirth.count, index, valueBirth.siteId,
-                    valueBirth.count);
+                    currentSiteId);
         } else {
             int packedType = BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
             BinarySchema.write(seq, (long) roleId, packedType, receiverBirth.siteId, receiverBirth.count,
-                    valueBirth.siteId, valueBirth.count);
+                    valueBirth.siteId, currentSiteId);
         }
     }
 

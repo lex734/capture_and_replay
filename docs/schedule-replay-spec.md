@@ -21,6 +21,9 @@ Replay does not require:
 - exact per-thread event order
 - exact bytecode equivalence
 
+Replay does not inject captured values. Value payloads may be retained for
+diagnostics, but schedule coordination is driven only by replay boundaries.
+
 ## Replay Boundaries
 
 Replay boundaries are captured synchronization and thread-utility events.
@@ -45,6 +48,9 @@ The distiller:
 2. retains only replay-relevant boundary events
 3. keeps each boundary's `epoch`, `role`, `eventType`, `className`, and `methodName`
 4. discards object/value equality as replay constraints
+
+Replay-boundary records carry the raw boundary site in the trace so they can be
+joined against replay-boundary metadata during distillation.
 
 The entire thread schedule is successfully applied only if all distilled boundaries are consumed in captured order.
 

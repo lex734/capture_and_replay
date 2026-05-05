@@ -19,6 +19,11 @@ import java.util.Map;
 
 /**
  * Distills the rich capture trace into a schedule-oriented boundary artifact.
+ *
+ * <p>Replay-boundary records carry their raw boundary site in {@code data2}.
+ * This is true for:
+ * sync/thread-utility boundaries logged through {@code logSync},
+ * epoch-advancing atomic events, and replay-boundary volatile writes.
  */
 public final class ScheduleDistiller {
     public static final Path DEFAULT_TRACE = Path.of("trace.bin");
@@ -67,7 +72,7 @@ public final class ScheduleDistiller {
 
                 int packedType = buffer.getInt(pos + 16);
                 int eventType = packedType & 0xFF;
-                int rawSiteId = buffer.getInt(pos + 32);
+                int rawSiteId = extractBoundarySiteId(buffer, pos);
                 BoundaryMeta meta = metadata.get(rawSiteId);
                 if (meta == null) continue;
                 if (meta.eventType != eventType) {
@@ -86,6 +91,10 @@ public final class ScheduleDistiller {
 
         entries.sort(Comparator.comparingLong(e -> e.seq));
         return entries;
+    }
+
+    private static int extractBoundarySiteId(MappedByteBuffer buffer, int pos) {
+        return buffer.getInt(pos + 32);
     }
 
     public static void write(Path outputPath, List<ScheduleEntry> entries) {

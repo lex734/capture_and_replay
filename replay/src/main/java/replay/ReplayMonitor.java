@@ -3,6 +3,7 @@ package replay;
 import common.BinarySchema;
 import common.IdentityMapper;
 import common.IdentityMapper.BirthId;
+import common.TraceSemantics;
 import java.util.Date;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
@@ -16,13 +17,14 @@ import java.util.concurrent.locks.ReentrantLock;
  * SyncTransformer can swap "capture/CaptureMonitor" → "replay/ReplayMonitor"
  * without changing any bytecode instrumentation logic.
  *
- * Instead of logging to a trace file, each method resolves the same identity
- * values (roleId, birthId, siteId, fieldId, …) via IdentityMapper and then
- * blocks on ReplayCoordinator.awaitTurn until this event is next in the
- * captured total order.
+ * Replay gates only schedule boundaries. Non-boundary events execute naturally.
  */
 public class ReplayMonitor {
     private static final ThreadLocal<Boolean> isInside = ThreadLocal.withInitial(() -> false);
+
+    private static void awaitScheduleBoundary(int roleId, int packedType, int currentSiteId) {
+        ReplayCoordinator.awaitScheduleTurn(roleId, packedType, currentSiteId);
+    }
 
     // ---- Sync events (monitor enter/exit, thread lifecycle, wait/notify, park/unpark) ----
 
@@ -40,10 +42,9 @@ public class ReplayMonitor {
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) return;
 
-            BirthId birthId = IdentityMapper.getBirthId(lock, null, currentSiteId);
             int packedType = (eventType & 0xFF) | (BinarySchema.Flags.NONE << 8);
 
-            ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, currentSiteId);
+            awaitScheduleBoundary(roleId, packedType, currentSiteId);
             long seq = ReplayCoordinator.getLastMatchedSeq();
             debug(String.format(
                     "[CHECK-SYNC]  epoch=%d seq=%d role=%d  %-24s lock=%s  site=%d",
@@ -70,9 +71,8 @@ public class ReplayMonitor {
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) return;
 
-            BirthId birthId = IdentityMapper.getBirthId(thread, null, currentSiteId);
             int packedType = BinarySchema.packType(BinarySchema.Event.THREAD_START, BinarySchema.Flags.NONE);
-            ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, currentSiteId);
+            awaitScheduleBoundary(roleId, packedType, currentSiteId);
         } finally {
             isInside.set(false);
         }
@@ -91,13 +91,12 @@ public class ReplayMonitor {
                 lock.lock();
                 return;
             }
-            BirthId birthId = IdentityMapper.getBirthId(lock, null, currentSiteId);
             int packedType = BinarySchema.packType(BinarySchema.Event.MONITOR_ENTER, BinarySchema.Flags.NONE);
             lock.lock();
             // Capture records MONITOR_ENTER after successful acquisition. Replay must do
             // the same so lock-dependent control flow (for example isLocked()) observes
             // natural ownership state before matching the event.
-            ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, currentSiteId);
+            awaitScheduleBoundary(roleId, packedType, currentSiteId);
         } finally {
             isInside.set(false);
         }
@@ -126,7 +125,6 @@ public class ReplayMonitor {
                 }
                 return;
             }
-            BirthId birthId = IdentityMapper.getBirthId(lock, null, currentSiteId);
             int packedType = BinarySchema.packType(BinarySchema.Event.MONITOR_EXIT, BinarySchema.Flags.NONE);
             if (lock instanceof ReentrantLock && !((ReentrantLock) lock).isHeldByCurrentThread()) {
                 System.err.println("[DIVERGENCE] replayUnlock: current thread does not own lock; skipping unlock");
@@ -138,7 +136,7 @@ public class ReplayMonitor {
                 System.err.println("[DIVERGENCE] replayUnlock: unlock without ownership; skipping sync consume");
                 return;
             }
-            ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, currentSiteId);
+            awaitScheduleBoundary(roleId, packedType, currentSiteId);
         } finally {
             isInside.set(false);
         }
@@ -161,9 +159,8 @@ public class ReplayMonitor {
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         if (roleId == -1) return;
-        BirthId birthId = IdentityMapper.getBirthId(condition, null, currentSiteId);
         int packedType = BinarySchema.packType(BinarySchema.Event.THREAD_WAIT, BinarySchema.Flags.NONE);
-        ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, currentSiteId);
+        awaitScheduleBoundary(roleId, packedType, currentSiteId);
     }
 
     public static void replayAwait(Condition condition, int currentSiteId) throws InterruptedException {
@@ -247,9 +244,8 @@ public class ReplayMonitor {
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             condition.signal();
             if (roleId != -1) {
-                BirthId birthId = IdentityMapper.getBirthId(condition, null, currentSiteId);
                 int packedType = BinarySchema.packType(BinarySchema.Event.THREAD_NOTIFY, BinarySchema.Flags.NONE);
-                ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, currentSiteId);
+                awaitScheduleBoundary(roleId, packedType, currentSiteId);
             }
         } finally {
             isInside.set(false);
@@ -267,9 +263,8 @@ public class ReplayMonitor {
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             condition.signalAll();
             if (roleId != -1) {
-                BirthId birthId = IdentityMapper.getBirthId(condition, null, currentSiteId);
                 int packedType = BinarySchema.packType(BinarySchema.Event.THREAD_NOTIFY_ALL, BinarySchema.Flags.NONE);
-                ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, currentSiteId);
+                awaitScheduleBoundary(roleId, packedType, currentSiteId);
             }
         } finally {
             isInside.set(false);
@@ -277,10 +272,8 @@ public class ReplayMonitor {
     }
 
     // ---- Field access events ----
-    // Each method blocks until the event's turn in the total order, then returns
-    // the value that was recorded during capture.  The SyncTransformer uses the
-    // returned value as the actual field value (for reads) or the value to write
-    // (for writes), eliminating ordering dependence between reads and writes.
+    // Only replay-boundary field events (currently volatile writes) are
+    // coordinated. All other field accesses execute naturally.
 
     private static int resolveFieldRole(Object owner, String ownerName, int currentSiteId,
             boolean isVolatile, boolean isStatic, int eventType,
@@ -306,13 +299,11 @@ public class ReplayMonitor {
             int roleId = resolveFieldRole(owner, ownerName, currentSiteId,
                     isVolatile, isStatic, eventType, packed, site, count);
             if (roleId == -1) return naturalValue;
-            int val = ReplayCoordinator.awaitTurnFieldInt(roleId, packed[0], site[0], count[0], naturalValue);
-            long seq = ReplayCoordinator.getLastMatchedSeq();
-            String evName = (eventType == BinarySchema.Event.FIELD_READ) ? "READ" : "WRITE";
-            debug(String.format("[CHECK-FIELD] epoch=%d seq=%d role=%d  %-5s%s %s.%s = %d",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
-                    isVolatile ? "(volatile)" : "", ownerName, fieldName, val));
-            return val;
+            if (TraceSemantics.isReplayBoundary(packed[0])) {
+                awaitScheduleBoundary(roleId, packed[0], currentSiteId);
+                return naturalValue;
+            }
+            return naturalValue;
         } finally {
             isInside.set(false);
         }
@@ -327,13 +318,11 @@ public class ReplayMonitor {
             int roleId = resolveFieldRole(owner, ownerName, currentSiteId,
                     isVolatile, isStatic, eventType, packed, site, count);
             if (roleId == -1) return naturalValue;
-            long val = ReplayCoordinator.awaitTurnFieldLong(roleId, packed[0], site[0], count[0], naturalValue);
-            long seq = ReplayCoordinator.getLastMatchedSeq();
-            String evName = (eventType == BinarySchema.Event.FIELD_READ) ? "READ" : "WRITE";
-            debug(String.format("[CHECK-FIELD] epoch=%d seq=%d role=%d  %-5s%s %s.%s = %dL",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
-                    isVolatile ? "(volatile)" : "", ownerName, fieldName, val));
-            return val;
+            if (TraceSemantics.isReplayBoundary(packed[0])) {
+                awaitScheduleBoundary(roleId, packed[0], currentSiteId);
+                return naturalValue;
+            }
+            return naturalValue;
         } finally {
             isInside.set(false);
         }
@@ -348,42 +337,25 @@ public class ReplayMonitor {
             int roleId = resolveFieldRole(owner, ownerName, currentSiteId,
                     isVolatile, isStatic, eventType, packed, site, count);
             if (roleId == -1) return naturalValue;
-            Object val = ReplayCoordinator.awaitTurnFieldObj(roleId, packed[0], site[0], count[0], naturalValue);
-            long seq = ReplayCoordinator.getLastMatchedSeq();
-            String evName = (eventType == BinarySchema.Event.FIELD_READ) ? "READ" : "WRITE";
-            debug(String.format("[CHECK-FIELD] epoch=%d seq=%d role=%d  %-5s%s %s.%s = %s",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
-                    isVolatile ? "(volatile)" : "", ownerName, fieldName,
-                    val != null ? val.getClass().getSimpleName()
-                            + "@" + Integer.toHexString(System.identityHashCode(val)) : "null"));
-            return val;
+            if (TraceSemantics.isReplayBoundary(packed[0])) {
+                awaitScheduleBoundary(roleId, packed[0], currentSiteId);
+                return naturalValue;
+            }
+            return naturalValue;
         } finally {
             isInside.set(false);
         }
     }
 
     // ---- Array access events ----
-    // Mirror of field methods: block on total order, return captured element value.
+    // Array accesses are not replay boundaries in schedule replay, so they always
+    // execute naturally.
 
     public static int checkArrayInt(int naturalValue, int eventType, Object array, int index, int currentSiteId) {
         if (isInside.get() || array == null) return naturalValue;
         isInside.set(true);
         try {
-            long tid = Thread.currentThread().getId();
-            int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-            if (roleId == -1) return naturalValue;
-            BirthId birthId = IdentityMapper.getBirthId(array, null, currentSiteId);
-            int packedType = (eventType & 0xFF)
-                    | (BinarySchema.Flags.IS_ARRAY_VALUED << 8)
-                    | ((birthId.siteId & 0xFFFF) << 16);
-            int val = ReplayCoordinator.awaitTurnArrayInt(roleId, packedType, birthId.count, index, naturalValue);
-            long seq = ReplayCoordinator.getLastMatchedSeq();
-            String evName = (eventType == BinarySchema.Event.ARRAY_READ) ? "ARRAY_READ" : "ARRAY_WRITE";
-            debug(String.format("[CHECK-ARRAY] epoch=%d seq=%d role=%d  %-12s %s[%d] = %d",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
-                    array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array)),
-                    index, val));
-            return val;
+            return naturalValue;
         } finally {
             isInside.set(false);
         }
@@ -393,21 +365,7 @@ public class ReplayMonitor {
         if (isInside.get() || array == null) return naturalValue;
         isInside.set(true);
         try {
-            long tid = Thread.currentThread().getId();
-            int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-            if (roleId == -1) return naturalValue;
-            BirthId birthId = IdentityMapper.getBirthId(array, null, currentSiteId);
-            int packedType = (eventType & 0xFF)
-                    | (BinarySchema.Flags.IS_ARRAY_VALUED << 8)
-                    | ((birthId.siteId & 0xFFFF) << 16);
-            long val = ReplayCoordinator.awaitTurnArrayLong(roleId, packedType, birthId.count, index, naturalValue);
-            long seq = ReplayCoordinator.getLastMatchedSeq();
-            String evName = (eventType == BinarySchema.Event.ARRAY_READ) ? "ARRAY_READ" : "ARRAY_WRITE";
-            debug(String.format("[CHECK-ARRAY] epoch=%d seq=%d role=%d  %-12s %s[%d] = %dL",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
-                    array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array)),
-                    index, val));
-            return val;
+            return naturalValue;
         } finally {
             isInside.set(false);
         }
@@ -417,23 +375,7 @@ public class ReplayMonitor {
         if (isInside.get() || array == null) return naturalValue;
         isInside.set(true);
         try {
-            long tid = Thread.currentThread().getId();
-            int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-            if (roleId == -1) return naturalValue;
-            BirthId birthId = IdentityMapper.getBirthId(array, null, currentSiteId);
-            int packedType = (eventType & 0xFF)
-                    | (BinarySchema.Flags.IS_ARRAY_VALUED << 8)
-                    | ((birthId.siteId & 0xFFFF) << 16);
-            Object val = ReplayCoordinator.awaitTurnArrayObj(roleId, packedType, birthId.count, index, naturalValue);
-            long seq = ReplayCoordinator.getLastMatchedSeq();
-            String evName = (eventType == BinarySchema.Event.ARRAY_READ) ? "ARRAY_READ" : "ARRAY_WRITE";
-            debug(String.format("[CHECK-ARRAY] epoch=%d seq=%d role=%d  %-12s %s[%d] = %s",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
-                    array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array)),
-                    index,
-                    val != null ? val.getClass().getSimpleName()
-                            + "@" + Integer.toHexString(System.identityHashCode(val)) : "null"));
-            return val;
+            return naturalValue;
         } finally {
             isInside.set(false);
         }
@@ -443,25 +385,6 @@ public class ReplayMonitor {
         if (isInside.get() || array == null) return naturalValue;
         isInside.set(true);
         try {
-            long tid = Thread.currentThread().getId();
-            int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-            if (roleId == -1) return naturalValue;
-            BirthId birthId = IdentityMapper.getBirthId(array, null, currentSiteId);
-            int packedType = (eventType & 0xFF)
-                    | (BinarySchema.Flags.IS_ARRAY_VALUED << 8)
-                    | ((birthId.siteId & 0xFFFF) << 16);
-            Object traceVal = ReplayCoordinator.awaitTurnArrayObj(roleId, packedType, birthId.count, index, naturalValue);
-            if (traceVal != naturalValue) {
-                ReplayCoordinator.recordNoInjectDisagreement();
-            }
-            long seq = ReplayCoordinator.getLastMatchedSeq();
-            String evName = (eventType == BinarySchema.Event.ARRAY_READ) ? "ARRAY_READ" : "ARRAY_WRITE";
-            debug(String.format("[CHECK-ARRAY] epoch=%d seq=%d role=%d  %-12s %s[%d] = %s (natural)",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
-                    array.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(array)),
-                    index,
-                    naturalValue != null ? naturalValue.getClass().getSimpleName()
-                            + "@" + Integer.toHexString(System.identityHashCode(naturalValue)) : "null"));
             return naturalValue;
         } finally {
             isInside.set(false);
@@ -481,80 +404,9 @@ public class ReplayMonitor {
     private static int atomicObjSite(BirthId b, int index) { return index >= 0 ? b.count   : b.siteId; }
     private static int atomicObjCount(BirthId b, int index) { return index >= 0 ? index     : b.count;  }
 
-    // ---- CAS injection ----
-    // CAS outcome is non-deterministic across schedules; inject the captured result
-    // and advance the epoch without reporting divergence.
-
-    public static int injectAtomicCasInt(Object receiver, int index, int eventType, int currentSiteId) {
-        if (isInside.get()) return 0;
-        isInside.set(true);
-        try {
-            long tid = Thread.currentThread().getId();
-            int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-            if (roleId == -1) return 0;
-            BirthId b = IdentityMapper.getBirthId(receiver, null, currentSiteId);
-            int val = ReplayCoordinator.awaitTurnCasInt(roleId,
-                    buildAtomicPackedType(eventType, b, index), atomicObjSite(b, index), atomicObjCount(b, index));
-            long seq = ReplayCoordinator.getLastMatchedSeq();
-            debug(String.format("[INJECT-CAS]  epoch=%d seq=%d role=%d  %-12s %s → %d",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
-                    receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
-                    val));
-            return val;
-        } finally {
-            isInside.set(false);
-        }
-    }
-
-    public static long injectAtomicCasLong(Object receiver, int index, int eventType, int currentSiteId) {
-        if (isInside.get()) return 0L;
-        isInside.set(true);
-        try {
-            long tid = Thread.currentThread().getId();
-            int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-            if (roleId == -1) return 0L;
-            BirthId b = IdentityMapper.getBirthId(receiver, null, currentSiteId);
-            long val = ReplayCoordinator.awaitTurnCasLong(roleId,
-                    buildAtomicPackedType(eventType, b, index), atomicObjSite(b, index), atomicObjCount(b, index));
-            long seq = ReplayCoordinator.getLastMatchedSeq();
-            debug(String.format("[INJECT-CAS]  epoch=%d seq=%d role=%d  %-12s %s → %dL",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
-                    receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
-                    val));
-            return val;
-        } finally {
-            isInside.set(false);
-        }
-    }
-
-    public static Object injectAtomicCasObj(Object receiver, int index, int eventType, int currentSiteId) {
-        if (isInside.get()) return null;
-        isInside.set(true);
-        try {
-            long tid = Thread.currentThread().getId();
-            int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-            if (roleId == -1) return null;
-            BirthId b = IdentityMapper.getBirthId(receiver, null, currentSiteId);
-            Object val = ReplayCoordinator.awaitTurnCasObj(roleId,
-                    buildAtomicPackedType(eventType, b, index), atomicObjSite(b, index), atomicObjCount(b, index));
-            long seq = ReplayCoordinator.getLastMatchedSeq();
-            debug(String.format("[INJECT-CAS]  epoch=%d seq=%d role=%d  %-12s %s → %s",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
-                    receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
-                    val != null ? val.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(val)) : "null"));
-            return val;
-        } finally {
-            isInside.set(false);
-        }
-    }
-
-    // ---- RMW divergence check ----
-    // The atomic operation has already executed; natural value is always returned.
-    // Divergence is logged but not injected (can't undo the completed operation).
-
-    // ---- Deterministic atomic read/write check ----
-    // For plain atomic reads/writes (get/set), compare against trace and inject the
-    // captured value when safe (same policy as field/array valued events).
+    // ---- Atomic schedule checks ----
+    // Atomic operations execute naturally. Replay only coordinates schedule
+    // boundaries; it does not inject captured values.
 
     public static int checkAtomicInt(int naturalValue, Object receiver, int index, int eventType, int currentSiteId) {
         if (isInside.get()) return naturalValue;
@@ -563,16 +415,11 @@ public class ReplayMonitor {
             long tid = Thread.currentThread().getId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) return naturalValue;
-            BirthId b = IdentityMapper.getBirthId(receiver, null, currentSiteId);
-            int val = ReplayCoordinator.awaitTurnFieldInt(roleId,
-                    buildAtomicPackedType(eventType, b, index), atomicObjSite(b, index), atomicObjCount(b, index),
-                    naturalValue);
-            long seq = ReplayCoordinator.getLastMatchedSeq();
-            debug(String.format("[CHECK-ATOM]  epoch=%d seq=%d role=%d  %-12s %s = %d",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
-                    receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
-                    val));
-            return val;
+            if (TraceSemantics.isReplayBoundaryForEventType(eventType)) {
+                BirthId b = IdentityMapper.getBirthId(receiver, null, currentSiteId);
+                awaitScheduleBoundary(roleId, buildAtomicPackedType(eventType, b, index), currentSiteId);
+            }
+            return naturalValue;
         } finally {
             isInside.set(false);
         }
@@ -585,16 +432,11 @@ public class ReplayMonitor {
             long tid = Thread.currentThread().getId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) return naturalValue;
-            BirthId b = IdentityMapper.getBirthId(receiver, null, currentSiteId);
-            long val = ReplayCoordinator.awaitTurnFieldLong(roleId,
-                    buildAtomicPackedType(eventType, b, index), atomicObjSite(b, index), atomicObjCount(b, index),
-                    naturalValue);
-            long seq = ReplayCoordinator.getLastMatchedSeq();
-            debug(String.format("[CHECK-ATOM]  epoch=%d seq=%d role=%d  %-12s %s = %dL",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
-                    receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
-                    val));
-            return val;
+            if (TraceSemantics.isReplayBoundaryForEventType(eventType)) {
+                BirthId b = IdentityMapper.getBirthId(receiver, null, currentSiteId);
+                awaitScheduleBoundary(roleId, buildAtomicPackedType(eventType, b, index), currentSiteId);
+            }
+            return naturalValue;
         } finally {
             isInside.set(false);
         }
@@ -607,16 +449,11 @@ public class ReplayMonitor {
             long tid = Thread.currentThread().getId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) return naturalValue;
-            BirthId b = IdentityMapper.getBirthId(receiver, null, currentSiteId);
-            Object val = ReplayCoordinator.awaitTurnFieldObj(roleId,
-                    buildAtomicPackedType(eventType, b, index), atomicObjSite(b, index), atomicObjCount(b, index),
-                    naturalValue);
-            long seq = ReplayCoordinator.getLastMatchedSeq();
-            debug(String.format("[CHECK-ATOM]  epoch=%d seq=%d role=%d  %-12s %s = %s",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
-                    receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
-                    val != null ? val.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(val)) : "null"));
-            return val;
+            if (TraceSemantics.isReplayBoundaryForEventType(eventType)) {
+                BirthId b = IdentityMapper.getBirthId(receiver, null, currentSiteId);
+                awaitScheduleBoundary(roleId, buildAtomicPackedType(eventType, b, index), currentSiteId);
+            }
+            return naturalValue;
         } finally {
             isInside.set(false);
         }
@@ -629,16 +466,11 @@ public class ReplayMonitor {
             long tid = Thread.currentThread().getId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) return naturalValue;
-            BirthId b = IdentityMapper.getBirthId(receiver, null, currentSiteId);
-            int val = ReplayCoordinator.awaitTurnRmwInt(roleId,
-                    buildAtomicPackedType(eventType, b, index), atomicObjSite(b, index), atomicObjCount(b, index),
-                    naturalValue);
-            long seq = ReplayCoordinator.getLastMatchedSeq();
-            debug(String.format("[CHECK-RMW]   epoch=%d seq=%d role=%d  %-12s %s = %d",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
-                    receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
-                    val));
-            return val;
+            if (TraceSemantics.isReplayBoundaryForEventType(eventType)) {
+                BirthId b = IdentityMapper.getBirthId(receiver, null, currentSiteId);
+                awaitScheduleBoundary(roleId, buildAtomicPackedType(eventType, b, index), currentSiteId);
+            }
+            return naturalValue;
         } finally {
             isInside.set(false);
         }
@@ -651,16 +483,11 @@ public class ReplayMonitor {
             long tid = Thread.currentThread().getId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) return naturalValue;
-            BirthId b = IdentityMapper.getBirthId(receiver, null, currentSiteId);
-            long val = ReplayCoordinator.awaitTurnRmwLong(roleId,
-                    buildAtomicPackedType(eventType, b, index), atomicObjSite(b, index), atomicObjCount(b, index),
-                    naturalValue);
-            long seq = ReplayCoordinator.getLastMatchedSeq();
-            debug(String.format("[CHECK-RMW]   epoch=%d seq=%d role=%d  %-12s %s = %dL",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
-                    receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
-                    val));
-            return val;
+            if (TraceSemantics.isReplayBoundaryForEventType(eventType)) {
+                BirthId b = IdentityMapper.getBirthId(receiver, null, currentSiteId);
+                awaitScheduleBoundary(roleId, buildAtomicPackedType(eventType, b, index), currentSiteId);
+            }
+            return naturalValue;
         } finally {
             isInside.set(false);
         }
@@ -673,46 +500,24 @@ public class ReplayMonitor {
             long tid = Thread.currentThread().getId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
             if (roleId == -1) return naturalValue;
-            BirthId b = IdentityMapper.getBirthId(receiver, null, currentSiteId);
-            Object val = ReplayCoordinator.awaitTurnRmwObj(roleId,
-                    buildAtomicPackedType(eventType, b, index), atomicObjSite(b, index), atomicObjCount(b, index),
-                    naturalValue);
-            long seq = ReplayCoordinator.getLastMatchedSeq();
-            debug(String.format("[CHECK-RMW]   epoch=%d seq=%d role=%d  %-12s %s = %s",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
-                    receiver != null ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver)) : "null",
-                    val != null ? val.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(val)) : "null"));
-            return val;
+            if (TraceSemantics.isReplayBoundaryForEventType(eventType)) {
+                BirthId b = IdentityMapper.getBirthId(receiver, null, currentSiteId);
+                awaitScheduleBoundary(roleId, buildAtomicPackedType(eventType, b, index), currentSiteId);
+            }
+            return naturalValue;
         } finally {
             isInside.set(false);
         }
     }
 
     public static void checkException(Object exception, int siteId) {
-        if (isInside.get()) return;
-        if (exception == null) return;
-        isInside.set(true);
-        try {
-            long tid = Thread.currentThread().getId();
-            int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
-            if (roleId == -1) return;
-
-            BirthId birthId = IdentityMapper.getBirthId(exception, null, siteId);
-            int packedType = BinarySchema.packType(BinarySchema.Event.EXCEPTION_THROW, BinarySchema.Flags.NONE);
-            ReplayCoordinator.awaitTurn(roleId, packedType, birthId.siteId, birthId.count, siteId);
-            long seq = ReplayCoordinator.getLastMatchedSeq();
-            debug(String.format(
-                    "[CHECK-THROW] epoch=%d seq=%d role=%d  %s  site=%d",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId,
-                    exception.getClass().getName(), siteId));
-        } finally {
-            isInside.set(false);
-        }
+        // Exception throws are not replay boundaries in schedule replay.
     }
 
-    // ---- Nondeterministic value injection ----
-    // During replay, instead of calling the real Random/System method, return the captured value.
-    // The call site's siteId is used as the matching key (objSite=0, objCount=siteId).
+    // ---- Legacy nondeterministic replay helpers ----
+    // Schedule replay no longer injects captured values for nondeterministic calls.
+    // These wrappers remain only for compatibility with older instrumentation and
+    // should not be reached once replay bytecode executes the original call.
 
     public static int replayNondetInt(int siteId) {
         if (isInside.get()) return 0;

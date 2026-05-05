@@ -36,7 +36,7 @@ public final class ScheduleDistiller {
         public final String className;
         public final String methodName;
 
-        private ScheduleEntry(long seq, int roleId, int eventType, int rawSiteId, String className, String methodName) {
+        ScheduleEntry(long seq, int roleId, int eventType, int rawSiteId, String className, String methodName) {
             this.seq = seq;
             this.epoch = seq >>> 32;
             this.roleId = roleId;

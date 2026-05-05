@@ -19,7 +19,8 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class ReplayBoundaryRegistry {
     public static final String DEFAULT_FILE = "trace-boundaries.tsv";
 
-    private static final ConcurrentHashMap<Integer, BoundaryMeta> boundaries = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<Integer, ConcurrentHashMap<String, BoundaryMeta>> boundaries =
+            new ConcurrentHashMap<>();
 
     private ReplayBoundaryRegistry() {}
 
@@ -39,21 +40,16 @@ public final class ReplayBoundaryRegistry {
         public String toTsv() {
             return rawSiteId + "\t" + eventType + "\t" + className + "\t" + methodName;
         }
+
+        private String descriptorKey() {
+            return eventType + "\t" + className + "\t" + methodName;
+        }
     }
 
     public static void register(int rawSiteId, int eventType, String className, String methodName) {
         BoundaryMeta next = new BoundaryMeta(rawSiteId, eventType, className, methodName);
-        boundaries.merge(rawSiteId, next, (prev, cur) -> {
-            if (prev.eventType != cur.eventType
-                    || !prev.className.equals(cur.className)
-                    || !prev.methodName.equals(cur.methodName)) {
-                throw new IllegalStateException(
-                        "Replay boundary site collision for rawSiteId=" + rawSiteId
-                                + ": existing=(" + prev.eventType + "," + prev.className + "," + prev.methodName + ")"
-                                + " new=(" + cur.eventType + "," + cur.className + "," + cur.methodName + ")");
-            }
-            return prev;
-        });
+        boundaries.computeIfAbsent(rawSiteId, ignored -> new ConcurrentHashMap<>())
+                .putIfAbsent(next.descriptorKey(), next);
     }
 
     public static void writeDefaultFile() {
@@ -61,8 +57,12 @@ public final class ReplayBoundaryRegistry {
     }
 
     public static void writeToFile(Path path) {
-        List<BoundaryMeta> ordered = new ArrayList<>(boundaries.values());
-        ordered.sort(Comparator.comparingInt(m -> m.rawSiteId));
+        List<BoundaryMeta> ordered = flatten(boundaries);
+        ordered.sort(Comparator
+                .comparingInt((BoundaryMeta m) -> m.rawSiteId)
+                .thenComparingInt(m -> m.eventType)
+                .thenComparing(m -> m.className)
+                .thenComparing(m -> m.methodName));
 
         List<String> lines = new ArrayList<>(ordered.size() + 1);
         lines.add("rawSiteId\teventType\tclassName\tmethodName");
@@ -78,16 +78,12 @@ public final class ReplayBoundaryRegistry {
         }
     }
 
-    public static Map<Integer, BoundaryMeta> snapshot() {
-        return Map.copyOf(boundaries);
+    public static Map<Integer, List<BoundaryMeta>> snapshot() {
+        return materialize(boundaries);
     }
 
-    public static BoundaryMeta get(int rawSiteId) {
-        return boundaries.get(rawSiteId);
-    }
-
-    public static Map<Integer, BoundaryMeta> loadFromFile(Path path) {
-        ConcurrentHashMap<Integer, BoundaryMeta> loaded = new ConcurrentHashMap<>();
+    public static Map<Integer, List<BoundaryMeta>> loadFromFile(Path path) {
+        ConcurrentHashMap<Integer, ConcurrentHashMap<String, BoundaryMeta>> loaded = new ConcurrentHashMap<>();
         try (BufferedReader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
             String line;
             boolean first = true;
@@ -104,28 +100,39 @@ public final class ReplayBoundaryRegistry {
                 int rawSiteId = Integer.parseInt(parts[0]);
                 int eventType = Integer.parseInt(parts[1]);
                 BoundaryMeta next = new BoundaryMeta(rawSiteId, eventType, parts[2], parts[3]);
-                loaded.merge(rawSiteId, next, (prev, cur) -> {
-                    if (prev.eventType != cur.eventType
-                            || !prev.className.equals(cur.className)
-                            || !prev.methodName.equals(cur.methodName)) {
-                        throw new IllegalStateException(
-                                "Replay boundary metadata collision for rawSiteId=" + rawSiteId);
-                    }
-                    return prev;
-                });
+                loaded.computeIfAbsent(rawSiteId, ignored -> new ConcurrentHashMap<>())
+                        .putIfAbsent(next.descriptorKey(), next);
             }
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to read replay boundary metadata from " + path, e);
         }
-        return Map.copyOf(loaded);
-    }
-
-    public static void loadIntoRegistry(Path path) {
-        boundaries.clear();
-        boundaries.putAll(loadFromFile(path));
+        return materialize(loaded);
     }
 
     public static void reset() {
         boundaries.clear();
+    }
+
+    private static List<BoundaryMeta> flatten(
+            ConcurrentHashMap<Integer, ConcurrentHashMap<String, BoundaryMeta>> source) {
+        ArrayList<BoundaryMeta> flattened = new ArrayList<>();
+        for (ConcurrentHashMap<String, BoundaryMeta> byDescriptor : source.values()) {
+            flattened.addAll(byDescriptor.values());
+        }
+        return flattened;
+    }
+
+    private static Map<Integer, List<BoundaryMeta>> materialize(
+            ConcurrentHashMap<Integer, ConcurrentHashMap<String, BoundaryMeta>> source) {
+        ConcurrentHashMap<Integer, List<BoundaryMeta>> result = new ConcurrentHashMap<>();
+        for (Map.Entry<Integer, ConcurrentHashMap<String, BoundaryMeta>> entry : source.entrySet()) {
+            ArrayList<BoundaryMeta> metas = new ArrayList<>(entry.getValue().values());
+            metas.sort(Comparator
+                    .comparingInt((BoundaryMeta m) -> m.eventType)
+                    .thenComparing(m -> m.className)
+                    .thenComparing(m -> m.methodName));
+            result.put(entry.getKey(), List.copyOf(metas));
+        }
+        return Map.copyOf(result);
     }
 }

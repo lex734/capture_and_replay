@@ -2,8 +2,6 @@ package replay;
 
 import common.BinarySchema;
 import common.IdentityMapper;
-import common.ReplayBoundaryRegistry;
-import common.ReplayBoundaryRegistry.BoundaryMeta;
 import common.TraceSemantics;
 import java.nio.MappedByteBuffer;
 import java.util.ArrayList;
@@ -41,6 +39,7 @@ public class ReplayCoordinator {
     // Roles that have called awaitTurn at least once — they're alive in replay
     private static final Set<Integer> activeRoles = ConcurrentHashMap.newKeySet();
     private static final Set<Integer> startedRoles = ConcurrentHashMap.newKeySet();
+    private static final Set<Integer> scheduleRoles = ConcurrentHashMap.newKeySet();
 
     // Map each role to its own sequence of events
     private static final Map<Integer, LinkedList<long[]>> roleQueues = new ConcurrentHashMap<>();
@@ -71,6 +70,7 @@ public class ReplayCoordinator {
         pendingRoles.clear();
         activeRoles.clear();
         startedRoles.clear();
+        scheduleRoles.clear();
         roleQueues.clear();
         roleIdToThread.clear();
         hasDiverged = false;
@@ -127,6 +127,10 @@ public class ReplayCoordinator {
             scheduleEntries.clear();
             scheduleEntries.addAll(entries);
             scheduleEntries.sort(Comparator.comparingLong(e -> e.seq));
+            scheduleRoles.clear();
+            for (ScheduleDistiller.ScheduleEntry entry : scheduleEntries) {
+                scheduleRoles.add(entry.roleId);
+            }
             currentScheduleIdx.set(0);
         }
     }
@@ -159,6 +163,18 @@ public class ReplayCoordinator {
             firstDivergenceInfo = "role=" + roleId + " | " + extra;
             System.err.println("[DIVERGENCE] Replay has structurally diverged: " + firstDivergenceInfo);
             System.err.println("[DIVERGENCE] Synchronization guidance will no longer be applied.");
+            controlLock.notifyAll();
+        }
+    }
+
+    private static void reportInapplicable(int roleId, String extra) {
+        if (hasDiverged) return;
+        synchronized (controlLock) {
+            if (hasDiverged) return;
+            hasDiverged = true;
+            firstDivergenceInfo = "role=" + roleId + " | " + extra;
+            System.err.println("[INAPPLICABLE] Replay is dynamically inapplicable: " + firstDivergenceInfo);
+            System.err.println("[INAPPLICABLE] Synchronization guidance will no longer be applied.");
             controlLock.notifyAll();
         }
     }
@@ -377,10 +393,16 @@ public class ReplayCoordinator {
         }
     }
 
-    public static void awaitScheduleBoundary(int roleId, int packedType, int rawSiteId) {
+    public static void awaitScheduleBoundary(int roleId, int packedType,
+            String className, String methodName) {
+        if (!scheduleRoles.contains(roleId)) {
+            reportInapplicable(roleId,
+                    "role is not present in distilled schedule at boundary "
+                            + className + "." + methodName);
+            return;
+        }
         activateRole(roleId);
         int eventType = packedType & 0xFF;
-        BoundaryMeta actual = ReplayBoundaryRegistry.get(rawSiteId);
 
         synchronized (controlLock) {
             while (true) {
@@ -404,15 +426,9 @@ public class ReplayCoordinator {
                     }
                 }
 
-                if (actual == null) {
-                    reportDivergence(roleId, expected.epoch, expected.eventType, eventType,
-                            "missing replay boundary metadata for rawSiteId=" + rawSiteId);
-                    return;
-                }
-
                 if (expected.eventType == eventType
-                        && expected.className.equals(actual.className)
-                        && expected.methodName.equals(actual.methodName)) {
+                        && expected.className.equals(className)
+                        && expected.methodName.equals(methodName)) {
                     currentScheduleIdx.incrementAndGet();
                     lastMatchedSeq.set(expected.seq);
                     consumeMatchedBoundary(roleId, expected.seq, packedType);
@@ -423,8 +439,7 @@ public class ReplayCoordinator {
                 reportDivergence(roleId, expected.epoch, expected.eventType, eventType,
                         "schedule boundary mismatch: expected="
                                 + expected.className + "." + expected.methodName
-                                + " actual=" + actual.className + "." + actual.methodName
-                                + " rawSiteId=" + rawSiteId);
+                                + " actual=" + className + "." + methodName);
                 return;
             }
         }

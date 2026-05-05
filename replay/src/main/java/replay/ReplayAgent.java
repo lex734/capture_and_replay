@@ -42,7 +42,6 @@ public class ReplayAgent {
             List<ScheduleDistiller.ScheduleEntry> scheduleEntries =
                     ScheduleDistiller.distill(tracePath, boundariesPath);
             ScheduleDistiller.write(schedulePath, scheduleEntries);
-            ReplayBoundaryRegistry.loadIntoRegistry(boundariesPath);
             ReplayCoordinator.loadScheduleArtifact(scheduleEntries);
 
             Path analysisPath = resolveStaticAnalysisPath();

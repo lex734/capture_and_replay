@@ -146,6 +146,7 @@ public class SyncTransformer implements ClassFileTransformer {
     static class SyncClassVisitor extends ClassVisitor {
         private final String className;
         private final ClassLoader loader;
+        private final boolean isReplay;
         private final String monitorClass;
         private final String monitorMethod;
 
@@ -153,7 +154,7 @@ public class SyncTransformer implements ClassFileTransformer {
             super(Opcodes.ASM9, cv);
             this.className = className;
             this.loader = loader;
-            boolean isReplay = "REPLAY".equals(System.getProperty("tool.mode"));
+            this.isReplay = "REPLAY".equals(System.getProperty("tool.mode"));
             this.monitorClass = isReplay ? "replay/ReplayMonitor" : "capture/CaptureMonitor";
             this.monitorMethod = isReplay ? "replaySyncBoundary" : "logSync";
         }
@@ -176,7 +177,7 @@ public class SyncTransformer implements ClassFileTransformer {
 
             if (name.equals("<clinit>")) {
                 MethodVisitor synced = new SyncMethodVisitor(access, descriptor, mv, name, name, loader);
-                return new ClinitMethodVisitor(synced, className, monitorClass, monitorMethod);
+                return new ClinitMethodVisitor(synced, className, monitorClass, monitorMethod, isReplay);
             }
 
             return new SyncMethodVisitor(access, descriptor, mv, className, name, loader);
@@ -197,7 +198,9 @@ public class SyncTransformer implements ClassFileTransformer {
 
         private final boolean isReplay = "REPLAY".equals(System.getProperty("tool.mode"));
         private final String monitorClass = isReplay ? "replay/ReplayMonitor" : "capture/CaptureMonitor";
-        private final String monitorDescriptor = "(ILjava/lang/Object;I)V";
+        private final String monitorDescriptor = isReplay
+                ? "(ILjava/lang/Object;ILjava/lang/String;Ljava/lang/String;)V"
+                : "(ILjava/lang/Object;I)V";
 
         // Guard for the pre-super() window of constructors.
         // Before the super/this constructor call, `this` is `uninitializedThis` and
@@ -214,7 +217,13 @@ public class SyncTransformer implements ClassFileTransformer {
             return opcode >= Opcodes.IASTORE && opcode <= Opcodes.SASTORE;
         }
 
+        private void pushReplayBoundaryDescriptor() {
+            mv.visitLdcInsn(className.replace('/', '.'));
+            mv.visitLdcInsn(methodName);
+        }
+
         private void recordReplayBoundary(int rawSiteId, int eventType) {
+            if (isReplay) return;
             if (!TraceSemantics.isReplayBoundaryForEventType(eventType)) return;
             ReplayBoundaryRegistry.register(rawSiteId, eventType, className.replace('/', '.'), methodName);
         }
@@ -356,7 +365,10 @@ public class SyncTransformer implements ClassFileTransformer {
                 mv.visitLdcInsn(eventType);
                 mv.visitInsn(Opcodes.SWAP);
                 mv.visitLdcInsn(siteId);
-                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, monitorMethod, "(ILjava/lang/Object;I)V", false);
+                if (isReplay) {
+                    pushReplayBoundaryDescriptor();
+                }
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, monitorMethod, monitorDescriptor, false);
                 return;
             }
 
@@ -557,14 +569,16 @@ public class SyncTransformer implements ClassFileTransformer {
                 if (name.equals("lock") && descriptor.equals("()V")) {
                     recordReplayBoundary(siteId, 1);
                     mv.visitLdcInsn(siteId);
+                    pushReplayBoundaryDescriptor();
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayLock",
-                            "(Ljava/util/concurrent/locks/Lock;I)V", false);
+                            "(Ljava/util/concurrent/locks/Lock;ILjava/lang/String;Ljava/lang/String;)V", false);
                     return;
                 } else if (name.equals("unlock") && descriptor.equals("()V")) {
                     recordReplayBoundary(siteId, 2);
                     mv.visitLdcInsn(siteId);
+                    pushReplayBoundaryDescriptor();
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayUnlock",
-                            "(Ljava/util/concurrent/locks/Lock;I)V", false);
+                            "(Ljava/util/concurrent/locks/Lock;ILjava/lang/String;Ljava/lang/String;)V", false);
                     return;
                 } else if (name.equals("newCondition") && descriptor.equals("()Ljava/util/concurrent/locks/Condition;")) {
                     mv.visitLdcInsn(siteId);
@@ -600,44 +614,51 @@ public class SyncTransformer implements ClassFileTransformer {
                 if (name.equals("await") && descriptor.equals("()V")) {
                     recordReplayBoundary(siteId, 15);
                     mv.visitLdcInsn(siteId);
+                    pushReplayBoundaryDescriptor();
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAwait",
-                            "(Ljava/util/concurrent/locks/Condition;I)V", false);
+                            "(Ljava/util/concurrent/locks/Condition;ILjava/lang/String;Ljava/lang/String;)V", false);
                     return;
                 } else if (name.equals("awaitUninterruptibly") && descriptor.equals("()V")) {
                     recordReplayBoundary(siteId, 15);
                     mv.visitLdcInsn(siteId);
+                    pushReplayBoundaryDescriptor();
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAwaitUninterruptibly",
-                            "(Ljava/util/concurrent/locks/Condition;I)V", false);
+                            "(Ljava/util/concurrent/locks/Condition;ILjava/lang/String;Ljava/lang/String;)V", false);
                     return;
                 } else if (name.equals("awaitNanos") && descriptor.equals("(J)J")) {
                     recordReplayBoundary(siteId, 15);
                     mv.visitLdcInsn(siteId);
+                    pushReplayBoundaryDescriptor();
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAwaitNanos",
-                            "(Ljava/util/concurrent/locks/Condition;JI)J", false);
+                            "(Ljava/util/concurrent/locks/Condition;JILjava/lang/String;Ljava/lang/String;)J", false);
                     return;
                 } else if (name.equals("awaitUntil") && descriptor.equals("(Ljava/util/Date;)Z")) {
                     recordReplayBoundary(siteId, 15);
                     mv.visitLdcInsn(siteId);
+                    pushReplayBoundaryDescriptor();
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAwaitUntil",
-                            "(Ljava/util/concurrent/locks/Condition;Ljava/util/Date;I)Z", false);
+                            "(Ljava/util/concurrent/locks/Condition;Ljava/util/Date;ILjava/lang/String;Ljava/lang/String;)Z", false);
                     return;
                 } else if (name.equals("await") && descriptor.equals("(JLjava/util/concurrent/TimeUnit;)Z")) {
                     recordReplayBoundary(siteId, 15);
                     mv.visitLdcInsn(siteId);
+                    pushReplayBoundaryDescriptor();
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAwaitTimed",
-                            "(Ljava/util/concurrent/locks/Condition;JLjava/util/concurrent/TimeUnit;I)Z", false);
+                            "(Ljava/util/concurrent/locks/Condition;JLjava/util/concurrent/TimeUnit;ILjava/lang/String;Ljava/lang/String;)Z", false);
                     return;
                 } else if (name.equals("signal") && descriptor.equals("()V")) {
                     recordReplayBoundary(siteId, 16);
                     mv.visitLdcInsn(siteId);
+                    pushReplayBoundaryDescriptor();
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replaySignal",
-                            "(Ljava/util/concurrent/locks/Condition;I)V", false);
+                            "(Ljava/util/concurrent/locks/Condition;ILjava/lang/String;Ljava/lang/String;)V", false);
                     return;
                 } else if (name.equals("signalAll") && descriptor.equals("()V")) {
                     recordReplayBoundary(siteId, 17);
                     mv.visitLdcInsn(siteId);
+                    pushReplayBoundaryDescriptor();
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replaySignalAll",
-                            "(Ljava/util/concurrent/locks/Condition;I)V", false);
+                            "(Ljava/util/concurrent/locks/Condition;ILjava/lang/String;Ljava/lang/String;)V", false);
                     return;
                 }
             }
@@ -680,8 +701,9 @@ public class SyncTransformer implements ClassFileTransformer {
                     if (isReplay) {
                         recordReplayBoundary(siteId, 9);
                         mv.visitLdcInsn(siteId);
+                        pushReplayBoundaryDescriptor();
                         mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayThreadStart",
-                                "(Ljava/lang/Thread;I)V", false);
+                                "(Ljava/lang/Thread;ILjava/lang/String;Ljava/lang/String;)V", false);
                     } else {
                         recordReplayBoundary(siteId, 9);
                         mv.visitLdcInsn(siteId);
@@ -843,6 +865,7 @@ public class SyncTransformer implements ClassFileTransformer {
                             }
                             mv.visitLdcInsn(atomicEventType);
                             mv.visitLdcInsn(siteId);
+                            pushReplayBoundaryDescriptor();
                             if (atomicEventType == 22) {
                                 emitAtomicRmwCheckCall(returnTypeChar);
                             } else {
@@ -860,6 +883,7 @@ public class SyncTransformer implements ClassFileTransformer {
                             }
                             mv.visitLdcInsn(atomicEventType);
                             mv.visitLdcInsn(siteId);
+                            pushReplayBoundaryDescriptor();
                             if (atomicEventType == 22) {
                                 int sort = valueType.getSort();
                                 char valueChar = (sort == Type.LONG || sort == Type.DOUBLE)
@@ -969,6 +993,9 @@ public class SyncTransformer implements ClassFileTransformer {
             mv.visitLdcInsn(type);
             mv.visitInsn(Opcodes.SWAP);
             mv.visitLdcInsn(siteId);
+            if (isReplay) {
+                pushReplayBoundaryDescriptor();
+            }
             mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, monitorMethod, monitorDescriptor, false);
         }
 
@@ -1003,26 +1030,26 @@ public class SyncTransformer implements ClassFileTransformer {
             int sort = valueType.getSort();
             if (sort == Type.LONG) {
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAtomicLong",
-                        "(JLjava/lang/Object;III)J", false);
+                        "(JLjava/lang/Object;IIILjava/lang/String;Ljava/lang/String;)J", false);
             } else if (sort == Type.OBJECT || sort == Type.ARRAY) {
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAtomicObj",
-                        "(Ljava/lang/Object;Ljava/lang/Object;III)Ljava/lang/Object;", false);
+                        "(Ljava/lang/Object;Ljava/lang/Object;IIILjava/lang/String;Ljava/lang/String;)Ljava/lang/Object;", false);
             } else {
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAtomicInt",
-                        "(ILjava/lang/Object;III)I", false);
+                        "(ILjava/lang/Object;IIILjava/lang/String;Ljava/lang/String;)I", false);
             }
         }
 
         private void emitAtomicCheckCall(char returnTypeChar) {
             if (returnTypeChar == 'J' || returnTypeChar == 'D') {
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAtomicLong",
-                        "(JLjava/lang/Object;III)J", false);
+                        "(JLjava/lang/Object;IIILjava/lang/String;Ljava/lang/String;)J", false);
             } else if (returnTypeChar == 'L' || returnTypeChar == '[') {
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAtomicObj",
-                        "(Ljava/lang/Object;Ljava/lang/Object;III)Ljava/lang/Object;", false);
+                        "(Ljava/lang/Object;Ljava/lang/Object;IIILjava/lang/String;Ljava/lang/String;)Ljava/lang/Object;", false);
             } else {
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAtomicInt",
-                        "(ILjava/lang/Object;III)I", false);
+                        "(ILjava/lang/Object;IIILjava/lang/String;Ljava/lang/String;)I", false);
             }
         }
 
@@ -1030,13 +1057,13 @@ public class SyncTransformer implements ClassFileTransformer {
         private void emitAtomicRmwCheckCall(char returnTypeChar) {
             if (returnTypeChar == 'J' || returnTypeChar == 'D') {
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAtomicRmwLong",
-                        "(JLjava/lang/Object;III)J", false);
+                        "(JLjava/lang/Object;IIILjava/lang/String;Ljava/lang/String;)J", false);
             } else if (returnTypeChar == 'L' || returnTypeChar == '[') {
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAtomicRmwObj",
-                        "(Ljava/lang/Object;Ljava/lang/Object;III)Ljava/lang/Object;", false);
+                        "(Ljava/lang/Object;Ljava/lang/Object;IIILjava/lang/String;Ljava/lang/String;)Ljava/lang/Object;", false);
             } else {
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAtomicRmwInt",
-                        "(ILjava/lang/Object;III)I", false);
+                        "(ILjava/lang/Object;IIILjava/lang/String;Ljava/lang/String;)I", false);
             }
         }
 
@@ -1152,8 +1179,11 @@ public class SyncTransformer implements ClassFileTransformer {
                  */
                 int valLocal   = newLocal(fieldType);
 
-                // New checkField descriptor: (naturalValue, eventType, owner, siteId, vol, stat, name, ownerName)
-                String checkDesc = "(" + retDesc + "ILjava/lang/Object;IZZLjava/lang/String;Ljava/lang/String;)" + retDesc;
+                // New checkField descriptor: (naturalValue, eventType, owner, siteId,
+                // vol, stat, fieldName, ownerName, className, methodName)
+                String checkDesc = "(" + retDesc
+                        + "ILjava/lang/Object;IZZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)"
+                        + retDesc;
 
                 if (opcode == Opcodes.GETFIELD || opcode == Opcodes.GETSTATIC) {
                     // --- READ ---
@@ -1181,6 +1211,7 @@ public class SyncTransformer implements ClassFileTransformer {
                     mv.visitInsn(isStatic   ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
                     mv.visitLdcInsn(name);
                     mv.visitLdcInsn(owner);
+                    pushReplayBoundaryDescriptor();
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkField" + typeSuffix,
                             checkDesc, false);
                     // Stack: [result] — always the natural value.
@@ -1209,6 +1240,7 @@ public class SyncTransformer implements ClassFileTransformer {
                     mv.visitInsn(isStatic   ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
                     mv.visitLdcInsn(name);
                     mv.visitLdcInsn(owner);
+                    pushReplayBoundaryDescriptor();
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkField" + typeSuffix,
                             checkDesc, false);
                     // Stack: [approvedValue] — write this to the field.
@@ -1333,13 +1365,15 @@ public class SyncTransformer implements ClassFileTransformer {
         private final String className;
         private final String monitorClass;
         private final String monitorMethod;
+        private final boolean isReplay;
 
         public ClinitMethodVisitor(MethodVisitor mv, String className,
-                                String monitorClass, String monitorMethod) {
+                                String monitorClass, String monitorMethod, boolean isReplay) {
             super(Opcodes.ASM9, mv);
             this.className = className;
             this.monitorClass = monitorClass;
             this.monitorMethod = monitorMethod;
+            this.isReplay = isReplay;
         }
 
         @Override
@@ -1349,17 +1383,23 @@ public class SyncTransformer implements ClassFileTransformer {
             // Log CLASS_INIT_BEGIN at the start of <clinit>
             String beginSite = className + ".<clinit>#begin";
             int beginSiteId = SyncTransformer.registerSiteId(beginSite);
-            if (TraceSemantics.isReplayBoundaryForEventType(23)) {
+            if (!isReplay && TraceSemantics.isReplayBoundaryForEventType(23)) {
                 ReplayBoundaryRegistry.register(beginSiteId, 23, className.replace('/', '.'), "<clinit>");
             }
             mv.visitLdcInsn(23); // BinarySchema.Event.CLASS_INIT_BEGIN
             mv.visitInsn(Opcodes.ACONST_NULL);
             mv.visitLdcInsn(beginSiteId);
+            if (isReplay) {
+                mv.visitLdcInsn(className.replace('/', '.'));
+                mv.visitLdcInsn("<clinit>");
+            }
             mv.visitMethodInsn(
                     Opcodes.INVOKESTATIC,
                     monitorClass,
                     monitorMethod,
-                    "(ILjava/lang/Object;I)V",
+                    isReplay
+                            ? "(ILjava/lang/Object;ILjava/lang/String;Ljava/lang/String;)V"
+                            : "(ILjava/lang/Object;I)V",
                     false);
         }
 
@@ -1369,17 +1409,23 @@ public class SyncTransformer implements ClassFileTransformer {
             if (opcode == Opcodes.RETURN) {
                 String endSite = className + ".<clinit>#end";
                 int endSiteId = SyncTransformer.registerSiteId(endSite);
-                if (TraceSemantics.isReplayBoundaryForEventType(24)) {
+                if (!isReplay && TraceSemantics.isReplayBoundaryForEventType(24)) {
                     ReplayBoundaryRegistry.register(endSiteId, 24, className.replace('/', '.'), "<clinit>");
                 }
                 mv.visitLdcInsn(24); // BinarySchema.Event.CLASS_INIT_END
                 mv.visitInsn(Opcodes.ACONST_NULL);
                 mv.visitLdcInsn(endSiteId);
+                if (isReplay) {
+                    mv.visitLdcInsn(className.replace('/', '.'));
+                    mv.visitLdcInsn("<clinit>");
+                }
                 mv.visitMethodInsn(
                         Opcodes.INVOKESTATIC,
                         monitorClass,
                         monitorMethod,
-                        "(ILjava/lang/Object;I)V",
+                        isReplay
+                                ? "(ILjava/lang/Object;ILjava/lang/String;Ljava/lang/String;)V"
+                                : "(ILjava/lang/Object;I)V",
                         false);
             }
 

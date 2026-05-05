@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Distills the rich capture trace into a schedule-oriented boundary artifact.
@@ -58,7 +59,7 @@ public final class ScheduleDistiller {
     }
 
     public static List<ScheduleEntry> distill(Path tracePath, Path metadataPath) {
-        Map<Integer, BoundaryMeta> metadata = ReplayBoundaryRegistry.loadFromFile(metadataPath);
+        Map<Integer, List<BoundaryMeta>> metadata = ReplayBoundaryRegistry.loadFromFile(metadataPath);
         ArrayList<ScheduleEntry> entries = new ArrayList<>();
 
         try (FileChannel channel = FileChannel.open(tracePath, StandardOpenOption.READ)) {
@@ -73,14 +74,8 @@ public final class ScheduleDistiller {
                 int packedType = buffer.getInt(pos + 16);
                 int eventType = packedType & 0xFF;
                 int rawSiteId = extractBoundarySiteId(buffer, pos);
-                BoundaryMeta meta = metadata.get(rawSiteId);
+                BoundaryMeta meta = resolveBoundaryMeta(metadata.get(rawSiteId), rawSiteId, eventType);
                 if (meta == null) continue;
-                if (meta.eventType != eventType) {
-                    throw new IllegalStateException(
-                            "Boundary metadata mismatch for rawSiteId=" + rawSiteId
-                                    + ": metadata eventType=" + meta.eventType
-                                    + " trace eventType=" + eventType);
-                }
 
                 int roleId = (int) buffer.getLong(pos + 8);
                 entries.add(new ScheduleEntry(seq, roleId, eventType, rawSiteId, meta.className, meta.methodName));
@@ -95,6 +90,32 @@ public final class ScheduleDistiller {
 
     private static int extractBoundarySiteId(MappedByteBuffer buffer, int pos) {
         return buffer.getInt(pos + 32);
+    }
+
+    private static BoundaryMeta resolveBoundaryMeta(List<BoundaryMeta> candidates, int rawSiteId, int eventType) {
+        if (candidates == null || candidates.isEmpty()) {
+            return null;
+        }
+
+        BoundaryMeta match = null;
+        for (BoundaryMeta candidate : candidates) {
+            if (candidate.eventType != eventType) {
+                continue;
+            }
+            if (match == null) {
+                match = candidate;
+                continue;
+            }
+            if (!Objects.equals(match.className, candidate.className)
+                    || !Objects.equals(match.methodName, candidate.methodName)) {
+                throw new IllegalStateException(
+                        "Ambiguous boundary metadata for rawSiteId=" + rawSiteId
+                                + " eventType=" + eventType
+                                + ": (" + match.className + "," + match.methodName + ") vs ("
+                                + candidate.className + "," + candidate.methodName + ")");
+            }
+        }
+        return match;
     }
 
     public static void write(Path outputPath, List<ScheduleEntry> entries) {

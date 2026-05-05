@@ -22,13 +22,15 @@ import java.util.concurrent.locks.ReentrantLock;
 public class ReplayMonitor {
     private static final ThreadLocal<Boolean> isInside = ThreadLocal.withInitial(() -> false);
 
-    private static void awaitScheduleBoundary(int roleId, int packedType, int currentSiteId) {
-        ReplayCoordinator.awaitScheduleBoundary(roleId, packedType, currentSiteId);
+    private static void awaitScheduleBoundary(int roleId, int packedType,
+            String className, String methodName) {
+        ReplayCoordinator.awaitScheduleBoundary(roleId, packedType, className, methodName);
     }
 
     // ---- Sync events (monitor enter/exit, thread lifecycle, wait/notify, park/unpark) ----
 
-    public static void replaySyncBoundary(int eventType, Object lock, int currentSiteId) {
+    public static void replaySyncBoundary(int eventType, Object lock, int currentSiteId,
+            String className, String methodName) {
         if (isInside.get()) return;
         if (lock == null && eventType != BinarySchema.Event.THREAD_PARK
             && eventType != BinarySchema.Event.THREAD_SLEEP
@@ -44,7 +46,7 @@ public class ReplayMonitor {
 
             int packedType = (eventType & 0xFF) | (BinarySchema.Flags.NONE << 8);
 
-            awaitScheduleBoundary(roleId, packedType, currentSiteId);
+            awaitScheduleBoundary(roleId, packedType, className, methodName);
             long seq = ReplayCoordinator.getLastMatchedSeq();
             debug(String.format(
                     "[CHECK-SYNC]  epoch=%d seq=%d role=%d  %-24s lock=%s  site=%d",
@@ -56,7 +58,8 @@ public class ReplayMonitor {
         }
     }
 
-    public static void replayThreadStart(Thread thread, int currentSiteId) {
+    public static void replayThreadStart(Thread thread, int currentSiteId,
+            String className, String methodName) {
         if (thread == null) return;
         if (isInside.get()) {
             thread.start();
@@ -72,13 +75,14 @@ public class ReplayMonitor {
             if (roleId == -1) return;
 
             int packedType = BinarySchema.packType(BinarySchema.Event.THREAD_START, BinarySchema.Flags.NONE);
-            awaitScheduleBoundary(roleId, packedType, currentSiteId);
+            awaitScheduleBoundary(roleId, packedType, className, methodName);
         } finally {
             isInside.set(false);
         }
     }
 
-    public static void replayLock(Lock lock, int currentSiteId) {
+    public static void replayLock(Lock lock, int currentSiteId,
+            String className, String methodName) {
         if (isInside.get() || lock == null) {
             if (lock != null) lock.lock();
             return;
@@ -96,13 +100,14 @@ public class ReplayMonitor {
             // Capture records MONITOR_ENTER after successful acquisition. Replay must do
             // the same so lock-dependent control flow (for example isLocked()) observes
             // natural ownership state before matching the event.
-            awaitScheduleBoundary(roleId, packedType, currentSiteId);
+            awaitScheduleBoundary(roleId, packedType, className, methodName);
         } finally {
             isInside.set(false);
         }
     }
 
-    public static void replayUnlock(Lock lock, int currentSiteId) {
+    public static void replayUnlock(Lock lock, int currentSiteId,
+            String className, String methodName) {
         if (isInside.get() || lock == null) {
             if (lock != null) {
                 try {
@@ -136,7 +141,7 @@ public class ReplayMonitor {
                 System.err.println("[DIVERGENCE] replayUnlock: unlock without ownership; skipping sync consume");
                 return;
             }
-            awaitScheduleBoundary(roleId, packedType, currentSiteId);
+            awaitScheduleBoundary(roleId, packedType, className, methodName);
         } finally {
             isInside.set(false);
         }
@@ -155,85 +160,92 @@ public class ReplayMonitor {
         }
     }
 
-    private static void awaitConditionBoundary(Condition condition, int currentSiteId) {
+    private static void awaitConditionBoundary(Condition condition, int currentSiteId,
+            String className, String methodName) {
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         if (roleId == -1) return;
         int packedType = BinarySchema.packType(BinarySchema.Event.THREAD_WAIT, BinarySchema.Flags.NONE);
-        awaitScheduleBoundary(roleId, packedType, currentSiteId);
+        awaitScheduleBoundary(roleId, packedType, className, methodName);
     }
 
-    public static void replayAwait(Condition condition, int currentSiteId) throws InterruptedException {
+    public static void replayAwait(Condition condition, int currentSiteId,
+            String className, String methodName) throws InterruptedException {
         if (isInside.get() || condition == null) {
             if (condition != null) condition.await();
             return;
         }
         isInside.set(true);
         try {
-            awaitConditionBoundary(condition, currentSiteId);
+            awaitConditionBoundary(condition, currentSiteId, className, methodName);
             condition.await();
         } finally {
             isInside.set(false);
         }
     }
 
-    public static void replayAwaitUninterruptibly(Condition condition, int currentSiteId) {
+    public static void replayAwaitUninterruptibly(Condition condition, int currentSiteId,
+            String className, String methodName) {
         if (isInside.get() || condition == null) {
             if (condition != null) condition.awaitUninterruptibly();
             return;
         }
         isInside.set(true);
         try {
-            awaitConditionBoundary(condition, currentSiteId);
+            awaitConditionBoundary(condition, currentSiteId, className, methodName);
             condition.awaitUninterruptibly();
         } finally {
             isInside.set(false);
         }
     }
 
-    public static long replayAwaitNanos(Condition condition, long nanosTimeout, int currentSiteId)
+    public static long replayAwaitNanos(Condition condition, long nanosTimeout, int currentSiteId,
+            String className, String methodName)
             throws InterruptedException {
         if (isInside.get() || condition == null) {
             return condition != null ? condition.awaitNanos(nanosTimeout) : 0L;
         }
         isInside.set(true);
         try {
-            awaitConditionBoundary(condition, currentSiteId);
+            awaitConditionBoundary(condition, currentSiteId, className, methodName);
             return condition.awaitNanos(nanosTimeout);
         } finally {
             isInside.set(false);
         }
     }
 
-    public static boolean replayAwaitUntil(Condition condition, Date deadline, int currentSiteId)
+    public static boolean replayAwaitUntil(Condition condition, Date deadline, int currentSiteId,
+            String className, String methodName)
             throws InterruptedException {
         if (isInside.get() || condition == null) {
             return condition != null && condition.awaitUntil(deadline);
         }
         isInside.set(true);
         try {
-            awaitConditionBoundary(condition, currentSiteId);
+            awaitConditionBoundary(condition, currentSiteId, className, methodName);
             return condition.awaitUntil(deadline);
         } finally {
             isInside.set(false);
         }
     }
 
-    public static boolean replayAwaitTimed(Condition condition, long time, TimeUnit unit, int currentSiteId)
+    public static boolean replayAwaitTimed(Condition condition, long time, TimeUnit unit, int currentSiteId,
+            String className, String methodName)
             throws InterruptedException {
         if (isInside.get() || condition == null) {
             return condition != null && condition.await(time, unit);
         }
         isInside.set(true);
         try {
-            awaitConditionBoundary(condition, currentSiteId);
+            awaitConditionBoundary(condition, currentSiteId, className, methodName);
             return condition.await(time, unit);
         } finally {
             isInside.set(false);
         }
     }
 
-    public static void replaySignal(Condition condition, int currentSiteId) {
+    public static void replaySignal(Condition condition, int currentSiteId,
+            String className, String methodName) {
         if (isInside.get() || condition == null) {
             if (condition != null) condition.signal();
             return;
@@ -245,14 +257,15 @@ public class ReplayMonitor {
             condition.signal();
             if (roleId != -1) {
                 int packedType = BinarySchema.packType(BinarySchema.Event.THREAD_NOTIFY, BinarySchema.Flags.NONE);
-                awaitScheduleBoundary(roleId, packedType, currentSiteId);
+                awaitScheduleBoundary(roleId, packedType, className, methodName);
             }
         } finally {
             isInside.set(false);
         }
     }
 
-    public static void replaySignalAll(Condition condition, int currentSiteId) {
+    public static void replaySignalAll(Condition condition, int currentSiteId,
+            String className, String methodName) {
         if (isInside.get() || condition == null) {
             if (condition != null) condition.signalAll();
             return;
@@ -264,7 +277,7 @@ public class ReplayMonitor {
             condition.signalAll();
             if (roleId != -1) {
                 int packedType = BinarySchema.packType(BinarySchema.Event.THREAD_NOTIFY_ALL, BinarySchema.Flags.NONE);
-                awaitScheduleBoundary(roleId, packedType, currentSiteId);
+                awaitScheduleBoundary(roleId, packedType, className, methodName);
             }
         } finally {
             isInside.set(false);
@@ -291,7 +304,8 @@ public class ReplayMonitor {
     }
 
     public static int checkFieldInt(int naturalValue, int eventType, Object owner, int currentSiteId,
-            boolean isVolatile, boolean isStatic, String fieldName, String ownerName) {
+            boolean isVolatile, boolean isStatic, String fieldName, String ownerName,
+            String className, String methodName) {
         if (isInside.get()) return naturalValue;
         isInside.set(true);
         try {
@@ -300,7 +314,7 @@ public class ReplayMonitor {
                     isVolatile, isStatic, eventType, packed, site, count);
             if (roleId == -1) return naturalValue;
             if (TraceSemantics.isReplayBoundary(packed[0])) {
-                awaitScheduleBoundary(roleId, packed[0], currentSiteId);
+                awaitScheduleBoundary(roleId, packed[0], className, methodName);
                 return naturalValue;
             }
             return naturalValue;
@@ -310,7 +324,8 @@ public class ReplayMonitor {
     }
 
     public static long checkFieldLong(long naturalValue, int eventType, Object owner, int currentSiteId,
-            boolean isVolatile, boolean isStatic, String fieldName, String ownerName) {
+            boolean isVolatile, boolean isStatic, String fieldName, String ownerName,
+            String className, String methodName) {
         if (isInside.get()) return naturalValue;
         isInside.set(true);
         try {
@@ -319,7 +334,7 @@ public class ReplayMonitor {
                     isVolatile, isStatic, eventType, packed, site, count);
             if (roleId == -1) return naturalValue;
             if (TraceSemantics.isReplayBoundary(packed[0])) {
-                awaitScheduleBoundary(roleId, packed[0], currentSiteId);
+                awaitScheduleBoundary(roleId, packed[0], className, methodName);
                 return naturalValue;
             }
             return naturalValue;
@@ -329,7 +344,8 @@ public class ReplayMonitor {
     }
 
     public static Object checkFieldObj(Object naturalValue, int eventType, Object owner, int currentSiteId,
-            boolean isVolatile, boolean isStatic, String fieldName, String ownerName) {
+            boolean isVolatile, boolean isStatic, String fieldName, String ownerName,
+            String className, String methodName) {
         if (isInside.get()) return naturalValue;
         isInside.set(true);
         try {
@@ -338,7 +354,7 @@ public class ReplayMonitor {
                     isVolatile, isStatic, eventType, packed, site, count);
             if (roleId == -1) return naturalValue;
             if (TraceSemantics.isReplayBoundary(packed[0])) {
-                awaitScheduleBoundary(roleId, packed[0], currentSiteId);
+                awaitScheduleBoundary(roleId, packed[0], className, methodName);
                 return naturalValue;
             }
             return naturalValue;
@@ -395,7 +411,8 @@ public class ReplayMonitor {
     // Atomic operations execute naturally. Replay only coordinates schedule
     // boundaries; it does not inject captured values.
 
-    public static int replayAtomicInt(int naturalValue, Object receiver, int index, int eventType, int currentSiteId) {
+    public static int replayAtomicInt(int naturalValue, Object receiver, int index,
+            int eventType, int currentSiteId, String className, String methodName) {
         if (isInside.get()) return naturalValue;
         isInside.set(true);
         try {
@@ -404,7 +421,8 @@ public class ReplayMonitor {
             if (roleId == -1) return naturalValue;
             if (TraceSemantics.isReplayBoundaryForEventType(eventType)) {
                 BirthId b = IdentityMapper.getBirthId(receiver, null, currentSiteId);
-                awaitScheduleBoundary(roleId, buildAtomicPackedType(eventType, b, index), currentSiteId);
+                awaitScheduleBoundary(roleId, buildAtomicPackedType(eventType, b, index),
+                        className, methodName);
             }
             return naturalValue;
         } finally {
@@ -412,7 +430,8 @@ public class ReplayMonitor {
         }
     }
 
-    public static long replayAtomicLong(long naturalValue, Object receiver, int index, int eventType, int currentSiteId) {
+    public static long replayAtomicLong(long naturalValue, Object receiver, int index,
+            int eventType, int currentSiteId, String className, String methodName) {
         if (isInside.get()) return naturalValue;
         isInside.set(true);
         try {
@@ -421,7 +440,8 @@ public class ReplayMonitor {
             if (roleId == -1) return naturalValue;
             if (TraceSemantics.isReplayBoundaryForEventType(eventType)) {
                 BirthId b = IdentityMapper.getBirthId(receiver, null, currentSiteId);
-                awaitScheduleBoundary(roleId, buildAtomicPackedType(eventType, b, index), currentSiteId);
+                awaitScheduleBoundary(roleId, buildAtomicPackedType(eventType, b, index),
+                        className, methodName);
             }
             return naturalValue;
         } finally {
@@ -429,7 +449,8 @@ public class ReplayMonitor {
         }
     }
 
-    public static Object replayAtomicObj(Object naturalValue, Object receiver, int index, int eventType, int currentSiteId) {
+    public static Object replayAtomicObj(Object naturalValue, Object receiver, int index,
+            int eventType, int currentSiteId, String className, String methodName) {
         if (isInside.get()) return naturalValue;
         isInside.set(true);
         try {
@@ -438,7 +459,8 @@ public class ReplayMonitor {
             if (roleId == -1) return naturalValue;
             if (TraceSemantics.isReplayBoundaryForEventType(eventType)) {
                 BirthId b = IdentityMapper.getBirthId(receiver, null, currentSiteId);
-                awaitScheduleBoundary(roleId, buildAtomicPackedType(eventType, b, index), currentSiteId);
+                awaitScheduleBoundary(roleId, buildAtomicPackedType(eventType, b, index),
+                        className, methodName);
             }
             return naturalValue;
         } finally {
@@ -446,7 +468,8 @@ public class ReplayMonitor {
         }
     }
 
-    public static int replayAtomicRmwInt(int naturalValue, Object receiver, int index, int eventType, int currentSiteId) {
+    public static int replayAtomicRmwInt(int naturalValue, Object receiver, int index,
+            int eventType, int currentSiteId, String className, String methodName) {
         if (isInside.get()) return naturalValue;
         isInside.set(true);
         try {
@@ -455,7 +478,8 @@ public class ReplayMonitor {
             if (roleId == -1) return naturalValue;
             if (TraceSemantics.isReplayBoundaryForEventType(eventType)) {
                 BirthId b = IdentityMapper.getBirthId(receiver, null, currentSiteId);
-                awaitScheduleBoundary(roleId, buildAtomicPackedType(eventType, b, index), currentSiteId);
+                awaitScheduleBoundary(roleId, buildAtomicPackedType(eventType, b, index),
+                        className, methodName);
             }
             return naturalValue;
         } finally {
@@ -463,7 +487,8 @@ public class ReplayMonitor {
         }
     }
 
-    public static long replayAtomicRmwLong(long naturalValue, Object receiver, int index, int eventType, int currentSiteId) {
+    public static long replayAtomicRmwLong(long naturalValue, Object receiver, int index,
+            int eventType, int currentSiteId, String className, String methodName) {
         if (isInside.get()) return naturalValue;
         isInside.set(true);
         try {
@@ -472,7 +497,8 @@ public class ReplayMonitor {
             if (roleId == -1) return naturalValue;
             if (TraceSemantics.isReplayBoundaryForEventType(eventType)) {
                 BirthId b = IdentityMapper.getBirthId(receiver, null, currentSiteId);
-                awaitScheduleBoundary(roleId, buildAtomicPackedType(eventType, b, index), currentSiteId);
+                awaitScheduleBoundary(roleId, buildAtomicPackedType(eventType, b, index),
+                        className, methodName);
             }
             return naturalValue;
         } finally {
@@ -480,7 +506,8 @@ public class ReplayMonitor {
         }
     }
 
-    public static Object replayAtomicRmwObj(Object naturalValue, Object receiver, int index, int eventType, int currentSiteId) {
+    public static Object replayAtomicRmwObj(Object naturalValue, Object receiver, int index,
+            int eventType, int currentSiteId, String className, String methodName) {
         if (isInside.get()) return naturalValue;
         isInside.set(true);
         try {
@@ -489,7 +516,8 @@ public class ReplayMonitor {
             if (roleId == -1) return naturalValue;
             if (TraceSemantics.isReplayBoundaryForEventType(eventType)) {
                 BirthId b = IdentityMapper.getBirthId(receiver, null, currentSiteId);
-                awaitScheduleBoundary(roleId, buildAtomicPackedType(eventType, b, index), currentSiteId);
+                awaitScheduleBoundary(roleId, buildAtomicPackedType(eventType, b, index),
+                        className, methodName);
             }
             return naturalValue;
         } finally {
@@ -513,10 +541,6 @@ public class ReplayMonitor {
         int nextRole = (parentRole != -1)
                 ? ReplayCoordinator.peekChildRoleFromThreadStart(parentRole)
                 : -1;
-        if (nextRole == -1) {
-            // Fallback: no THREAD_START found in parent queue — use sequence order.
-            nextRole = ReplayCoordinator.peekNextPendingRole();
-        }
         if (nextRole == -1) return;
 
         IdentityMapper.preAssignRole(tid, nextRole);

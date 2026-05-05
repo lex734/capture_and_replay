@@ -155,7 +155,7 @@ public class SyncTransformer implements ClassFileTransformer {
             this.loader = loader;
             boolean isReplay = "REPLAY".equals(System.getProperty("tool.mode"));
             this.monitorClass = isReplay ? "replay/ReplayMonitor" : "capture/CaptureMonitor";
-            this.monitorMethod = isReplay ? "checkSync" : "logSync";
+            this.monitorMethod = isReplay ? "replaySyncBoundary" : "logSync";
         }
 
         @Override
@@ -345,7 +345,7 @@ public class SyncTransformer implements ClassFileTransformer {
             }
             // Handle Intrinsic Locks
             if (opcode == Opcodes.MONITORENTER || opcode == Opcodes.MONITOREXIT) {
-                String monitorMethod = isReplay ? "checkSync" : "logSync";
+                String monitorMethod = isReplay ? "replaySyncBoundary" : "logSync";
                 int eventType = (opcode == Opcodes.MONITORENTER) ? 1 : 2;
                 int siteId = SyncTransformer.registerSiteId(className + "." + methodName + "#" + instructionId++);
                 recordReplayBoundary(siteId, eventType);
@@ -405,7 +405,7 @@ public class SyncTransformer implements ClassFileTransformer {
                         mv.visitVarInsn(Opcodes.ALOAD, arrLocal);
                         mv.visitVarInsn(Opcodes.ILOAD, idxLocal);
                         mv.visitLdcInsn(siteId);
-                        String arrayReplayMethod = isObjOp ? "checkArrayObjNoInject" : "checkArray" + typeSuffix;
+                        String arrayReplayMethod = "checkArray" + typeSuffix;
                         mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, arrayReplayMethod, checkDesc, false);
                         // For object arrays, the verifier tracks the natural AALOAD type
                         // (for example ObjType) through the local. The replay helper
@@ -429,7 +429,7 @@ public class SyncTransformer implements ClassFileTransformer {
                         mv.visitVarInsn(Opcodes.ALOAD, arrLocal);
                         mv.visitVarInsn(Opcodes.ILOAD, idxLocal);
                         mv.visitLdcInsn(siteId);
-                        String arrayReplayMethod = isObjOp ? "checkArrayObjNoInject" : "checkArray" + typeSuffix;
+                        String arrayReplayMethod = "checkArray" + typeSuffix;
                         mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, arrayReplayMethod, checkDesc, false);
                         // Stack: [approvedValue]
                         int resultLocal = newLocal(elemType);
@@ -964,7 +964,7 @@ public class SyncTransformer implements ClassFileTransformer {
         // Helper to keep the code clean and ensure the stack [eventType, object, site]
         // is correct
         private void logSyncCall(int type, int siteId) {
-            String monitorMethod = isReplay ? "checkSync" : "logSync";
+            String monitorMethod = isReplay ? "replaySyncBoundary" : "logSync";
             recordReplayBoundary(siteId, type);
             mv.visitLdcInsn(type);
             mv.visitInsn(Opcodes.SWAP);
@@ -1002,26 +1002,26 @@ public class SyncTransformer implements ClassFileTransformer {
         private void emitAtomicCheckCall(Type valueType) {
             int sort = valueType.getSort();
             if (sort == Type.LONG) {
-                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkAtomicLong",
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAtomicLong",
                         "(JLjava/lang/Object;III)J", false);
             } else if (sort == Type.OBJECT || sort == Type.ARRAY) {
-                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkAtomicObj",
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAtomicObj",
                         "(Ljava/lang/Object;Ljava/lang/Object;III)Ljava/lang/Object;", false);
             } else {
-                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkAtomicInt",
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAtomicInt",
                         "(ILjava/lang/Object;III)I", false);
             }
         }
 
         private void emitAtomicCheckCall(char returnTypeChar) {
             if (returnTypeChar == 'J' || returnTypeChar == 'D') {
-                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkAtomicLong",
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAtomicLong",
                         "(JLjava/lang/Object;III)J", false);
             } else if (returnTypeChar == 'L' || returnTypeChar == '[') {
-                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkAtomicObj",
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAtomicObj",
                         "(Ljava/lang/Object;Ljava/lang/Object;III)Ljava/lang/Object;", false);
             } else {
-                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkAtomicInt",
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAtomicInt",
                         "(ILjava/lang/Object;III)I", false);
             }
         }
@@ -1029,13 +1029,13 @@ public class SyncTransformer implements ClassFileTransformer {
         // RMW: execute + divergence check; (naturalValue, receiver, index, eventType, siteId) → naturalValue
         private void emitAtomicRmwCheckCall(char returnTypeChar) {
             if (returnTypeChar == 'J' || returnTypeChar == 'D') {
-                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkAtomicRmwLong",
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAtomicRmwLong",
                         "(JLjava/lang/Object;III)J", false);
             } else if (returnTypeChar == 'L' || returnTypeChar == '[') {
-                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkAtomicRmwObj",
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAtomicRmwObj",
                         "(Ljava/lang/Object;Ljava/lang/Object;III)Ljava/lang/Object;", false);
             } else {
-                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkAtomicRmwInt",
+                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAtomicRmwInt",
                         "(ILjava/lang/Object;III)I", false);
             }
         }

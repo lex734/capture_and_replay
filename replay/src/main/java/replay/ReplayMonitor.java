@@ -23,12 +23,12 @@ public class ReplayMonitor {
     private static final ThreadLocal<Boolean> isInside = ThreadLocal.withInitial(() -> false);
 
     private static void awaitScheduleBoundary(int roleId, int packedType, int currentSiteId) {
-        ReplayCoordinator.awaitScheduleTurn(roleId, packedType, currentSiteId);
+        ReplayCoordinator.awaitScheduleBoundary(roleId, packedType, currentSiteId);
     }
 
     // ---- Sync events (monitor enter/exit, thread lifecycle, wait/notify, park/unpark) ----
 
-    public static void checkSync(int eventType, Object lock, int currentSiteId) {
+    public static void replaySyncBoundary(int eventType, Object lock, int currentSiteId) {
         if (isInside.get()) return;
         if (lock == null && eventType != BinarySchema.Event.THREAD_PARK
             && eventType != BinarySchema.Event.THREAD_SLEEP
@@ -155,7 +155,7 @@ public class ReplayMonitor {
         }
     }
 
-    private static void conditionAwaitTurn(Condition condition, int currentSiteId) {
+    private static void awaitConditionBoundary(Condition condition, int currentSiteId) {
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         if (roleId == -1) return;
@@ -170,7 +170,7 @@ public class ReplayMonitor {
         }
         isInside.set(true);
         try {
-            conditionAwaitTurn(condition, currentSiteId);
+            awaitConditionBoundary(condition, currentSiteId);
             condition.await();
         } finally {
             isInside.set(false);
@@ -184,7 +184,7 @@ public class ReplayMonitor {
         }
         isInside.set(true);
         try {
-            conditionAwaitTurn(condition, currentSiteId);
+            awaitConditionBoundary(condition, currentSiteId);
             condition.awaitUninterruptibly();
         } finally {
             isInside.set(false);
@@ -198,7 +198,7 @@ public class ReplayMonitor {
         }
         isInside.set(true);
         try {
-            conditionAwaitTurn(condition, currentSiteId);
+            awaitConditionBoundary(condition, currentSiteId);
             return condition.awaitNanos(nanosTimeout);
         } finally {
             isInside.set(false);
@@ -212,7 +212,7 @@ public class ReplayMonitor {
         }
         isInside.set(true);
         try {
-            conditionAwaitTurn(condition, currentSiteId);
+            awaitConditionBoundary(condition, currentSiteId);
             return condition.awaitUntil(deadline);
         } finally {
             isInside.set(false);
@@ -226,7 +226,7 @@ public class ReplayMonitor {
         }
         isInside.set(true);
         try {
-            conditionAwaitTurn(condition, currentSiteId);
+            awaitConditionBoundary(condition, currentSiteId);
             return condition.await(time, unit);
         } finally {
             isInside.set(false);
@@ -381,16 +381,6 @@ public class ReplayMonitor {
         }
     }
 
-    public static Object checkArrayObjNoInject(Object naturalValue, int eventType, Object array, int index, int currentSiteId) {
-        if (isInside.get() || array == null) return naturalValue;
-        isInside.set(true);
-        try {
-            return naturalValue;
-        } finally {
-            isInside.set(false);
-        }
-    }
-
     // ---- Atomic operations ----
 
     private static int buildAtomicPackedType(int eventType, BirthId receiverBirth, int index) {
@@ -401,14 +391,11 @@ public class ReplayMonitor {
         return BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
     }
 
-    private static int atomicObjSite(BirthId b, int index) { return index >= 0 ? b.count   : b.siteId; }
-    private static int atomicObjCount(BirthId b, int index) { return index >= 0 ? index     : b.count;  }
-
     // ---- Atomic schedule checks ----
     // Atomic operations execute naturally. Replay only coordinates schedule
     // boundaries; it does not inject captured values.
 
-    public static int checkAtomicInt(int naturalValue, Object receiver, int index, int eventType, int currentSiteId) {
+    public static int replayAtomicInt(int naturalValue, Object receiver, int index, int eventType, int currentSiteId) {
         if (isInside.get()) return naturalValue;
         isInside.set(true);
         try {
@@ -425,7 +412,7 @@ public class ReplayMonitor {
         }
     }
 
-    public static long checkAtomicLong(long naturalValue, Object receiver, int index, int eventType, int currentSiteId) {
+    public static long replayAtomicLong(long naturalValue, Object receiver, int index, int eventType, int currentSiteId) {
         if (isInside.get()) return naturalValue;
         isInside.set(true);
         try {
@@ -442,7 +429,7 @@ public class ReplayMonitor {
         }
     }
 
-    public static Object checkAtomicObj(Object naturalValue, Object receiver, int index, int eventType, int currentSiteId) {
+    public static Object replayAtomicObj(Object naturalValue, Object receiver, int index, int eventType, int currentSiteId) {
         if (isInside.get()) return naturalValue;
         isInside.set(true);
         try {
@@ -459,7 +446,7 @@ public class ReplayMonitor {
         }
     }
 
-    public static int checkAtomicRmwInt(int naturalValue, Object receiver, int index, int eventType, int currentSiteId) {
+    public static int replayAtomicRmwInt(int naturalValue, Object receiver, int index, int eventType, int currentSiteId) {
         if (isInside.get()) return naturalValue;
         isInside.set(true);
         try {
@@ -476,7 +463,7 @@ public class ReplayMonitor {
         }
     }
 
-    public static long checkAtomicRmwLong(long naturalValue, Object receiver, int index, int eventType, int currentSiteId) {
+    public static long replayAtomicRmwLong(long naturalValue, Object receiver, int index, int eventType, int currentSiteId) {
         if (isInside.get()) return naturalValue;
         isInside.set(true);
         try {
@@ -493,7 +480,7 @@ public class ReplayMonitor {
         }
     }
 
-    public static Object checkAtomicRmwObj(Object naturalValue, Object receiver, int index, int eventType, int currentSiteId) {
+    public static Object replayAtomicRmwObj(Object naturalValue, Object receiver, int index, int eventType, int currentSiteId) {
         if (isInside.get()) return naturalValue;
         isInside.set(true);
         try {
@@ -512,89 +499,6 @@ public class ReplayMonitor {
 
     public static void checkException(Object exception, int siteId) {
         // Exception throws are not replay boundaries in schedule replay.
-    }
-
-    // ---- Legacy nondeterministic replay helpers ----
-    // Schedule replay no longer injects captured values for nondeterministic calls.
-    // These wrappers remain only for compatibility with older instrumentation and
-    // should not be reached once replay bytecode executes the original call.
-
-    public static int replayNondetInt(int siteId) {
-        if (isInside.get()) return 0;
-        isInside.set(true);
-        try {
-            long tid = Thread.currentThread().getId();
-            int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
-            if (roleId == -1) return 0;
-            int packedType = BinarySchema.packType(BinarySchema.Event.NONDETERMINISTIC_INT, BinarySchema.Flags.NONE);
-            int val = ReplayCoordinator.awaitTurnInt(roleId, packedType, 0, siteId);
-            long seq = ReplayCoordinator.getLastMatchedSeq();
-            debug(String.format(
-                    "[REPLAY-NONDET] epoch=%d seq=%d role=%d  nondet_int=%d  site=%d",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, val, siteId));
-            return val;
-        } finally {
-            isInside.set(false);
-        }
-    }
-
-    public static float replayNondetFloat(int siteId) {
-        if (isInside.get()) return 0f;
-        isInside.set(true);
-        try {
-            long tid = Thread.currentThread().getId();
-            int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
-            if (roleId == -1) return 0f;
-            int packedType = BinarySchema.packType(BinarySchema.Event.NONDETERMINISTIC_INT, BinarySchema.Flags.NONE);
-            int bits = ReplayCoordinator.awaitTurnInt(roleId, packedType, 0, siteId);
-            float val = Float.intBitsToFloat(bits);
-            long seq = ReplayCoordinator.getLastMatchedSeq();
-            debug(String.format(
-                    "[REPLAY-NONDET] epoch=%d seq=%d role=%d  nondet_float=%f  site=%d",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, val, siteId));
-            return val;
-        } finally {
-            isInside.set(false);
-        }
-    }
-
-    public static long replayNondetLong(int siteId) {
-        if (isInside.get()) return 0L;
-        isInside.set(true);
-        try {
-            long tid = Thread.currentThread().getId();
-            int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
-            if (roleId == -1) return 0L;
-            int packedType = BinarySchema.packType(BinarySchema.Event.NONDETERMINISTIC_LONG, BinarySchema.Flags.NONE);
-            long val = ReplayCoordinator.awaitTurnLong(roleId, packedType, 0, siteId);
-            long seq = ReplayCoordinator.getLastMatchedSeq();
-            debug(String.format(
-                    "[REPLAY-NONDET] epoch=%d seq=%d role=%d  nondet_long=%d  site=%d",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, val, siteId));
-            return val;
-        } finally {
-            isInside.set(false);
-        }
-    }
-
-    public static double replayNondetDouble(int siteId) {
-        if (isInside.get()) return 0.0;
-        isInside.set(true);
-        try {
-            long tid = Thread.currentThread().getId();
-            int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
-            if (roleId == -1) return 0.0;
-            int packedType = BinarySchema.packType(BinarySchema.Event.NONDETERMINISTIC_LONG, BinarySchema.Flags.NONE);
-            long bits = ReplayCoordinator.awaitTurnLong(roleId, packedType, 0, siteId);
-            double val = Double.longBitsToDouble(bits);
-            long seq = ReplayCoordinator.getLastMatchedSeq();
-            debug(String.format(
-                    "[REPLAY-NONDET] epoch=%d seq=%d role=%d  nondet_double=%f  site=%d",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, val, siteId));
-            return val;
-        } finally {
-            isInside.set(false);
-        }
     }
 
     public static void preRegisterThread(Thread thread) {
@@ -622,7 +526,7 @@ public class ReplayMonitor {
         // advancement if the child has any trace events at epochs below the
         // THREAD_START epoch (which happens when the child races ahead of the
         // parent's logSync call during capture). Since thread.start() is called
-        // AFTER checkSync(THREAD_START) returns, the child thread can never run
+        // AFTER replaySyncBoundary(THREAD_START) returns, the child thread can never run
         // to process those events — a true deadlock. Instead, the child remains
         // in pendingRoles (invisible to the epoch guard) until its thread actually
         // starts and calls awaitTurn(), at which point activateRole() moves it

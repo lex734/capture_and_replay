@@ -1,6 +1,7 @@
 # Capture and Replay Agent
 
-A Java agent that captures and replays the interleaving of synchronization events in a multithreaded program.
+A Java agent that captures a synchronization trace from a multithreaded Java
+program and replays a distilled boundary schedule on a later run.
 
 ## Build
 
@@ -22,15 +23,36 @@ mvn package -pl capture,replay --am
 
 ## Running the Test App
 
-**Capture** — run the program and record the sync event trace to `trace.bin`:
+**Capture** — run the program and record:
+- `trace.bin` — raw captured trace
+- `trace-boundaries.tsv` — replay-boundary metadata sidecar
+
 ```bash
 java -javaagent:capture/target/trace-capture-agent.jar \
      -cp test-app/target/test-app.jar Main
 ```
 
-**Replay** — re-run the program, enforcing the recorded trace:
+**Replay** — replay now does four things automatically before the target
+program starts:
+- distills `trace.bin` + `trace-boundaries.tsv` into `schedule-boundaries.tsv`
+- runs mandatory static applicability analysis against the target program
+- aborts early if the run is statically inapplicable
+- otherwise enables boundary-coordinated schedule replay
+
 ```bash
 java -javaagent:replay/target/trace-replay-agent.jar \
+     -cp test-app/target/test-app.jar Main
+```
+
+The replay agent expects either:
+- a single application jar on the classpath, or
+- a single classes directory on the classpath
+
+If the target cannot be inferred from `java.class.path`, set it explicitly:
+
+```bash
+java -Dtool.static.analysis.path=/path/to/app.jar \
+     -javaagent:replay/target/trace-replay-agent.jar \
      -cp test-app/target/test-app.jar Main
 ```
 
@@ -44,9 +66,18 @@ java -javaagent:capture/target/trace-capture-agent.jar \
      -cp <your-classpath> <YourMainClass> [args...]
 ```
 
-**Replay** (run after a capture has produced `trace.bin`):
+**Replay** (run after capture has produced `trace.bin` and `trace-boundaries.tsv`):
 ```bash
 java -javaagent:replay/target/trace-replay-agent.jar \
+     -cp <your-classpath> <YourMainClass> [args...]
+```
+
+If replay cannot determine the target jar/classes root from the application
+classpath, pass it explicitly:
+
+```bash
+java -Dtool.static.analysis.path=<path-to-app-jar-or-classes-dir> \
+     -javaagent:replay/target/trace-replay-agent.jar \
      -cp <your-classpath> <YourMainClass> [args...]
 ```
 
@@ -59,4 +90,24 @@ java -javaagent:capture/target/trace-capture-agent.jar -jar your-app.jar
 java -javaagent:replay/target/trace-replay-agent.jar -jar your-app.jar
 ```
 
-The trace is written to / read from `trace.bin` in the working directory.
+## Generated Files
+
+These files are written in the working directory:
+- `trace.bin` — raw captured trace
+- `trace-boundaries.tsv` — raw boundary metadata emitted during capture
+- `schedule-boundaries.tsv` — distilled replay schedule emitted during replay startup
+
+## Optional Offline Tools
+
+Distill the schedule manually:
+
+```bash
+java -cp replay/target/trace-replay-agent.jar replay.ScheduleDistiller
+```
+
+Run the mandatory static analyzer manually:
+
+```bash
+java -cp replay/target/trace-replay-agent.jar replay.ScheduleStaticAnalyzer \
+     schedule-boundaries.tsv <app.jar-or-classes-dir>
+```

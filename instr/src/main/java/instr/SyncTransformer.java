@@ -1,6 +1,7 @@
 package instr;
 
 import common.ReplayBoundaryRegistry;
+import common.TraceSemantics;
 import java.lang.instrument.ClassFileTransformer;
 import java.security.ProtectionDomain;
 import java.util.ArrayDeque;
@@ -213,6 +214,7 @@ public class SyncTransformer implements ClassFileTransformer {
         }
 
         private void recordReplayBoundary(int rawSiteId, int eventType) {
+            if (!TraceSemantics.isReplayBoundaryForEventType(eventType)) return;
             ReplayBoundaryRegistry.register(rawSiteId, eventType, className.replace('/', '.'), methodName);
         }
 
@@ -1406,7 +1408,9 @@ public class SyncTransformer implements ClassFileTransformer {
             // Log CLASS_INIT_BEGIN at the start of <clinit>
             String beginSite = className + ".<clinit>#begin";
             int beginSiteId = SyncTransformer.registerSiteId(beginSite);
-            ReplayBoundaryRegistry.register(beginSiteId, 23, className.replace('/', '.'), "<clinit>");
+            if (TraceSemantics.isReplayBoundaryForEventType(23)) {
+                ReplayBoundaryRegistry.register(beginSiteId, 23, className.replace('/', '.'), "<clinit>");
+            }
             mv.visitLdcInsn(23); // BinarySchema.Event.CLASS_INIT_BEGIN
             mv.visitInsn(Opcodes.ACONST_NULL);
             mv.visitLdcInsn(beginSiteId);
@@ -1424,7 +1428,9 @@ public class SyncTransformer implements ClassFileTransformer {
             if (opcode == Opcodes.RETURN) {
                 String endSite = className + ".<clinit>#end";
                 int endSiteId = SyncTransformer.registerSiteId(endSite);
-                ReplayBoundaryRegistry.register(endSiteId, 24, className.replace('/', '.'), "<clinit>");
+                if (TraceSemantics.isReplayBoundaryForEventType(24)) {
+                    ReplayBoundaryRegistry.register(endSiteId, 24, className.replace('/', '.'), "<clinit>");
+                }
                 mv.visitLdcInsn(24); // BinarySchema.Event.CLASS_INIT_END
                 mv.visitInsn(Opcodes.ACONST_NULL);
                 mv.visitLdcInsn(endSiteId);

@@ -48,46 +48,9 @@ public class TraceLogger {
         return (state[1] << 32) | (state[0] & 0xFFFFFFFFL);
     }
 
-    /**
-     * Determines whether this event type is the release-side of a JMM
-     * happens-before edge.
-     * Only release-side events advance the global epoch.
-     *
-     * JMM 17.4.5 happens-before rules:
-     * unlock(m) HB lock(m) → MONITOR_EXIT is release
-     * Thread.start() HB first action → THREAD_START is release
-     * notify/notifyAll HB wait return → THREAD_NOTIFY[_ALL] is release
-     * unpark(t) HB park() return in t → THREAD_UNPARK is release
-     * interrupt() HB detection → THREAD_INTERRUPT is release
-     * thread termination HB join() return → THREAD_WAKEUP as acquire-side proxy
-     * (thread termination has no explicit event, so WAKEUP after join/wait/park
-     * serves as the epoch boundary for the acquiring thread)
-     * end of <clinit> HB subsequent use → CLASS_INIT_END is release
-     * atomic write/RMW HB atomic read → ATOMIC_WRITE, ATOMIC_RMW are release
-     * volatile write HB volatile read → handled in logField via isVolatile flag
-     */
-    private static boolean isHBRelease(int eventType) {
-        switch (eventType) {
-            case BinarySchema.Event.MONITOR_EXIT:
-            case BinarySchema.Event.THREAD_START:
-            case BinarySchema.Event.THREAD_NOTIFY:
-            case BinarySchema.Event.THREAD_NOTIFY_ALL:
-            case BinarySchema.Event.THREAD_UNPARK:
-            case BinarySchema.Event.THREAD_INTERRUPT:
-            case BinarySchema.Event.THREAD_WAKEUP:
-            case BinarySchema.Event.CLASS_INIT_END:
-            case BinarySchema.Event.ATOMIC_WRITE:
-            case BinarySchema.Event.ATOMIC_RMW:
-            case BinarySchema.Event.ATOMIC_CAS:
-                return true;
-            default:
-                return false;
-        }
-    }
-
     // for synchronization events such as MONITOR_ENTER, MONITOR_EXIT
     public static void logSync(int eventType, Object lock, int currentSiteId) {
-        long seq = nextSeq(isHBRelease(eventType));
+        long seq = nextSeq(TraceSemantics.advancesEpochForEventType(eventType));
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         if (roleId == -1) return;
@@ -126,21 +89,15 @@ public class TraceLogger {
     //   Long: data1=value>>32,      data2=(int)value
     //   Obj:  data1=valueSiteId,    data2=valueCount
 
-    private static int packFieldType(int eventType, boolean isVolatile, boolean isStatic) {
-        int flags = (isVolatile ? BinarySchema.Flags.IS_VOLATILE : 0)
-                  | (isStatic  ? BinarySchema.Flags.IS_STATIC   : 0);
-        return BinarySchema.packType(eventType, flags);
-    }
-
     public static void logFieldInt(int value, int eventType, Object owner, int currentSiteId,
             boolean isVolatile, boolean isStatic, String fieldName, String ownerName) {
-        boolean advanceEpoch = isVolatile && (eventType == BinarySchema.Event.FIELD_WRITE);
+        int packedType = TraceSemantics.packFieldType(eventType, isVolatile, isStatic);
+        boolean advanceEpoch = TraceSemantics.advancesEpoch(packedType);
         long seq = nextSeq(advanceEpoch);
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         if (roleId == -1) return;
         BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
-        int packedType = packFieldType(eventType, isVolatile, isStatic);
         String evName = (eventType == BinarySchema.Event.FIELD_READ) ? "READ" : "WRITE";
         debug("[FIELD]  epoch=%d seq=%d role=%d  %-5s%s %s.%s = %d",
                 seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
@@ -150,13 +107,13 @@ public class TraceLogger {
 
     public static void logFieldLong(long value, int eventType, Object owner, int currentSiteId,
             boolean isVolatile, boolean isStatic, String fieldName, String ownerName) {
-        boolean advanceEpoch = isVolatile && (eventType == BinarySchema.Event.FIELD_WRITE);
+        int packedType = TraceSemantics.packFieldType(eventType, isVolatile, isStatic);
+        boolean advanceEpoch = TraceSemantics.advancesEpoch(packedType);
         long seq = nextSeq(advanceEpoch);
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         if (roleId == -1) return;
         BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
-        int packedType = packFieldType(eventType, isVolatile, isStatic);
         String evName = (eventType == BinarySchema.Event.FIELD_READ) ? "READ" : "WRITE";
         debug("[FIELD]  epoch=%d seq=%d role=%d  %-5s%s %s.%s = %dL",
                 seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
@@ -167,14 +124,14 @@ public class TraceLogger {
 
     public static void logFieldObj(Object value, int eventType, Object owner, int currentSiteId,
             boolean isVolatile, boolean isStatic, String fieldName, String ownerName) {
-        boolean advanceEpoch = isVolatile && (eventType == BinarySchema.Event.FIELD_WRITE);
+        int packedType = TraceSemantics.packFieldType(eventType, isVolatile, isStatic);
+        boolean advanceEpoch = TraceSemantics.advancesEpoch(packedType);
         long seq = nextSeq(advanceEpoch);
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         if (roleId == -1) return;
         BirthId birthId   = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
         BirthId valueBirth = IdentityMapper.getBirthId(value, null, currentSiteId);
-        int packedType = packFieldType(eventType, isVolatile, isStatic);
         String evName = (eventType == BinarySchema.Event.FIELD_READ) ? "READ" : "WRITE";
         debug("[FIELD]  epoch=%d seq=%d role=%d  %-5s%s %s.%s = %s",
                 seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
@@ -284,7 +241,7 @@ public class TraceLogger {
      * @param index    array element index, or -1 for scalar atomics
      */
     public static void logAtomicInt(int intValue, Object receiver, int index, int eventType, int currentSiteId) {
-        long seq = nextSeq(isHBRelease(eventType));
+        long seq = nextSeq(TraceSemantics.advancesEpochForEventType(eventType));
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         if (roleId == -1) return;
@@ -321,7 +278,7 @@ public class TraceLogger {
      * Scalar atomics: stores full receiver BirthId + low 32 bits of long value.
      */
     public static void logAtomicLong(long longValue, Object receiver, int index, int eventType, int currentSiteId) {
-        long seq = nextSeq(isHBRelease(eventType));
+        long seq = nextSeq(TraceSemantics.advancesEpochForEventType(eventType));
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         if (roleId == -1) return;
@@ -360,7 +317,7 @@ public class TraceLogger {
      * Scalar atomics: stores receiver BirthId + value's BirthId.siteId.
      */
     public static void logAtomicObj(Object objValue, Object receiver, int index, int eventType, int currentSiteId) {
-        long seq = nextSeq(isHBRelease(eventType));
+        long seq = nextSeq(TraceSemantics.advancesEpochForEventType(eventType));
         long tid = Thread.currentThread().getId();
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         if (roleId == -1) return;

@@ -2,6 +2,7 @@ package replay;
 
 import common.BinarySchema;
 import common.IdentityMapper;
+import common.TraceSemantics;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.Writer;
@@ -1009,21 +1010,7 @@ public class ReplayCoordinator {
     }
 
     private static boolean isReleaseEvent(int packedType) {
-        int eventType = packedType & 0xFF;
-        int flags = (packedType >> 8) & 0xFF;
-        boolean isVolatile = (flags & common.BinarySchema.Flags.IS_VOLATILE) != 0;
-        return eventType == BinarySchema.Event.MONITOR_EXIT
-                || eventType == BinarySchema.Event.THREAD_START
-                || eventType == BinarySchema.Event.THREAD_NOTIFY
-                || eventType == BinarySchema.Event.THREAD_NOTIFY_ALL
-                || eventType == BinarySchema.Event.THREAD_UNPARK
-                || eventType == BinarySchema.Event.THREAD_INTERRUPT
-                || eventType == BinarySchema.Event.THREAD_WAKEUP
-                || eventType == BinarySchema.Event.CLASS_INIT_END
-                || eventType == BinarySchema.Event.ATOMIC_WRITE
-                || eventType == BinarySchema.Event.ATOMIC_RMW
-                || eventType == BinarySchema.Event.ATOMIC_CAS
-                || (eventType == BinarySchema.Event.FIELD_WRITE && isVolatile);
+        return TraceSemantics.advancesEpoch(packedType);
     }
 
     private static boolean isRoleBehind(int roleId, long targetEpoch, boolean shouldHaveLiveThread) {

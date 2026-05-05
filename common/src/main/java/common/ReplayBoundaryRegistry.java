@@ -1,6 +1,7 @@
 package common;
 
 import java.io.IOException;
+import java.io.BufferedReader;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -79,6 +80,40 @@ public final class ReplayBoundaryRegistry {
 
     public static Map<Integer, BoundaryMeta> snapshot() {
         return Map.copyOf(boundaries);
+    }
+
+    public static Map<Integer, BoundaryMeta> loadFromFile(Path path) {
+        ConcurrentHashMap<Integer, BoundaryMeta> loaded = new ConcurrentHashMap<>();
+        try (BufferedReader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
+            String line;
+            boolean first = true;
+            while ((line = reader.readLine()) != null) {
+                if (line.isEmpty()) continue;
+                if (first) {
+                    first = false;
+                    if (line.startsWith("rawSiteId\t")) continue;
+                }
+                String[] parts = line.split("\t", -1);
+                if (parts.length != 4) {
+                    throw new IllegalArgumentException("Invalid replay boundary metadata line: " + line);
+                }
+                int rawSiteId = Integer.parseInt(parts[0]);
+                int eventType = Integer.parseInt(parts[1]);
+                BoundaryMeta next = new BoundaryMeta(rawSiteId, eventType, parts[2], parts[3]);
+                loaded.merge(rawSiteId, next, (prev, cur) -> {
+                    if (prev.eventType != cur.eventType
+                            || !prev.className.equals(cur.className)
+                            || !prev.methodName.equals(cur.methodName)) {
+                        throw new IllegalStateException(
+                                "Replay boundary metadata collision for rawSiteId=" + rawSiteId);
+                    }
+                    return prev;
+                });
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException("Failed to read replay boundary metadata from " + path, e);
+        }
+        return Map.copyOf(loaded);
     }
 
     public static void reset() {

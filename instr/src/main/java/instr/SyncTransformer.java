@@ -1,5 +1,6 @@
 package instr;
 
+import common.ReplayBoundaryRegistry;
 import java.lang.instrument.ClassFileTransformer;
 import java.security.ProtectionDomain;
 import java.util.ArrayDeque;
@@ -211,6 +212,10 @@ public class SyncTransformer implements ClassFileTransformer {
             return opcode >= Opcodes.IASTORE && opcode <= Opcodes.SASTORE;
         }
 
+        private void recordReplayBoundary(int rawSiteId, int eventType) {
+            ReplayBoundaryRegistry.register(rawSiteId, eventType, className.replace('/', '.'), methodName);
+        }
+
         // ---- Allocation tracking ----
         // NEW: push the type and allocation site; matched by visitMethodInsn.
         // NEWARRAY/ANEWARRAY/MULTIANEWARRAY: no <init>, so register inline.
@@ -340,6 +345,7 @@ public class SyncTransformer implements ClassFileTransformer {
                 String monitorMethod = isReplay ? "checkSync" : "logSync";
                 int eventType = (opcode == Opcodes.MONITORENTER) ? 1 : 2;
                 int siteId = SyncTransformer.registerSiteId(className + "." + methodName + "#" + instructionId++);
+                recordReplayBoundary(siteId, eventType);
                 // Log/check intrinsic monitor events after the actual monitor opcode so
                 // the trace reflects real acquisition/release order (not just attempts).
                 mv.visitInsn(Opcodes.DUP);
@@ -546,11 +552,13 @@ public class SyncTransformer implements ClassFileTransformer {
             if (isReplay && (owner.equals("java/util/concurrent/locks/ReentrantLock")
                     || owner.equals("java/util/concurrent/locks/Lock"))) {
                 if (name.equals("lock") && descriptor.equals("()V")) {
+                    recordReplayBoundary(siteId, 1);
                     mv.visitLdcInsn(siteId);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayLock",
                             "(Ljava/util/concurrent/locks/Lock;I)V", false);
                     return;
                 } else if (name.equals("unlock") && descriptor.equals("()V")) {
+                    recordReplayBoundary(siteId, 2);
                     mv.visitLdcInsn(siteId);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayUnlock",
                             "(Ljava/util/concurrent/locks/Lock;I)V", false);
@@ -566,11 +574,13 @@ public class SyncTransformer implements ClassFileTransformer {
             if (!isReplay && (owner.equals("java/util/concurrent/locks/ReentrantLock")
                     || owner.equals("java/util/concurrent/locks/Lock"))) {
                 if (name.equals("lock") && descriptor.equals("()V")) {
+                    recordReplayBoundary(siteId, 1);
                     mv.visitLdcInsn(siteId);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "captureLock",
                             "(Ljava/util/concurrent/locks/Lock;I)V", false);
                     return;
                 } else if (name.equals("unlock") && descriptor.equals("()V")) {
+                    recordReplayBoundary(siteId, 2);
                     mv.visitLdcInsn(siteId);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "captureUnlock",
                             "(Ljava/util/concurrent/locks/Lock;I)V", false);
@@ -585,36 +595,43 @@ public class SyncTransformer implements ClassFileTransformer {
 
             if (isReplay && owner.equals("java/util/concurrent/locks/Condition")) {
                 if (name.equals("await") && descriptor.equals("()V")) {
+                    recordReplayBoundary(siteId, 15);
                     mv.visitLdcInsn(siteId);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAwait",
                             "(Ljava/util/concurrent/locks/Condition;I)V", false);
                     return;
                 } else if (name.equals("awaitUninterruptibly") && descriptor.equals("()V")) {
+                    recordReplayBoundary(siteId, 15);
                     mv.visitLdcInsn(siteId);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAwaitUninterruptibly",
                             "(Ljava/util/concurrent/locks/Condition;I)V", false);
                     return;
                 } else if (name.equals("awaitNanos") && descriptor.equals("(J)J")) {
+                    recordReplayBoundary(siteId, 15);
                     mv.visitLdcInsn(siteId);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAwaitNanos",
                             "(Ljava/util/concurrent/locks/Condition;JI)J", false);
                     return;
                 } else if (name.equals("awaitUntil") && descriptor.equals("(Ljava/util/Date;)Z")) {
+                    recordReplayBoundary(siteId, 15);
                     mv.visitLdcInsn(siteId);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAwaitUntil",
                             "(Ljava/util/concurrent/locks/Condition;Ljava/util/Date;I)Z", false);
                     return;
                 } else if (name.equals("await") && descriptor.equals("(JLjava/util/concurrent/TimeUnit;)Z")) {
+                    recordReplayBoundary(siteId, 15);
                     mv.visitLdcInsn(siteId);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayAwaitTimed",
                             "(Ljava/util/concurrent/locks/Condition;JLjava/util/concurrent/TimeUnit;I)Z", false);
                     return;
                 } else if (name.equals("signal") && descriptor.equals("()V")) {
+                    recordReplayBoundary(siteId, 16);
                     mv.visitLdcInsn(siteId);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replaySignal",
                             "(Ljava/util/concurrent/locks/Condition;I)V", false);
                     return;
                 } else if (name.equals("signalAll") && descriptor.equals("()V")) {
+                    recordReplayBoundary(siteId, 17);
                     mv.visitLdcInsn(siteId);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replaySignalAll",
                             "(Ljava/util/concurrent/locks/Condition;I)V", false);
@@ -658,10 +675,12 @@ public class SyncTransformer implements ClassFileTransformer {
                     // event post-call rather than pre-call.
                     mv.visitTypeInsn(Opcodes.CHECKCAST, "java/lang/Thread");
                     if (isReplay) {
+                        recordReplayBoundary(siteId, 9);
                         mv.visitLdcInsn(siteId);
                         mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayThreadStart",
                                 "(Ljava/lang/Thread;I)V", false);
                     } else {
+                        recordReplayBoundary(siteId, 9);
                         mv.visitLdcInsn(siteId);
                         mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "captureThreadStart",
                                 "(Ljava/lang/Thread;I)V", false);
@@ -736,36 +755,43 @@ public class SyncTransformer implements ClassFileTransformer {
                 }
             } else if (owner.equals("java/util/concurrent/locks/Condition")) {
                 if (name.equals("await") && descriptor.equals("()V")) {
+                    recordReplayBoundary(siteId, 15);
                     mv.visitLdcInsn(siteId);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "captureAwait",
                             "(Ljava/util/concurrent/locks/Condition;I)V", false);
                     return;
                 } else if (name.equals("awaitUninterruptibly") && descriptor.equals("()V")) {
+                    recordReplayBoundary(siteId, 15);
                     mv.visitLdcInsn(siteId);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "captureAwaitUninterruptibly",
                             "(Ljava/util/concurrent/locks/Condition;I)V", false);
                     return;
                 } else if (name.equals("awaitNanos") && descriptor.equals("(J)J")) {
+                    recordReplayBoundary(siteId, 15);
                     mv.visitLdcInsn(siteId);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "captureAwaitNanos",
                             "(Ljava/util/concurrent/locks/Condition;JI)J", false);
                     return;
                 } else if (name.equals("awaitUntil") && descriptor.equals("(Ljava/util/Date;)Z")) {
+                    recordReplayBoundary(siteId, 15);
                     mv.visitLdcInsn(siteId);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "captureAwaitUntil",
                             "(Ljava/util/concurrent/locks/Condition;Ljava/util/Date;I)Z", false);
                     return;
                 } else if (name.equals("await") && descriptor.equals("(JLjava/util/concurrent/TimeUnit;)Z")) {
+                    recordReplayBoundary(siteId, 15);
                     mv.visitLdcInsn(siteId);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "captureAwaitTimed",
                             "(Ljava/util/concurrent/locks/Condition;JLjava/util/concurrent/TimeUnit;I)Z", false);
                     return;
                 } else if (name.equals("signal") && descriptor.equals("()V")) {
+                    recordReplayBoundary(siteId, 16);
                     mv.visitLdcInsn(siteId);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "captureSignal",
                             "(Ljava/util/concurrent/locks/Condition;I)V", false);
                     return;
                 } else if (name.equals("signalAll") && descriptor.equals("()V")) {
+                    recordReplayBoundary(siteId, 17);
                     mv.visitLdcInsn(siteId);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "captureSignalAll",
                             "(Ljava/util/concurrent/locks/Condition;I)V", false);
@@ -962,6 +988,7 @@ public class SyncTransformer implements ClassFileTransformer {
         // is correct
         private void logSyncCall(int type, int siteId) {
             String monitorMethod = isReplay ? "checkSync" : "logSync";
+            recordReplayBoundary(siteId, type);
             mv.visitLdcInsn(type);
             mv.visitInsn(Opcodes.SWAP);
             mv.visitLdcInsn(siteId);
@@ -1379,6 +1406,7 @@ public class SyncTransformer implements ClassFileTransformer {
             // Log CLASS_INIT_BEGIN at the start of <clinit>
             String beginSite = className + ".<clinit>#begin";
             int beginSiteId = SyncTransformer.registerSiteId(beginSite);
+            ReplayBoundaryRegistry.register(beginSiteId, 23, className.replace('/', '.'), "<clinit>");
             mv.visitLdcInsn(23); // BinarySchema.Event.CLASS_INIT_BEGIN
             mv.visitInsn(Opcodes.ACONST_NULL);
             mv.visitLdcInsn(beginSiteId);
@@ -1396,6 +1424,7 @@ public class SyncTransformer implements ClassFileTransformer {
             if (opcode == Opcodes.RETURN) {
                 String endSite = className + ".<clinit>#end";
                 int endSiteId = SyncTransformer.registerSiteId(endSite);
+                ReplayBoundaryRegistry.register(endSiteId, 24, className.replace('/', '.'), "<clinit>");
                 mv.visitLdcInsn(24); // BinarySchema.Event.CLASS_INIT_END
                 mv.visitInsn(Opcodes.ACONST_NULL);
                 mv.visitLdcInsn(endSiteId);

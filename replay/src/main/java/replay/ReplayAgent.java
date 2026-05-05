@@ -2,6 +2,7 @@ package replay;
 
 import common.BinarySchema;
 import common.IdentityMapper;
+import common.ReplayBoundaryRegistry;
 import instr.SyncTransformer;
 
 import java.io.File;
@@ -18,6 +19,7 @@ public class ReplayAgent {
         try {
             // 1. Reset the "Brain" to ensure discovery order matches Capture
             IdentityMapper.reset();
+            ReplayBoundaryRegistry.reset();
             SyncTransformer.resetSiteRegistry();
 
             // 2. Load the Trace File

@@ -1,7 +1,9 @@
 package common;
 
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -43,6 +45,7 @@ public class IdentityMapper {
     private static final ConcurrentHashMap<Integer, Boolean> ignoredSites = new ConcurrentHashMap<>();
 
     private static final ConcurrentHashMap<Long, Integer> preAssignedRoles = new ConcurrentHashMap<>();
+    private static volatile Set<Integer> allowedReplayRoles = null;
 
 
     public abstract static class BirthId {
@@ -110,9 +113,17 @@ public class IdentityMapper {
             return IGNORED_ROLE_ID; // sentinel: caller should skip logging for this thread
         }
         Integer preAssigned = preAssignedRoles.get(tid);
-        int roleId = tidToRoleId.computeIfAbsent(tid, k -> roleCounter.getAndIncrement());
         if (preAssigned != null) return preAssigned;
-        return roleId;
+
+        Integer existingRole = tidToRoleId.get(tid);
+        if (existingRole != null) return existingRole;
+
+        Set<Integer> replayRoles = allowedReplayRoles;
+        if (replayRoles != null) {
+            return IGNORED_ROLE_ID;
+        }
+
+        return tidToRoleId.computeIfAbsent(tid, k -> roleCounter.getAndIncrement());
     }
 
     public static boolean isIgnoredRole(int roleId) {
@@ -306,11 +317,20 @@ public class IdentityMapper {
         preAssignedRoles.put(tid, roleId);
     }
 
+    public static void setAllowedReplayRoles(Set<Integer> roleIds) {
+        if (roleIds == null) {
+            allowedReplayRoles = null;
+            return;
+        }
+        allowedReplayRoles = Collections.unmodifiableSet(new HashSet<>(roleIds));
+    }
+
 
     public static void reset() {
         tidToRoleId.clear();
         roleCounter.set(1);
         preAssignedRoles.clear();
+        allowedReplayRoles = null;
         staticFieldToId.clear();
         instanceFieldToId.clear();
         fieldCounter.set(1);

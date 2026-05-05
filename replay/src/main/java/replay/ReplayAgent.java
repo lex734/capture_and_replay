@@ -12,7 +12,9 @@ import java.nio.channels.FileChannel;
 import java.nio.MappedByteBuffer;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public class ReplayAgent {
     private static final String STATIC_ANALYSIS_PATH_PROPERTY = "tool.static.analysis.path";
@@ -43,6 +45,7 @@ public class ReplayAgent {
                     ScheduleDistiller.distill(tracePath, boundariesPath);
             ScheduleDistiller.write(schedulePath, scheduleEntries);
             ReplayCoordinator.loadScheduleArtifact(scheduleEntries);
+            IdentityMapper.setAllowedReplayRoles(extractScheduleRoles(scheduleEntries));
 
             Path analysisPath = resolveStaticAnalysisPath();
             ScheduleStaticAnalyzer.Result staticResult =
@@ -70,6 +73,7 @@ public class ReplayAgent {
 
             // 3. Initialize the Coordinator with the data
             ReplayCoordinator.init(buffer, totalEvents);
+            ReplayCoordinator.loadScheduleArtifact(scheduleEntries);
 
             // 3a. Install a global handler so threads that die from uncaught exceptions
             // are removed from the active-role set, preventing coordinator deadlock.
@@ -137,5 +141,13 @@ public class ReplayAgent {
         throw new IllegalStateException(
                 "Unable to resolve mandatory static-analysis path from java.class.path; "
                         + "set -D" + STATIC_ANALYSIS_PATH_PROPERTY + "=<jar-or-classes-dir>");
+    }
+
+    private static Set<Integer> extractScheduleRoles(List<ScheduleDistiller.ScheduleEntry> scheduleEntries) {
+        HashSet<Integer> roleIds = new HashSet<>();
+        for (ScheduleDistiller.ScheduleEntry entry : scheduleEntries) {
+            roleIds.add(entry.roleId);
+        }
+        return roleIds;
     }
 }

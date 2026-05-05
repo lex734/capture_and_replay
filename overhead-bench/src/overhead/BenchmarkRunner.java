@@ -381,6 +381,8 @@ public class BenchmarkRunner {
         long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(measureWindowSeconds);
         int attempts = 0;
         int capRuns = 0;
+        List<Path> traces = new ArrayList<>();
+        boolean missingTrace = false;
         while (attempts == 0 || System.nanoTime() < deadlineNanos) {
             deleteIfExists(workDir.resolve("trace.bin"));
             RunResult captureResult = run(captureCmd, workDir, timeoutSeconds);
@@ -392,23 +394,42 @@ public class BenchmarkRunner {
             }
             capRuns++;
             capMs.add(captureResult.elapsedMs);
-            if (repMs.size() >= replayMeasureCap) {
-                continue;
-            }
             if (!Files.exists(workDir.resolve("trace.bin"))) {
-                replayStatus = "NO_TRACE";
+                missingTrace = true;
                 continue;
             }
-            RunResult replayResult = run(replayCmd, workDir, timeoutSeconds);
-            boolean replayBugObserved = hadBug(cls, replayResult);
-            boolean replayMatches = bugOutcome
-                ? replayBugObserved
-                : (!replayBugObserved && replayResult.completed && !hasIncompleteReplaySignal(replayResult.output));
-            if (replayMatches) {
-                repMs.add(replayResult.elapsedMs);
-                replayStatus = null;
-            } else if (!"NO_TRACE".equals(replayStatus)) {
+            if (traces.size() < replayMeasureCap) {
+                Path savedTrace = workDir.resolve("trace-" + safeWorkloadName(cls) + "-" + bugOutcome + "-" + capRuns + ".bin");
+                Files.copy(workDir.resolve("trace.bin"), savedTrace, StandardCopyOption.REPLACE_EXISTING);
+                traces.add(savedTrace);
+            }
+        }
+
+        boolean sawReplayMismatch = false;
+        for (Path trace : traces) {
+            for (int i = 0; i < replayMeasureCap; i++) {
+                Files.copy(trace, workDir.resolve("trace.bin"), StandardCopyOption.REPLACE_EXISTING);
+                RunResult replayResult = run(replayCmd, workDir, timeoutSeconds);
+                boolean replayBugObserved = hadBug(cls, replayResult);
+                boolean replayMatches = bugOutcome
+                    ? replayBugObserved
+                    : (!replayBugObserved && replayResult.completed && !hasIncompleteReplaySignal(replayResult.output));
+                if (replayMatches) {
+                    repMs.add(replayResult.elapsedMs);
+                    replayStatus = null;
+                } else {
+                    sawReplayMismatch = true;
+                }
+            }
+        }
+
+        if (replayStatus != null) {
+            if (!traces.isEmpty() && sawReplayMismatch) {
                 replayStatus = "INCOMPLETE";
+            } else if (!traces.isEmpty()) {
+                replayStatus = repMs.isEmpty() ? "INCOMPLETE" : null;
+            } else if (missingTrace) {
+                replayStatus = "NO_TRACE";
             }
         }
         return new OutcomeResult(new ArrayList<>(), 0, 0, capMs, capRuns, attempts, repMs, replayStatus);

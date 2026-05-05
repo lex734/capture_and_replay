@@ -9,19 +9,22 @@ import java.util.stream.Collectors;
 /**
  * Measures how faithfully the replay agent reproduces captured SCTBench runs.
  *
- * <p>For each class in the SCTBench suite: captures one run unconditionally,
- * then replays that trace N times (default 30) and reports per-class metrics.
+ * <p>For each class in the SCTBench suite: performs 10 capture trials by default.
+ * Each successful capture is replayed 10 times, then replay metrics are aggregated
+ * separately for traces whose capture outcome was buggy vs clean.
  *
  * <p>Usage:
  * <pre>
  *   java -cp fidelity-benchmark.jar fidelity.FidelityBenchmark \
- *        &lt;capture-agent.jar&gt; &lt;replay-agent.jar&gt; &lt;sctbench.jar&gt; [runs=30] [class-or-classlist.txt]
+ *        &lt;capture-agent.jar&gt; &lt;replay-agent.jar&gt; &lt;sctbench.jar&gt; [class-or-classlist.txt]
  * </pre>
  */
 public class FidelityBenchmark {
 
     private static final long CAPTURE_TIMEOUT_MS = 3_000;
     private static final long REPLAY_TIMEOUT_MS  = 5_000;
+    private static final int DEFAULT_CAPTURE_TRIALS = 10;
+    private static final int DEFAULT_REPLAYS_PER_CAPTURE = 10;
 
     // Benchmarks where timeout is the expected bug signal (deadlock).
     private static final Set<String> DEADLOCK_BENCHMARKS = new HashSet<>(Arrays.asList(
@@ -35,18 +38,19 @@ public class FidelityBenchmark {
     public static void main(String[] args) throws Exception {
         if (args.length < 3) {
             System.err.println("Usage: FidelityBenchmark <capture-agent.jar> <replay-agent.jar>"
-                + " <sctbench.jar> [runs=30] [class-or-classlist.txt]");
+                + " <sctbench.jar> [class-or-classlist.txt]");
             System.exit(1);
         }
 
         String captureJar  = args[0];
         String replayJar   = args[1];
         String sctbenchJar = args[2];
-        int    runs        = args.length > 3 ? Integer.parseInt(args[3]) : 30;
+        int captureTrials = DEFAULT_CAPTURE_TRIALS;
+        int replayRunsPerCapture = DEFAULT_REPLAYS_PER_CAPTURE;
 
         List<String> classes;
-        if (args.length > 4) {
-            String arg = args[4];
+        if (args.length > 3) {
+            String arg = args[3];
             Path p = Paths.get(arg);
             if (Files.isRegularFile(p)) {
                 classes = Files.readAllLines(p).stream()
@@ -59,7 +63,9 @@ public class FidelityBenchmark {
             classes = loadBundledClassList();
         }
 
-        System.out.printf("=== Fidelity Benchmark: SCTBench (%d replay runs per class) ===%n%n", runs);
+        System.out.printf(
+            "=== Fidelity Benchmark: SCTBench (%d capture trials x %d replays per capture) ===%n%n",
+            captureTrials, replayRunsPerCapture);
 
         // All subprocesses share the harness working directory. Sequential execution
         // means there is no race on trace.bin between different classes.
@@ -67,238 +73,59 @@ public class FidelityBenchmark {
         Path traceFile = workDir.resolve("trace.bin");
 
         // Summary accumulators
-        int  classesReplayed   = 0;
-        long totalReplays      = 0;
-        long totalCompleteRuns = 0;
-        long totalIncompleteRuns = 0;
-        long totalDivergences  = 0;
-        long totalOutcomeMatch = 0;
-        long totalOutcomeComplete = 0;
-        long totalOutcomeIncomplete = 0;
-        long totalOutcomeDiverged = 0;
-        long totalCompleteMatched = 0;
-        long totalCompleteRemaining = 0;
-        long totalCompleteEvents = 0;
-        long totalIncompleteMatched = 0;
-        long totalIncompleteRemaining = 0;
-        long totalIncompleteEvents = 0;
-        long totalDivergedMatched = 0;
-        long totalDivergedRemaining = 0;
-        long totalDivergedEvents = 0;
-        long totalValued       = 0;
-        long totalAgreements   = 0;
-        long totalInjections   = 0;
-        long totalNoInjectDisagreements = 0;
-
+        int classesReplayed = 0;
+        OutcomeBucketSummary bugSummary = new OutcomeBucketSummary("bug");
+        OutcomeBucketSummary cleanSummary = new OutcomeBucketSummary("clean");
         for (String cls : classes) {
             System.out.printf("--- %s ---%n", cls);
 
-            Files.deleteIfExists(traceFile);
+            ClassSummary classSummary = new ClassSummary(captureTrials);
 
-            CaptureResult cr = runCapture(captureJar, sctbenchJar, cls, workDir);
-            System.out.printf("  Capture            : %s%n", cr.summary);
-            if (!cr.traceProduced) {
-                System.out.println();
-                continue;
+            for (int captureTrial = 0; captureTrial < captureTrials; captureTrial++) {
+                Files.deleteIfExists(traceFile);
+
+                CaptureResult cr = runCapture(captureJar, sctbenchJar, cls, workDir);
+                classSummary.captureAttempts++;
+                System.out.printf("  Capture %2d/%d       : %s%n",
+                    captureTrial + 1, captureTrials, cr.summary);
+
+                if (!cr.traceProduced) {
+                    continue;
+                }
+
+                classSummary.successfulCaptures++;
+                OutcomeBucketStats bucket = classSummary.bucketFor(cr.hadBug);
+                bucket.captureCount++;
+
+                for (int replayRun = 0; replayRun < replayRunsPerCapture; replayRun++) {
+                    Path propsFile = workDir.resolve(
+                        "fidelity_capture_" + captureTrial + "_replay_" + replayRun + ".properties");
+                    ReplayResult rr = runReplay(replayJar, sctbenchJar, cls, workDir, propsFile);
+                    bucket.recordReplay(rr, cr.hadBug);
+                }
             }
-            classesReplayed++;
 
-            // Per-class accumulators
-            long traceSize      = 0;  // events_total (constant per class; take max observed)
-            int  runsWithData   = 0;
-            int  completeRuns   = 0;
-            int  incompleteRuns = 0;
-            int  divergences    = 0;
-            int  outcomeMatch   = 0;
-            int  outcomeComplete = 0;
-            int  outcomeIncomplete = 0;
-            int  outcomeDiverged = 0;
-            long completeMatched = 0, completeRemaining = 0, completeEvents = 0;
-            long incompleteMatched = 0, incompleteRemaining = 0, incompleteEvents = 0;
-            long divergedMatched = 0, divergedRemaining = 0, divergedEvents = 0;
-            long sumValued      = 0, sumAgreements = 0, sumInjections = 0, sumNoInjectDisagreements = 0;
-            Map<String, Integer> incompleteReasons = new LinkedHashMap<>();
-
-            for (int i = 0; i < runs; i++) {
-                Path propsFile = workDir.resolve("fidelity_run_" + i + ".properties");
-                ReplayResult rr = runReplay(replayJar, sctbenchJar, cls, workDir, propsFile);
-
-                if (rr.eventsTotal > traceSize) traceSize = rr.eventsTotal;
-                if (rr.eventsTotal > 0) {
-                    runsWithData++;
-                }
-                long remaining = Math.max(0, rr.eventsTotal - rr.eventsMatched);
-                if (rr.diverged) {
-                    divergences++;
-                    divergedMatched += rr.eventsMatched;
-                    divergedRemaining += remaining;
-                    divergedEvents += rr.eventsTotal;
-                } else if (rr.incomplete) {
-                    incompleteRuns++;
-                    incompleteMatched += rr.eventsMatched;
-                    incompleteRemaining += remaining;
-                    incompleteEvents += rr.eventsTotal;
-                    String reason = rr.incompleteReason == null || rr.incompleteReason.isEmpty()
-                            ? "unknown"
-                            : rr.incompleteReason;
-                    incompleteReasons.put(reason, incompleteReasons.getOrDefault(reason, 0) + 1);
-                } else {
-                    completeRuns++;
-                    completeMatched += rr.eventsMatched;
-                    completeRemaining += remaining;
-                    completeEvents += rr.eventsTotal;
-                }
-                boolean outMatch = rr.outcomeMatchesCapture(cr.hadBug);
-                if (outMatch) outcomeMatch++;
-                if (rr.diverged && outMatch) outcomeDiverged++;
-                if (rr.incomplete && outMatch) outcomeIncomplete++;
-                if (!rr.diverged && !rr.incomplete && outMatch) outcomeComplete++;
-
-                sumValued     += rr.valuedEvents;
-                sumAgreements += rr.naturalAgreements;
-                sumInjections += rr.injections;
-                sumNoInjectDisagreements += rr.noInjectDisagreements;
+            if (classSummary.successfulCaptures > 0) {
+                classesReplayed++;
             }
 
             // Per-class display
-            System.out.printf("  Trace size         : %d events%n", traceSize);
-            System.out.printf("  Complete runs      : %d / %d%n", completeRuns, runs);
-            System.out.printf("  Incomplete runs    : %d / %d%n", incompleteRuns, runs);
-            System.out.printf("  Structural divs    : %d / %d%n", divergences, runs);
-            System.out.printf("  Outcome reproduced : %d / %d  (%.2f%%)%n",
-                outcomeMatch, runs, 100.0 * outcomeMatch / runs);
-            if (completeRuns > 0) {
-                System.out.printf("  ...complete runs   : %d / %d%n", outcomeComplete, completeRuns);
-            }
-            if (incompleteRuns > 0) {
-                System.out.printf("  ...incomplete runs : %d / %d%n", outcomeIncomplete, incompleteRuns);
-            }
-            if (divergences > 0) {
-                System.out.printf("  ...diverged runs   : %d / %d%n", outcomeDiverged, divergences);
-            }
-            if (completeRuns > 0 && completeEvents > 0) {
-                System.out.printf("  Matched (complete) : %.2f avg / run  (%.2f%%)%n",
-                    (double) completeMatched / completeRuns,
-                    100.0 * completeMatched / completeEvents);
-            }
-            if (incompleteRuns > 0 && incompleteEvents > 0) {
-                System.out.printf("  Matched (incompl.) : %.2f avg / run  (%.2f%%)%n",
-                    (double) incompleteMatched / incompleteRuns,
-                    100.0 * incompleteMatched / incompleteEvents);
-                System.out.printf("  Remaining (incompl.): %.2f avg / run  (%.2f%%)%n",
-                    (double) incompleteRemaining / incompleteRuns,
-                    100.0 * incompleteRemaining / incompleteEvents);
-                if (!incompleteReasons.isEmpty()) {
-                    StringBuilder sb = new StringBuilder();
-                    for (Map.Entry<String, Integer> e : incompleteReasons.entrySet()) {
-                        if (sb.length() > 0) sb.append(", ");
-                        sb.append(e.getKey()).append('=').append(e.getValue());
-                    }
-                    System.out.printf("  Incomplete reasons : %s%n", sb);
-                }
-            }
-            if (divergences > 0 && divergedEvents > 0) {
-                System.out.printf("  Matched (pre-div)  : %.2f avg / run  (%.2f%%)%n",
-                    (double) divergedMatched / divergences,
-                    100.0 * divergedMatched / divergedEvents);
-                System.out.printf("  Remaining (post-div): %.2f avg / run  (%.2f%%)%n",
-                    (double) divergedRemaining / divergences,
-                    100.0 * divergedRemaining / divergedEvents);
-            }
-            if (sumValued > 0) {
-                System.out.printf("  Valued events      : %.2f avg / run%n",
-                    (double) sumValued / runsWithData);
-                System.out.printf("  Natural agreement  : %.2f / %.2f  (%.2f%%)%n",
-                    (double) sumAgreements / runsWithData, (double) sumValued / runsWithData,
-                    100.0 * sumAgreements / sumValued);
-                System.out.printf("  Injections         : %.2f / %.2f  (%.2f%%)%n",
-                    (double) sumInjections / runsWithData, (double) sumValued / runsWithData,
-                    100.0 * sumInjections / sumValued);
-                System.out.printf("  No-inject disagree : %.2f / %.2f  (%.2f%%)%n",
-                    (double) sumNoInjectDisagreements / runsWithData, (double) sumValued / runsWithData,
-                    100.0 * sumNoInjectDisagreements / sumValued);
-            }
+            System.out.printf("  Successful captures: %d / %d%n",
+                classSummary.successfulCaptures, classSummary.captureAttempts);
+            classSummary.printBucket("bug");
+            classSummary.printBucket("clean");
             System.out.println();
 
-            // Accumulate into summary
-            totalReplays       += runs;
-            totalCompleteRuns  += completeRuns;
-            totalIncompleteRuns += incompleteRuns;
-            totalDivergences   += divergences;
-            totalOutcomeMatch  += outcomeMatch;
-            totalOutcomeComplete += outcomeComplete;
-            totalOutcomeIncomplete += outcomeIncomplete;
-            totalOutcomeDiverged += outcomeDiverged;
-            totalCompleteMatched += completeMatched;
-            totalCompleteRemaining += completeRemaining;
-            totalCompleteEvents += completeEvents;
-            totalIncompleteMatched += incompleteMatched;
-            totalIncompleteRemaining += incompleteRemaining;
-            totalIncompleteEvents += incompleteEvents;
-            totalDivergedMatched += divergedMatched;
-            totalDivergedRemaining += divergedRemaining;
-            totalDivergedEvents += divergedEvents;
-            totalValued        += sumValued;
-            totalAgreements    += sumAgreements;
-            totalInjections    += sumInjections;
-            totalNoInjectDisagreements += sumNoInjectDisagreements;
+            bugSummary.add(classSummary.buggy);
+            cleanSummary.add(classSummary.clean);
         }
 
         // Summary
         System.out.println("===== SUMMARY =====");
         System.out.printf("Classes tested        : %d%n", classes.size());
         System.out.printf("Classes replayed      : %d / %d%n", classesReplayed, classes.size());
-        if (totalReplays > 0) {
-            System.out.printf("Complete runs         : %d / %d runs  (%.1f%%)%n",
-                totalCompleteRuns, totalReplays, 100.0 * totalCompleteRuns / totalReplays);
-            System.out.printf("Incomplete runs       : %d / %d runs  (%.1f%%)%n",
-                totalIncompleteRuns, totalReplays, 100.0 * totalIncompleteRuns / totalReplays);
-            System.out.printf("Structural divs       : %d / %d runs  (%.1f%%)%n",
-                totalDivergences, totalReplays, 100.0 * totalDivergences / totalReplays);
-            System.out.printf("Outcome reproduced    : %d / %d runs  (%.1f%%)%n",
-                totalOutcomeMatch, totalReplays, 100.0 * totalOutcomeMatch / totalReplays);
-            if (totalCompleteRuns > 0) {
-                System.out.printf("...complete runs      : %d / %d runs  (%.1f%%)%n",
-                    totalOutcomeComplete, totalCompleteRuns,
-                    100.0 * totalOutcomeComplete / totalCompleteRuns);
-            }
-            if (totalIncompleteRuns > 0) {
-                System.out.printf("...incomplete runs    : %d / %d runs  (%.1f%%)%n",
-                    totalOutcomeIncomplete, totalIncompleteRuns,
-                    100.0 * totalOutcomeIncomplete / totalIncompleteRuns);
-            }
-            if (totalDivergences > 0) {
-                System.out.printf("...diverged runs      : %d / %d runs  (%.1f%%)%n",
-                    totalOutcomeDiverged, totalDivergences,
-                    100.0 * totalOutcomeDiverged / totalDivergences);
-            }
-            if (totalCompleteRuns > 0 && totalCompleteEvents > 0) {
-                System.out.printf("Matched (complete)    : %.1f%%%n",
-                    100.0 * totalCompleteMatched / totalCompleteEvents);
-            }
-            if (totalIncompleteRuns > 0 && totalIncompleteEvents > 0) {
-                System.out.printf("Matched (incomplete)  : %.1f%%%n",
-                    100.0 * totalIncompleteMatched / totalIncompleteEvents);
-                System.out.printf("Remaining (incomplete): %.1f%%%n",
-                    100.0 * totalIncompleteRemaining / totalIncompleteEvents);
-            }
-            if (totalDivergences > 0 && totalDivergedEvents > 0) {
-                System.out.printf("Matched (pre-div)     : %.1f%%%n",
-                    100.0 * totalDivergedMatched / totalDivergedEvents);
-                System.out.printf("Remaining (post-div)  : %.1f%%%n",
-                    100.0 * totalDivergedRemaining / totalDivergedEvents);
-            }
-        }
-        if (totalValued > 0) {
-            System.out.printf("Valued events         : %d%n", totalValued);
-            System.out.printf("Natural agreement     : %d / %d  (%.1f%%)%n",
-                totalAgreements, totalValued, 100.0 * totalAgreements / totalValued);
-            System.out.printf("Injections            : %d / %d  (%.1f%%)%n",
-                totalInjections, totalValued, 100.0 * totalInjections / totalValued);
-            System.out.printf("No-inject disagreements: %d / %d  (%.1f%%)%n",
-                totalNoInjectDisagreements, totalValued,
-                100.0 * totalNoInjectDisagreements / totalValued);
-        }
+        bugSummary.print();
+        cleanSummary.print();
         System.out.println("===================");
     }
 
@@ -341,10 +168,6 @@ public class FidelityBenchmark {
         boolean hadBug  = hasBugSignal(r.stdout, r.stderr)
             || (r.timedOut && DEADLOCK_BENCHMARKS.contains(cls));
         boolean diverged = false;
-        boolean incomplete = false;
-        String incompleteReason = "";
-        String incompleteDetails = "";
-
         long eventsMatched = 0, eventsTotal = 0;
         long valuedEvents = 0, naturalAgreements = 0, injections = 0, noInjectDisagreements = 0;
 
@@ -354,9 +177,6 @@ public class FidelityBenchmark {
             catch (IOException ignored) {}
             Files.deleteIfExists(propsFile);
             diverged          = Boolean.parseBoolean(p.getProperty("structural_divergence", "false"));
-            incomplete        = Boolean.parseBoolean(p.getProperty("incomplete", "false"));
-            incompleteReason  = p.getProperty("incomplete_reason", "");
-            incompleteDetails = p.getProperty("incomplete_details", "");
             eventsMatched     = Long.parseLong(p.getProperty("events_matched",      "0"));
             eventsTotal       = Long.parseLong(p.getProperty("events_total",        "0"));
             valuedEvents      = Long.parseLong(p.getProperty("valued_events",       "0"));
@@ -364,22 +184,11 @@ public class FidelityBenchmark {
             injections        = Long.parseLong(p.getProperty("injections",          "0"));
             noInjectDisagreements = Long.parseLong(p.getProperty("no_inject_disagreements", "0"));
         } else {
-            // Fallback for runs that fail before the replay shutdown hook writes stats.
             diverged = hasDivergenceSignal(r.stdout, r.stderr);
         }
 
-        if (diverged) incomplete = false;
-        if (incomplete && r.timedOut) {
-            incompleteReason = incompleteReason.isEmpty()
-                ? "timeout"
-                : "timeout+" + incompleteReason;
-        } else if (incomplete && incompleteReason.isEmpty()) {
-            incompleteReason = "unknown";
-        }
-
-        return new ReplayResult(hadBug, diverged, incomplete, eventsMatched, eventsTotal,
-            valuedEvents, naturalAgreements, injections, noInjectDisagreements,
-            incompleteReason, incompleteDetails);
+        return new ReplayResult(hadBug, diverged, eventsMatched, eventsTotal,
+            valuedEvents, naturalAgreements, injections, noInjectDisagreements);
     }
 
     // ---------- process execution ----------
@@ -406,7 +215,7 @@ public class FidelityBenchmark {
 
         boolean finished = p.waitFor(timeoutMs, TimeUnit.MILLISECONDS);
         if (!finished) {
-            p.destroy(); // SIGTERM — lets shutdown hooks (fidelity report) run
+            p.destroy();
             finished = p.waitFor(2, TimeUnit.SECONDS);
             if (!finished) p.destroyForcibly();
             p.waitFor();
@@ -481,34 +290,199 @@ public class FidelityBenchmark {
     private static final class ReplayResult {
         final boolean hadBug;
         final boolean diverged;
-        final boolean incomplete;
         final long    eventsMatched;
         final long    eventsTotal;
         final long    valuedEvents;
         final long    naturalAgreements;
         final long    injections;
         final long    noInjectDisagreements;
-        final String  incompleteReason;
-        final String  incompleteDetails;
-        ReplayResult(boolean hadBug, boolean diverged, boolean incomplete,
-                     long eventsMatched, long eventsTotal,
+        ReplayResult(boolean hadBug, boolean diverged, long eventsMatched, long eventsTotal,
                      long valuedEvents, long naturalAgreements, long injections,
-                     long noInjectDisagreements,
-                     String incompleteReason, String incompleteDetails) {
+                     long noInjectDisagreements) {
             this.hadBug            = hadBug;
             this.diverged          = diverged;
-            this.incomplete        = incomplete;
             this.eventsMatched     = eventsMatched;
             this.eventsTotal       = eventsTotal;
             this.valuedEvents      = valuedEvents;
             this.naturalAgreements = naturalAgreements;
             this.injections        = injections;
             this.noInjectDisagreements = noInjectDisagreements;
-            this.incompleteReason  = incompleteReason;
-            this.incompleteDetails = incompleteDetails;
         }
         boolean outcomeMatchesCapture(boolean captureHadBug) {
             return hadBug == captureHadBug;
+        }
+    }
+
+    private static final class OutcomeBucketStats {
+        long captureCount;
+        long replayRuns;
+        long traceSize;
+        long completeRuns;
+        long divergenceRuns;
+        long outcomeMatch;
+        long outcomeComplete;
+        long completeMatched;
+        long completeEvents;
+        long valuedEvents;
+        long naturalAgreements;
+        long injections;
+        long noInjectDisagreements;
+
+        void recordReplay(ReplayResult rr, boolean captureHadBug) {
+            replayRuns++;
+            if (rr.eventsTotal > traceSize) traceSize = rr.eventsTotal;
+            if (rr.diverged) divergenceRuns++;
+            valuedEvents += rr.valuedEvents;
+            naturalAgreements += rr.naturalAgreements;
+            injections += rr.injections;
+            noInjectDisagreements += rr.noInjectDisagreements;
+
+            boolean isComplete = (rr.eventsMatched == rr.eventsTotal);
+            if (isComplete) {
+                completeRuns++;
+                completeMatched += rr.eventsMatched;
+                completeEvents += rr.eventsTotal;
+            }
+
+            boolean outMatch = rr.outcomeMatchesCapture(captureHadBug);
+            if (outMatch) outcomeMatch++;
+            if (isComplete && outMatch) outcomeComplete++;
+        }
+    }
+
+    private static final class ClassSummary {
+        final int expectedCaptureTrials;
+        final OutcomeBucketStats buggy = new OutcomeBucketStats();
+        final OutcomeBucketStats clean = new OutcomeBucketStats();
+        long captureAttempts;
+        long successfulCaptures;
+
+        ClassSummary(int expectedCaptureTrials) {
+            this.expectedCaptureTrials = expectedCaptureTrials;
+        }
+
+        OutcomeBucketStats bucketFor(boolean hadBug) {
+            return hadBug ? buggy : clean;
+        }
+
+        void printBucket(String label) {
+            OutcomeBucketStats bucket = "bug".equals(label) ? buggy : clean;
+            if (bucket.captureCount == 0) {
+                System.out.printf("  %s captures       : 0 / %d%n",
+                    padLabel(label), expectedCaptureTrials);
+                return;
+            }
+
+            System.out.printf("  %s captures       : %d / %d%n",
+                padLabel(label), bucket.captureCount, expectedCaptureTrials);
+            System.out.printf("    Trace size         : %d events%n", bucket.traceSize);
+            System.out.printf("    Replay runs        : %d%n", bucket.replayRuns);
+            System.out.printf("    Complete runs      : %d / %d%n",
+                bucket.completeRuns, bucket.replayRuns);
+            System.out.printf("    Structural divs    : %d / %d%n",
+                bucket.divergenceRuns, bucket.replayRuns);
+            System.out.printf("    Outcome reproduced : %d / %d  (%.2f%%)%n",
+                bucket.outcomeMatch, bucket.replayRuns, 100.0 * bucket.outcomeMatch / bucket.replayRuns);
+            if (bucket.completeRuns > 0) {
+                System.out.printf("    ...complete runs   : %d / %d%n",
+                    bucket.outcomeComplete, bucket.completeRuns);
+            }
+            if (bucket.completeEvents > 0) {
+                System.out.printf("    Matched (complete) : %.2f avg / run  (%.2f%%)%n",
+                    (double) bucket.completeMatched / bucket.completeRuns,
+                    100.0 * bucket.completeMatched / bucket.completeEvents);
+            }
+            if (bucket.valuedEvents > 0) {
+                System.out.printf("    Valued events      : %.2f avg / run%n",
+                    (double) bucket.valuedEvents / bucket.replayRuns);
+                System.out.printf("    Natural agreement  : %d / %d  (%.2f%%)%n",
+                    bucket.naturalAgreements, bucket.valuedEvents,
+                    100.0 * bucket.naturalAgreements / bucket.valuedEvents);
+                System.out.printf("    Injections         : %d / %d  (%.2f%%)%n",
+                    bucket.injections, bucket.valuedEvents,
+                    100.0 * bucket.injections / bucket.valuedEvents);
+                System.out.printf("    No-inject disagree : %d / %d  (%.2f%%)%n",
+                    bucket.noInjectDisagreements, bucket.valuedEvents,
+                    100.0 * bucket.noInjectDisagreements / bucket.valuedEvents);
+            }
+        }
+
+        private static String padLabel(String label) {
+            return String.format("%-5s", label);
+        }
+    }
+
+    private static final class OutcomeBucketSummary {
+        final String label;
+        long captures;
+        long replayRuns;
+        long completeRuns;
+        long divergenceRuns;
+        long outcomeMatch;
+        long outcomeComplete;
+        long completeMatched;
+        long completeEvents;
+        long valuedEvents;
+        long naturalAgreements;
+        long injections;
+        long noInjectDisagreements;
+
+        OutcomeBucketSummary(String label) {
+            this.label = label;
+        }
+
+        void add(OutcomeBucketStats stats) {
+            captures += stats.captureCount;
+            replayRuns += stats.replayRuns;
+            completeRuns += stats.completeRuns;
+            divergenceRuns += stats.divergenceRuns;
+            outcomeMatch += stats.outcomeMatch;
+            outcomeComplete += stats.outcomeComplete;
+            completeMatched += stats.completeMatched;
+            completeEvents += stats.completeEvents;
+            valuedEvents += stats.valuedEvents;
+            naturalAgreements += stats.naturalAgreements;
+            injections += stats.injections;
+            noInjectDisagreements += stats.noInjectDisagreements;
+        }
+
+        void print() {
+            System.out.printf("%s captures         : %d%n", capitalize(label), captures);
+            if (captures == 0) {
+                return;
+            }
+
+            System.out.printf("%s replay runs      : %d%n", capitalize(label), replayRuns);
+            System.out.printf("%s complete runs    : %d / %d runs  (%.1f%%)%n",
+                capitalize(label), completeRuns, replayRuns, 100.0 * completeRuns / replayRuns);
+            System.out.printf("%s structural divs  : %d / %d runs  (%.1f%%)%n",
+                capitalize(label), divergenceRuns, replayRuns, 100.0 * divergenceRuns / replayRuns);
+            System.out.printf("%s outcome repr.    : %d / %d runs  (%.1f%%)%n",
+                capitalize(label), outcomeMatch, replayRuns, 100.0 * outcomeMatch / replayRuns);
+            if (completeRuns > 0) {
+                System.out.printf("%s ...complete runs : %d / %d runs  (%.1f%%)%n",
+                    capitalize(label), outcomeComplete, completeRuns,
+                    100.0 * outcomeComplete / completeRuns);
+            }
+            if (completeEvents > 0) {
+                System.out.printf("%s matched complete : %.1f%%%n",
+                    capitalize(label), 100.0 * completeMatched / completeEvents);
+            }
+            if (valuedEvents > 0) {
+                System.out.printf("%s natural agr.    : %d / %d  (%.1f%%)%n",
+                    capitalize(label), naturalAgreements, valuedEvents,
+                    100.0 * naturalAgreements / valuedEvents);
+                System.out.printf("%s injections      : %d / %d  (%.1f%%)%n",
+                    capitalize(label), injections, valuedEvents,
+                    100.0 * injections / valuedEvents);
+                System.out.printf("%s no-inject dis.  : %d / %d  (%.1f%%)%n",
+                    capitalize(label), noInjectDisagreements, valuedEvents,
+                    100.0 * noInjectDisagreements / valuedEvents);
+            }
+        }
+
+        private static String capitalize(String s) {
+            return Character.toUpperCase(s.charAt(0)) + s.substring(1);
         }
     }
 

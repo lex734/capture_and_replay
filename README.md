@@ -21,6 +21,27 @@ To skip rebuilding unchanged modules:
 mvn package -pl capture,replay --am
 ```
 
+To compile a single Java source file directly with `javac`:
+
+```bash
+javac -cp test-app/target/test-app.jar -d /tmp/classes path/to/YourClass.java
+```
+
+For example, to compile one test class from `test-app` into a throwaway output directory:
+
+```bash
+mkdir -p /tmp/classes
+javac -cp test-app/target/test-app.jar \
+      -d /tmp/classes \
+      test-app/src/main/java/correctness/AtomicCounterTest.java
+```
+
+You can then run that class with:
+
+```bash
+java -cp /tmp/classes:test-app/target/test-app.jar correctness.AtomicCounterTest
+```
+
 ## Running the Test App
 
 **Capture** — run the program and record:

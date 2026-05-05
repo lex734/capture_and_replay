@@ -154,6 +154,9 @@ public final class ScheduleStaticAnalyzer {
                 MethodKey key = item.getKey();
                 Set<Integer> actual = inspectReachableBoundaries(classSource, key);
                 for (int expectedEvent : item.getValue()) {
+                    if (actual.contains(expectedEvent)) {
+                        continue;
+                    }
                     for (int inverse : inverseEventTypes(expectedEvent)) {
                         if (actual.contains(inverse)) {
                             reasons.add("inverse boundary reachable from " + key.className + "." + key.methodName

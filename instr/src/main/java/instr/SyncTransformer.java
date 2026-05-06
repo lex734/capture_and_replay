@@ -1,5 +1,6 @@
 package instr;
 
+import common.v1.AgentRuntimeConfig;
 import java.lang.instrument.ClassFileTransformer;
 import java.security.ProtectionDomain;
 import java.util.ArrayDeque;
@@ -13,10 +14,15 @@ import org.w3c.dom.events.EventTarget;
 
 public class SyncTransformer implements ClassFileTransformer {
 
-    private final String extraExclude; // optional extra package prefix to skip; may be null
+    private final AgentRuntimeConfig config;
 
-    public SyncTransformer()                    { this.extraExclude = null; }
-    public SyncTransformer(String extraExclude) { this.extraExclude = extraExclude; }
+    public SyncTransformer() {
+        this(AgentRuntimeConfig.parse(null));
+    }
+
+    public SyncTransformer(AgentRuntimeConfig config) {
+        this.config = config == null ? AgentRuntimeConfig.parse(null) : config;
+    }
 
     // ---- Site ID registry (assigned at class-load/transform time, not runtime) ----
     // Site IDs are derived from the site string content, not registration order.
@@ -94,15 +100,10 @@ public class SyncTransformer implements ClassFileTransformer {
     public byte[] transform(ClassLoader loader, String className, Class<?> classBeingRedefined,
             ProtectionDomain protectionDomain, byte[] classfileBuffer) {
         // prevent recursion
-        if (className == null || className.startsWith("instr/") ||
-                className.startsWith("common/") || className.startsWith("capture/") ||
-                className.startsWith("replay/") || className.startsWith("java/") || className.startsWith("jdk/")
-                || className.startsWith("sun/")) {
+        if (className == null || !config.shouldInstrumentClass(className)) {
             return null;
         }
-        if (extraExclude != null && className.startsWith(extraExclude)) {
-            return null;
-        }
+        StaticPrePassRegistry.record(StaticPrePassAnalyzer.analyzeClass(className, classfileBuffer, config));
         // set up ASM to read and write the class
         try {
             ClassReader reader = new ClassReader(classfileBuffer);

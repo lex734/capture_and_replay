@@ -2,7 +2,10 @@ package replay;
 
 import common.BinarySchema;
 import common.IdentityMapper;
+import common.v1.AgentRuntimeConfig;
+import common.v1.TraceObjectId;
 import instr.SyncTransformer;
+import instr.StaticPrePassRegistry;
 
 import java.io.File;
 import java.io.RandomAccessFile;
@@ -16,9 +19,12 @@ public class ReplayAgent {
         // System.out.println("[ReplayAgent] Initializing Enforcer...");
 
         try {
+            AgentRuntimeConfig config = AgentRuntimeConfig.parse(agentArgs);
             // 1. Reset the "Brain" to ensure discovery order matches Capture
             IdentityMapper.reset();
+            TraceObjectId.resetSequence();
             SyncTransformer.resetSiteRegistry();
+            StaticPrePassRegistry.reset();
 
             // 2. Load the Trace File
             File traceFile = new File("trace.bin");
@@ -68,7 +74,7 @@ public class ReplayAgent {
 
             // 4. Add the Transformer (The mode is handled by System Property tool.mode=REPLAY)
             System.setProperty("tool.mode", "REPLAY");
-            inst.addTransformer(new SyncTransformer(), true);
+            inst.addTransformer(new SyncTransformer(config), true);
 
         } catch (Exception e) {
             // System.err.println("[ReplayAgent] Failed to initialize:");

@@ -60,3 +60,23 @@ java -javaagent:replay/target/trace-replay-agent.jar -jar your-app.jar
 ```
 
 The trace is written to / read from `trace.bin` in the working directory.
+
+## Frozen V1 Foundations
+
+The codebase now includes the first Frozen V1 scaffolding:
+
+- canonical semantic key types in `common.v1`
+- replay mode parsing: `safe`, `balanced` (default), `aggressive`
+- a conservative static pre-pass registry that discovers concurrent entry roots and Tier B candidates during transformation
+- replay result axes (`OutcomeRelation`, `ReplayQuality`) for the later reducer/outcome pipeline
+
+Agent arguments currently support:
+
+```bash
+java -javaagent:capture/target/trace-capture-agent.jar=mode=balanced,app=com.example:org.demo,exclude=third.party.bad \
+     -cp <your-classpath> <YourMainClass>
+```
+
+- `mode=` chooses V1 instrumentation scope
+- `app=` declares application package prefixes used by `safe` and `balanced`
+- `exclude=` skips an additional package prefix

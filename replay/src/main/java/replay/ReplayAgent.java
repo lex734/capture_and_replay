@@ -3,6 +3,8 @@ package replay;
 import common.BinarySchema;
 import common.IdentityMapper;
 import common.v1.AgentRuntimeConfig;
+import common.v1.ReducedTraceRegistry;
+import common.v1.SemanticTraceRegistry;
 import common.v1.TraceObjectId;
 import instr.SyncTransformer;
 import instr.StaticPrePassRegistry;
@@ -22,6 +24,8 @@ public class ReplayAgent {
             // 1. Reset the "Brain" to ensure discovery order matches Capture
             IdentityMapper.reset();
             TraceObjectId.resetSequence();
+            SemanticTraceRegistry.reset();
+            ReducedTraceRegistry.reset();
             SyncTransformer.resetSiteRegistry();
             StaticPrePassRegistry.reset();
 
@@ -38,6 +42,8 @@ public class ReplayAgent {
             RandomAccessFile raf = new RandomAccessFile(traceFile, "r");
             MappedByteBuffer buffer = raf.getChannel().map(FileChannel.MapMode.READ_ONLY, 0, fileSize);
             raf.close();
+            SemanticTraceRegistry.load("trace-semantics.tsv");
+            ReducedTraceRegistry.load("trace-reduced.tsv");
 
             // 3. Initialize the Coordinator with the data
             String fidelityOutput = System.getProperty("tool.fidelity.output");

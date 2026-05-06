@@ -1183,8 +1183,8 @@ public class SyncTransformer implements ClassFileTransformer {
                  */
                 int valLocal   = newLocal(fieldType);
 
-                // New checkField descriptor: (naturalValue, eventType, owner, siteId, vol, stat, name, ownerName)
-                String checkDesc = "(" + retDesc + "ILjava/lang/Object;IZZLjava/lang/String;Ljava/lang/String;)" + retDesc;
+                // New checkField descriptor: (naturalValue, eventType, owner, siteId, vol, stat, name, ownerName, descriptor)
+                String checkDesc = "(" + retDesc + "ILjava/lang/Object;IZZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;)" + retDesc;
 
                 if (opcode == Opcodes.GETFIELD || opcode == Opcodes.GETSTATIC) {
                     // --- READ ---
@@ -1212,6 +1212,7 @@ public class SyncTransformer implements ClassFileTransformer {
                     mv.visitInsn(isStatic   ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
                     mv.visitLdcInsn(name);
                     mv.visitLdcInsn(owner);
+                    mv.visitLdcInsn(descriptor);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkField" + typeSuffix,
                             checkDesc, false);
                     // Stack: [result] — natural value, or trace value if divergent.
@@ -1240,6 +1241,7 @@ public class SyncTransformer implements ClassFileTransformer {
                     mv.visitInsn(isStatic   ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
                     mv.visitLdcInsn(name);
                     mv.visitLdcInsn(owner);
+                    mv.visitLdcInsn(descriptor);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkField" + typeSuffix,
                             checkDesc, false);
                     // Stack: [approvedValue] — write this to the field.
@@ -1287,8 +1289,9 @@ public class SyncTransformer implements ClassFileTransformer {
                     mv.visitInsn(isStatic ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
                     mv.visitLdcInsn(name);
                     mv.visitLdcInsn(owner);
+                    mv.visitLdcInsn(descriptor);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logField" + typeSuffix,
-                            "(" + retDesc + "ILjava/lang/Object;IZZLjava/lang/String;Ljava/lang/String;)V", false);
+                            "(" + retDesc + "ILjava/lang/Object;IZZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V", false);
 
                     mv.visitVarInsn(Opcodes.ALOAD, ownerLocal);
                     mv.visitVarInsn(valLoadOp, valLocal);
@@ -1305,8 +1308,9 @@ public class SyncTransformer implements ClassFileTransformer {
                     mv.visitInsn(isStatic ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
                     mv.visitLdcInsn(name);
                     mv.visitLdcInsn(owner);
+                    mv.visitLdcInsn(descriptor);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logField" + typeSuffix,
-                            "(" + retDesc + "ILjava/lang/Object;IZZLjava/lang/String;Ljava/lang/String;)V", false);
+                            "(" + retDesc + "ILjava/lang/Object;IZZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V", false);
 
                     mv.visitVarInsn(valLoadOp, valLocal);
                     super.visitFieldInsn(opcode, owner, name, descriptor);
@@ -1326,8 +1330,9 @@ public class SyncTransformer implements ClassFileTransformer {
                     mv.visitInsn(isStatic ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
                     mv.visitLdcInsn(name);
                     mv.visitLdcInsn(owner);
+                    mv.visitLdcInsn(descriptor);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logField" + typeSuffix,
-                            "(" + retDesc + "ILjava/lang/Object;IZZLjava/lang/String;Ljava/lang/String;)V", false);
+                            "(" + retDesc + "ILjava/lang/Object;IZZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V", false);
 
                     mv.visitVarInsn(valLoadOp, valLocal);
 
@@ -1343,8 +1348,9 @@ public class SyncTransformer implements ClassFileTransformer {
                     mv.visitInsn(isStatic ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
                     mv.visitLdcInsn(name);
                     mv.visitLdcInsn(owner);
+                    mv.visitLdcInsn(descriptor);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logField" + typeSuffix,
-                            "(" + retDesc + "ILjava/lang/Object;IZZLjava/lang/String;Ljava/lang/String;)V", false);
+                            "(" + retDesc + "ILjava/lang/Object;IZZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V", false);
 
                     mv.visitVarInsn(valLoadOp, valLocal);
                 }

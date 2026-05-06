@@ -2,6 +2,7 @@ package replay;
 
 import common.BinarySchema;
 import common.IdentityMapper;
+import common.v1.FieldKey;
 import java.util.Date;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
@@ -287,8 +288,12 @@ public class ReplayMonitor {
         return roleId;
     }
 
+    private static FieldKey fieldKey(String ownerName, String fieldName, String descriptor) {
+        return FieldKey.of(ownerName, fieldName, descriptor);
+    }
+
     public static int checkFieldInt(int naturalValue, int eventType, Object owner, int currentSiteId,
-            boolean isVolatile, boolean isStatic, String fieldName, String ownerName) {
+            boolean isVolatile, boolean isStatic, String fieldName, String ownerName, String descriptor) {
         if (isInside.get()) return naturalValue;
         isInside.set(true);
         try {
@@ -296,7 +301,8 @@ public class ReplayMonitor {
             int roleId = resolveFieldRole(owner, ownerName, currentSiteId,
                     isVolatile, isStatic, false, eventType, packed, site, count);
             if (roleId == -1) return naturalValue;
-            int val = ReplayCoordinator.awaitTurnFieldInt(roleId, packed[0], site[0], count[0], owner, naturalValue);
+            int val = ReplayCoordinator.awaitTurnFieldInt(roleId, packed[0], site[0], count[0], owner,
+                    fieldKey(ownerName, fieldName, descriptor), naturalValue);
             long seq = ReplayCoordinator.getLastMatchedSeq();
             String evName = (eventType == BinarySchema.Event.FIELD_READ) ? "READ" : "WRITE";
             debug(String.format("[CHECK-FIELD] epoch=%d seq=%d role=%d  %-5s%s %s.%s = %d",
@@ -309,7 +315,7 @@ public class ReplayMonitor {
     }
 
     public static long checkFieldLong(long naturalValue, int eventType, Object owner, int currentSiteId,
-            boolean isVolatile, boolean isStatic, String fieldName, String ownerName) {
+            boolean isVolatile, boolean isStatic, String fieldName, String ownerName, String descriptor) {
         if (isInside.get()) return naturalValue;
         isInside.set(true);
         try {
@@ -317,7 +323,8 @@ public class ReplayMonitor {
             int roleId = resolveFieldRole(owner, ownerName, currentSiteId,
                     isVolatile, isStatic, false, eventType, packed, site, count);
             if (roleId == -1) return naturalValue;
-            long val = ReplayCoordinator.awaitTurnFieldLong(roleId, packed[0], site[0], count[0], owner, naturalValue);
+            long val = ReplayCoordinator.awaitTurnFieldLong(roleId, packed[0], site[0], count[0], owner,
+                    fieldKey(ownerName, fieldName, descriptor), naturalValue);
             long seq = ReplayCoordinator.getLastMatchedSeq();
             String evName = (eventType == BinarySchema.Event.FIELD_READ) ? "READ" : "WRITE";
             debug(String.format("[CHECK-FIELD] epoch=%d seq=%d role=%d  %-5s%s %s.%s = %dL",
@@ -330,7 +337,7 @@ public class ReplayMonitor {
     }
 
     public static Object checkFieldObj(Object naturalValue, int eventType, Object owner, int currentSiteId,
-            boolean isVolatile, boolean isStatic, String fieldName, String ownerName) {
+            boolean isVolatile, boolean isStatic, String fieldName, String ownerName, String descriptor) {
         if (isInside.get()) return naturalValue;
         isInside.set(true);
         try {
@@ -338,7 +345,8 @@ public class ReplayMonitor {
             int roleId = resolveFieldRole(owner, ownerName, currentSiteId,
                     isVolatile, isStatic, true, eventType, packed, site, count);
             if (roleId == -1) return naturalValue;
-            Object val = ReplayCoordinator.awaitTurnFieldObj(roleId, packed[0], site[0], count[0], owner, naturalValue);
+            Object val = ReplayCoordinator.awaitTurnFieldObj(roleId, packed[0], site[0], count[0], owner,
+                    fieldKey(ownerName, fieldName, descriptor), naturalValue);
             long seq = ReplayCoordinator.getLastMatchedSeq();
             String evName = (eventType == BinarySchema.Event.FIELD_READ) ? "READ" : "WRITE";
             debug(String.format("[CHECK-FIELD] epoch=%d seq=%d role=%d  %-5s%s %s.%s = %s",
@@ -554,7 +562,7 @@ public class ReplayMonitor {
             if (roleId == -1) return naturalValue;
             int val = ReplayCoordinator.awaitTurnFieldInt(roleId,
                     buildAtomicPackedType(eventType, index, false), atomicObjSite(index), atomicObjCount(index),
-                    receiver, naturalValue);
+                    receiver, null, naturalValue);
             long seq = ReplayCoordinator.getLastMatchedSeq();
             debug(String.format("[CHECK-ATOM]  epoch=%d seq=%d role=%d  %-12s %s = %d",
                     seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
@@ -575,7 +583,7 @@ public class ReplayMonitor {
             if (roleId == -1) return naturalValue;
             long val = ReplayCoordinator.awaitTurnFieldLong(roleId,
                     buildAtomicPackedType(eventType, index, false), atomicObjSite(index), atomicObjCount(index),
-                    receiver, naturalValue);
+                    receiver, null, naturalValue);
             long seq = ReplayCoordinator.getLastMatchedSeq();
             debug(String.format("[CHECK-ATOM]  epoch=%d seq=%d role=%d  %-12s %s = %dL",
                     seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
@@ -596,7 +604,7 @@ public class ReplayMonitor {
             if (roleId == -1) return naturalValue;
             Object val = ReplayCoordinator.awaitTurnFieldObj(roleId,
                     buildAtomicPackedType(eventType, index, true), atomicObjSite(index), atomicObjCount(index),
-                    receiver, naturalValue);
+                    receiver, null, naturalValue);
             long seq = ReplayCoordinator.getLastMatchedSeq();
             debug(String.format("[CHECK-ATOM]  epoch=%d seq=%d role=%d  %-12s %s = %s",
                     seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),

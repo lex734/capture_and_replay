@@ -2,6 +2,8 @@ package common;
 
 import java.util.concurrent.atomic.AtomicLong;
 import common.IdentityMapper.BirthId;
+import common.v1.FieldKey;
+import common.v1.SemanticTraceRegistry;
 
 public class TraceLogger {
     // High-volume capture logs are disabled by default because they can overwhelm
@@ -140,7 +142,7 @@ public class TraceLogger {
     }
 
     public static void logFieldInt(int value, int eventType, Object owner, int currentSiteId,
-            boolean isVolatile, boolean isStatic, String fieldName, String ownerName) {
+            boolean isVolatile, boolean isStatic, String fieldName, String ownerName, String descriptor) {
         boolean advanceEpoch = isVolatile && (eventType == BinarySchema.Event.FIELD_WRITE);
         long seq = nextSeq(advanceEpoch);
         long tid = Thread.currentThread().getId();
@@ -148,6 +150,8 @@ public class TraceLogger {
         if (roleId == -1) return;
         BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
         int packedType = packFieldType(eventType, isVolatile, isStatic);
+        SemanticTraceRegistry.recordFieldEvent(seq, roleId, packedType, birthId.siteId, birthId.count,
+                FieldKey.of(ownerName, fieldName, descriptor));
         String evName = (eventType == BinarySchema.Event.FIELD_READ) ? "READ" : "WRITE";
         debug("[FIELD]  epoch=%d seq=%d role=%d  %-5s%s %s.%s = %d",
                 seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
@@ -156,7 +160,7 @@ public class TraceLogger {
     }
 
     public static void logFieldLong(long value, int eventType, Object owner, int currentSiteId,
-            boolean isVolatile, boolean isStatic, String fieldName, String ownerName) {
+            boolean isVolatile, boolean isStatic, String fieldName, String ownerName, String descriptor) {
         boolean advanceEpoch = isVolatile && (eventType == BinarySchema.Event.FIELD_WRITE);
         long seq = nextSeq(advanceEpoch);
         long tid = Thread.currentThread().getId();
@@ -164,6 +168,8 @@ public class TraceLogger {
         if (roleId == -1) return;
         BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
         int packedType = packFieldType(eventType, isVolatile, isStatic);
+        SemanticTraceRegistry.recordFieldEvent(seq, roleId, packedType, birthId.siteId, birthId.count,
+                FieldKey.of(ownerName, fieldName, descriptor));
         String evName = (eventType == BinarySchema.Event.FIELD_READ) ? "READ" : "WRITE";
         debug("[FIELD]  epoch=%d seq=%d role=%d  %-5s%s %s.%s = %dL",
                 seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
@@ -173,7 +179,7 @@ public class TraceLogger {
     }
 
     public static void logFieldObj(Object value, int eventType, Object owner, int currentSiteId,
-            boolean isVolatile, boolean isStatic, String fieldName, String ownerName) {
+            boolean isVolatile, boolean isStatic, String fieldName, String ownerName, String descriptor) {
         boolean advanceEpoch = isVolatile && (eventType == BinarySchema.Event.FIELD_WRITE);
         long seq = nextSeq(advanceEpoch);
         long tid = Thread.currentThread().getId();
@@ -182,6 +188,8 @@ public class TraceLogger {
         BirthId birthId   = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
         BirthId valueBirth = IdentityMapper.getBirthId(value, null, currentSiteId);
         int packedType = packFieldObjectType(eventType, isVolatile, isStatic);
+        SemanticTraceRegistry.recordFieldEvent(seq, roleId, packedType, birthId.siteId, birthId.count,
+                FieldKey.of(ownerName, fieldName, descriptor));
         String evName = (eventType == BinarySchema.Event.FIELD_READ) ? "READ" : "WRITE";
         debug("[FIELD]  epoch=%d seq=%d role=%d  %-5s%s %s.%s = %s",
                 seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,

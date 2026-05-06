@@ -129,6 +129,12 @@ public class BinarySchema {
         write(seq, roleId, packedType, objSite, objCount, 0, data);
     }
 
+    public static void flush() {
+        if (buffer != null) {
+            buffer.force();
+        }
+    }
+
     // How many events were actually written
     public static long getRecordedCount() {
         return recordCount.sum();

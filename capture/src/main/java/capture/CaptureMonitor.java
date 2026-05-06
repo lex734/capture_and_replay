@@ -200,36 +200,36 @@ public class CaptureMonitor {
   }
 
   public static void logFieldInt(int value, int eventType, Object owner, int siteId,
-      boolean isVolatile, boolean isStatic, String fieldName, String ownerName) {
+      boolean isVolatile, boolean isStatic, String fieldName, String ownerName, String descriptor) {
     if (isInside.get()) return;
     if (shouldIgnoreCurrentRole(siteId)) return;
     isInside.set(true);
     try {
-      TraceLogger.logFieldInt(value, eventType, owner, siteId, isVolatile, isStatic, fieldName, ownerName);
+      TraceLogger.logFieldInt(value, eventType, owner, siteId, isVolatile, isStatic, fieldName, ownerName, descriptor);
     } finally {
       isInside.set(false);
     }
   }
 
   public static void logFieldLong(long value, int eventType, Object owner, int siteId,
-      boolean isVolatile, boolean isStatic, String fieldName, String ownerName) {
+      boolean isVolatile, boolean isStatic, String fieldName, String ownerName, String descriptor) {
     if (isInside.get()) return;
     if (shouldIgnoreCurrentRole(siteId)) return;
     isInside.set(true);
     try {
-      TraceLogger.logFieldLong(value, eventType, owner, siteId, isVolatile, isStatic, fieldName, ownerName);
+      TraceLogger.logFieldLong(value, eventType, owner, siteId, isVolatile, isStatic, fieldName, ownerName, descriptor);
     } finally {
       isInside.set(false);
     }
   }
 
   public static void logFieldObj(Object value, int eventType, Object owner, int siteId,
-      boolean isVolatile, boolean isStatic, String fieldName, String ownerName) {
+      boolean isVolatile, boolean isStatic, String fieldName, String ownerName, String descriptor) {
     if (isInside.get()) return;
     if (shouldIgnoreCurrentRole(siteId)) return;
     isInside.set(true);
     try {
-      TraceLogger.logFieldObj(value, eventType, owner, siteId, isVolatile, isStatic, fieldName, ownerName);
+      TraceLogger.logFieldObj(value, eventType, owner, siteId, isVolatile, isStatic, fieldName, ownerName, descriptor);
     } finally {
       isInside.set(false);
     }

@@ -3,6 +3,8 @@ package instr;
 import common.BinarySchema;
 import common.IdentityMapper;
 import common.v1.AgentRuntimeConfig;
+import common.v1.TraceReducer;
+import common.v1.SemanticTraceRegistry;
 import common.v1.TraceObjectId;
 import java.lang.instrument.Instrumentation;
 
@@ -14,12 +16,23 @@ public class Agent {
       System.out.println("[Agent] Initializing Recorder...");
       IdentityMapper.reset();
       TraceObjectId.resetSequence();
+      SemanticTraceRegistry.reset();
       SyncTransformer.resetSiteRegistry();
       StaticPrePassRegistry.reset();
       // common is shaded into this agent jar, which is already on the system
       // classpath via -javaagent, so no separate appendToSystemClassLoaderSearch needed.
       // 1. Setup the binary trace file (1 million events for now)
       BinarySchema.init("trace.bin", 1_000_000);
+      SemanticTraceRegistry.initCapture("trace-semantics.tsv");
+      Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+        try {
+          BinarySchema.flush();
+          SemanticTraceRegistry.closeCapture();
+          TraceReducer.reduceFieldInteractionsToFile("trace-reduced.tsv");
+        } catch (Exception e) {
+          e.printStackTrace(System.err);
+        }
+      }, "trace-reducer"));
       // 3. Register bytecode surgeon (The Transformer)
       inst.addTransformer(new SyncTransformer(config), true);
 

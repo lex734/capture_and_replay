@@ -2,6 +2,11 @@ package replay;
 
 import common.BinarySchema;
 import common.IdentityMapper;
+import common.v1.FieldKey;
+import common.v1.FieldInteractionDomain;
+import common.v1.ReducedTraceRegistry;
+import common.v1.SemanticFieldEvent;
+import common.v1.SemanticTraceRegistry;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.Writer;
@@ -189,6 +194,26 @@ public class ReplayCoordinator {
         }
 
         return IdentityMapper.bindOrCheckTraceObject((int) expected[3], (int) expected[4], runtimeObject);
+    }
+
+    private static String semanticDetail(long[] expected) {
+        SemanticFieldEvent fieldEvent = SemanticTraceRegistry.lookupFieldEvent(expected[0]);
+        if (fieldEvent != null) {
+            return " field=" + fieldEvent.fieldKey();
+        }
+        FieldInteractionDomain domain = ReducedTraceRegistry.lookupFieldDomain(expected[0]);
+        if (domain != null) {
+            return " domain=" + domain.domainId();
+        }
+        return "";
+    }
+
+    private static boolean sameFieldSemanticKey(long[] expected, FieldKey actualFieldKey) {
+        if (actualFieldKey == null) {
+            return true;
+        }
+        SemanticFieldEvent expectedFieldEvent = SemanticTraceRegistry.lookupFieldEvent(expected[0]);
+        return expectedFieldEvent == null || expectedFieldEvent.fieldKey().equals(actualFieldKey);
     }
     /**
      * Records the first structural divergence and wakes all waiting threads so
@@ -439,7 +464,8 @@ public class ReplayCoordinator {
                     pendingTargetEpoch.compareAndSet(eEpoch, Long.MAX_VALUE);
                 }
                 reportDivergence(roleId, eEpoch, eType, packedType,
-                        "sync event mismatch: objSite=" + objSite + " objCount=" + objCount);
+                        "sync event mismatch: objSite=" + objSite + " objCount=" + objCount
+                                + semanticDetail(expected));
                 return;
             }
         }
@@ -490,7 +516,8 @@ public class ReplayCoordinator {
                 lastMatchedSeq.set(eSeq);
                 if (isReleaseEvent(eType)) releasedEpoch.set(eEpoch);
                 reportDivergence(roleId, eEpoch, eType, packedType,
-                        "awaitTurnInt mismatch: objSite=" + objSite + " objCount=" + objCount);
+                        "awaitTurnInt mismatch: objSite=" + objSite + " objCount=" + objCount
+                                + semanticDetail(expected));
                 controlLock.notifyAll();
                 return naturalValue;
             }
@@ -541,7 +568,8 @@ public class ReplayCoordinator {
                 lastMatchedSeq.set(eSeq);
                 if (isReleaseEvent(eType)) releasedEpoch.set(eEpoch);
                 reportDivergence(roleId, eEpoch, eType, packedType,
-                        "awaitTurnLong mismatch: objSite=" + objSite + " objCount=" + objCount);
+                        "awaitTurnLong mismatch: objSite=" + objSite + " objCount=" + objCount
+                                + semanticDetail(expected));
                 controlLock.notifyAll();
                 return naturalValue;
             }
@@ -590,7 +618,8 @@ public class ReplayCoordinator {
                 lastMatchedSeq.set(eSeq);
                 if (isReleaseEvent(eType)) releasedEpoch.set(eEpoch);
                 reportDivergence(roleId, eEpoch, eType, packedType,
-                        "awaitTurnObj mismatch: objSite=" + objSite + " objCount=" + objCount);
+                        "awaitTurnObj mismatch: objSite=" + objSite + " objCount=" + objCount
+                                + semanticDetail(expected));
                 controlLock.notifyAll();
                 return naturalValue;
             }
@@ -602,19 +631,19 @@ public class ReplayCoordinator {
     // non-deterministic) so no divergence log is emitted.
 
     public static int awaitTurnCasInt(int roleId, int packedType, int objSite, int objCount, Object runtimeObject) {
-        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject);
+        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject, null);
         if (ev == null) return 0;
         return (int) ev[6];
     }
 
     public static long awaitTurnCasLong(int roleId, int packedType, int objSite, int objCount, Object runtimeObject) {
-        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject);
+        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject, null);
         if (ev == null) return 0L;
         return ((long) ev[5] << 32) | (ev[6] & 0xFFFFFFFFL);
     }
 
     public static Object awaitTurnCasObj(int roleId, int packedType, int objSite, int objCount, Object runtimeObject) {
-        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject);
+        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject, null);
         if (ev == null) return null;
         return IdentityMapper.resolveByBirthId((int) ev[5], (int) ev[6]);
     }
@@ -625,7 +654,7 @@ public class ReplayCoordinator {
 
     public static int awaitTurnRmwInt(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
             int naturalValue) {
-        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject);
+        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject, null);
         trackFidelityInt(packedType, objSite, objCount, naturalValue, ev);
         if (ev == null) return naturalValue;
         int traceValue = (int) ev[6];
@@ -639,7 +668,7 @@ public class ReplayCoordinator {
 
     public static long awaitTurnRmwLong(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
             long naturalValue) {
-        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject);
+        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject, null);
         trackFidelityLong(packedType, objSite, objCount, naturalValue, ev);
         if (ev == null) return naturalValue;
         long traceValue = ((long) ev[5] << 32) | (ev[6] & 0xFFFFFFFFL);
@@ -653,7 +682,7 @@ public class ReplayCoordinator {
 
     public static Object awaitTurnRmwObj(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
             Object naturalValue) {
-        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject);
+        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject, null);
         trackFidelityObj(packedType, objSite, objCount, naturalValue, ev);
         if (ev == null) return naturalValue;
         Object traceValue = IdentityMapper.resolveByBirthId((int) ev[5], (int) ev[6]);
@@ -675,7 +704,8 @@ public class ReplayCoordinator {
     // started-role deadlock detection that plain awaitTurn provides, since field
     // accesses can be the first event a newly-started thread encounters.
 
-    public static long[] doAwaitTurnValued(int roleId, int packedType, int objSite, int objCount, Object runtimeObject) {
+    public static long[] doAwaitTurnValued(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
+            FieldKey actualFieldKey) {
         activateRole(roleId);
         LinkedList<long[]> myQueue = roleQueues.get(roleId);
         if (myQueue == null || myQueue.isEmpty()) return null;
@@ -734,7 +764,8 @@ public class ReplayCoordinator {
                 }
 
                 // --- THE MATCH ---
-                if (sameSemanticIdentity(expected, packedType, runtimeObject, objSite, objCount)) {
+                if (sameSemanticIdentity(expected, packedType, runtimeObject, objSite, objCount)
+                        && sameFieldSemanticKey(expected, actualFieldKey)) {
                     // // System.out.println("Match found for Role " + roleId + " at Epoch " + eEpoch + " with Type " + (eType & 0xFF));
                     myQueue.poll();
                     if (fidelityEnabled) eventsMatched.incrementAndGet();
@@ -766,15 +797,16 @@ public class ReplayCoordinator {
                 reportDivergence(roleId, eEpoch, (int) expected[2], packedType,
                         "valued event mismatch: expected objSite=" + (int) expected[3]
                         + " objCount=" + (int) expected[4]
-                        + " got objSite=" + objSite + " objCount=" + objCount);
+                        + " got objSite=" + objSite + " objCount=" + objCount
+                        + semanticDetail(expected));
                 return null;
             }
         }
     }
 
     public static int awaitTurnFieldInt(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
-            int naturalValue) {
-        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject);
+            FieldKey actualFieldKey, int naturalValue) {
+        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject, actualFieldKey);
         trackFidelityInt(packedType, objSite, objCount, naturalValue, ev);
         if (ev == null) return naturalValue;
         int traceValue = (int) ev[6];
@@ -787,8 +819,8 @@ public class ReplayCoordinator {
     }
 
     public static long awaitTurnFieldLong(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
-            long naturalValue) {
-        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject);
+            FieldKey actualFieldKey, long naturalValue) {
+        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject, actualFieldKey);
         trackFidelityLong(packedType, objSite, objCount, naturalValue, ev);
         if (ev == null) return naturalValue;
         long traceValue = ((long) ev[5] << 32) | (ev[6] & 0xFFFFFFFFL);
@@ -801,8 +833,8 @@ public class ReplayCoordinator {
     }
 
     public static Object awaitTurnFieldObj(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
-            Object naturalValue) {
-        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject);
+            FieldKey actualFieldKey, Object naturalValue) {
+        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject, actualFieldKey);
         if (ev == null) return naturalValue;
         Object traceValue = IdentityMapper.resolveByBirthId((int) ev[5], (int) ev[6]);
         if (traceValue == null && naturalValue != null) {
@@ -827,7 +859,7 @@ public class ReplayCoordinator {
 
     public static int awaitTurnArrayInt(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
             int naturalValue) {
-        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject);
+        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject, null);
         // For arrays: objSite=array-birthId.count, objCount=element-index — key is per element.
         trackFidelityInt(packedType, objSite, objCount, naturalValue, ev);
         if (ev == null) return naturalValue;
@@ -842,7 +874,7 @@ public class ReplayCoordinator {
 
     public static long awaitTurnArrayLong(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
             long naturalValue) {
-        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject);
+        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject, null);
         trackFidelityLong(packedType, objSite, objCount, naturalValue, ev);
         if (ev == null) return naturalValue;
         long traceValue = ((long) ev[5] << 32) | (ev[6] & 0xFFFFFFFFL);
@@ -856,7 +888,7 @@ public class ReplayCoordinator {
 
     public static Object awaitTurnArrayObj(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
             Object naturalValue) {
-        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject);
+        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject, null);
         if (ev == null) return naturalValue;
         Object traceValue = IdentityMapper.resolveByBirthId((int) ev[5], (int) ev[6]);
         if (traceValue == null && naturalValue != null) {

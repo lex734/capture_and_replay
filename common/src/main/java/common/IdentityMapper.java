@@ -1,6 +1,8 @@
 package common;
 
+import common.v1.TraceObjectId;
 import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
@@ -9,41 +11,24 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class IdentityMapper {
     public static final int IGNORED_ROLE_ID = -1;
     public static final int GLOBAL_ROLE_ID = 0;
-    // --- ID Spaces ---
-    // 0 is reserved for GLOBAL/STATIC scope
+
     private static final AtomicInteger roleCounter = new AtomicInteger(1);
     private static final AtomicInteger fieldCounter = new AtomicInteger(1);
 
-    // --- Mappings ---
     private static final ConcurrentHashMap<Long, Integer> tidToRoleId = new ConcurrentHashMap<>();
-
-    // Maps "ClassName#fieldName" to a unique global ID for static variables
     private static final ConcurrentHashMap<String, Integer> staticFieldToId = new ConcurrentHashMap<>();
-
-    // Maps "ClassID:fieldName" to a unique ID for instance variables
     private static final ConcurrentHashMap<String, Integer> instanceFieldToId = new ConcurrentHashMap<>();
 
-    // Identity tracking for heap-allocated objects.
-    // Pool strings are tracked separately in poolStringToId and never enter objToId,
-    // which avoids WeakHashMap's equals()-based key lookup conflating a pool string
-    // with a heap string of the same content.
+    // Capture-only object identity tables.
     private static final Map<Object, BirthId> objToId = Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<BirthId, Object> idToObj = Collections.synchronizedMap(new WeakHashMap<>());
-    // Keyed by "siteId:roleId" so each role gets its own allocation counter per
-    // site. This makes birth IDs stable across runs: role R's N-th allocation at
-    // site S always receives the same (siteId, count) regardless of what other
-    // roles are doing concurrently. The count is encoded as (roleId << 16) | n
-    // so that the (siteId, count) pair remains globally unique without changing
-    // the trace format.
-    private static final ConcurrentHashMap<String, AtomicInteger> siteCounters = new ConcurrentHashMap<>();
-
-    // Pool string literals (from LDC): keyed by string content so every reference
-    // to the same literal resolves to the same BirthId.PoolString across runs.
-    private static final ConcurrentHashMap<String, BirthId.PoolString> poolStringToId = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, BirthId> poolStringToId = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<Integer, Boolean> ignoredSites = new ConcurrentHashMap<>();
-
     private static final ConcurrentHashMap<Long, Integer> preAssignedRoles = new ConcurrentHashMap<>();
 
+    private static final ConcurrentHashMap<Long, Object> traceToReplayObject = new ConcurrentHashMap<>();
+    private static final Map<Object, Long> replayObjectToTraceId = Collections.synchronizedMap(new IdentityHashMap<>());
+    private static final Object replayBindingLock = new Object();
 
     public abstract static class BirthId {
         public final int siteId;
@@ -54,9 +39,7 @@ public class IdentityMapper {
             this.count = count;
         }
 
-        /** Heap-allocated object: identified by allocation site + per-site ordinal. */
         public static final class Heap extends BirthId {
-            /** The role that allocated this object, recorded at allocation time. */
             public final int creatorRole;
 
             public Heap(int siteId, int creatorRole, int count) {
@@ -72,17 +55,15 @@ public class IdentityMapper {
             }
 
             @Override
-            public int hashCode() { return siteId * 31 + count; }
+            public int hashCode() {
+                return siteId * 31 + count;
+            }
         }
 
-        /**
-         * String pool (interned) literal: identified by content-derived siteId only.
-         * count is always 0 — there is exactly one canonical object per string content.
-         * equals() checks instanceof PoolString so a Heap(siteId, 0) and a
-         * PoolString(siteId) never collide in idToObj even when siteId matches.
-         */
         public static final class PoolString extends BirthId {
-            public PoolString(int contentSiteId) { super(contentSiteId, 0); }
+            public PoolString(int contentSiteId) {
+                super(contentSiteId, 0);
+            }
 
             @Override
             public boolean equals(Object o) {
@@ -91,28 +72,25 @@ public class IdentityMapper {
             }
 
             @Override
-            public int hashCode() { return siteId; }
+            public int hashCode() {
+                return siteId;
+            }
         }
 
-        // Static constant representing the "Global/Static" birthplace
         public static final BirthId GLOBAL = new Heap(0, 0, 0);
     }
 
-    /**
-     * Maps a thread ID to a logical Role ID.
-     */
     public static int getRoleIdBySite(long tid, int siteId) {
         if (isIgnoredSite(siteId)) {
             return IGNORED_ROLE_ID;
         }
         Thread current = Thread.currentThread();
         if (shouldSkipThread(current)) {
-            return IGNORED_ROLE_ID; // sentinel: caller should skip logging for this thread
+            return IGNORED_ROLE_ID;
         }
         Integer preAssigned = preAssignedRoles.get(tid);
         int roleId = tidToRoleId.computeIfAbsent(tid, k -> roleCounter.getAndIncrement());
-        if (preAssigned != null) return preAssigned;
-        return roleId;
+        return preAssigned != null ? preAssigned : roleId;
     }
 
     public static boolean isIgnoredRole(int roleId) {
@@ -146,17 +124,83 @@ public class IdentityMapper {
         return ignoredSites.containsKey(siteId);
     }
 
-    /**
-     * Returns a BirthId for objects.
-     * If the object is null (Static), it returns the GLOBAL BirthId (Site 0).
-     *
-     * For String objects the intern-check MUST happen before objToId is consulted.
-     * WeakHashMap uses equals() for key lookup, so a pool string stored in objToId
-     * would match any heap string with identical content, collapsing two distinct
-     * objects onto the same BirthId. By routing pool strings exclusively to
-     * poolStringToId we keep the two spaces completely separate.
-     */
+    private static boolean usesTraceObjectIds() {
+        return !"REPLAY".equals(System.getProperty("tool.mode"));
+    }
+
+    private static BirthId newTraceBirthId() {
+        long value = TraceObjectId.next().value();
+        if ((value & 0xFFFF000000000000L) != 0L) {
+            throw new IllegalStateException("Trace object ID exceeds 48-bit transitional encoding budget: " + value);
+        }
+        return new BirthId.Heap((int) (value >>> 32), 0, (int) value);
+    }
+
+    private static long packBirthId(BirthId id) {
+        return ((long) id.siteId << 32) | (id.count & 0xFFFFFFFFL);
+    }
+
+    private static BirthId traceBirthId(int siteId, int count) {
+        return new BirthId.Heap(siteId, 0, count);
+    }
+
+    private static void bindTraceToRuntime(BirthId traceId, Object runtimeObject) {
+        long traceKey = packBirthId(traceId);
+        synchronized (replayBindingLock) {
+            Object existingObject = traceToReplayObject.get(traceKey);
+            if (existingObject != null && existingObject != runtimeObject) {
+                throw new IllegalStateException("Conflicting replay binding for trace object " + traceKey);
+            }
+            Long existingTrace = replayObjectToTraceId.get(runtimeObject);
+            if (existingTrace != null && existingTrace.longValue() != traceKey) {
+                throw new IllegalStateException("Runtime object already bound to different trace object");
+            }
+            if (runtimeObject != null) {
+                traceToReplayObject.putIfAbsent(traceKey, runtimeObject);
+                replayObjectToTraceId.putIfAbsent(runtimeObject, traceKey);
+            }
+        }
+    }
+
+    public static boolean bindOrCheckTraceObject(int traceSite, int traceCount, Object runtimeObject) {
+        if (runtimeObject == null) {
+            return traceSite == BirthId.GLOBAL.siteId && traceCount == BirthId.GLOBAL.count;
+        }
+        BirthId trace = traceBirthId(traceSite, traceCount);
+        long traceKey = packBirthId(trace);
+        synchronized (replayBindingLock) {
+            Object existingObject = traceToReplayObject.get(traceKey);
+            if (existingObject != null && existingObject != runtimeObject) {
+                return false;
+            }
+            Long existingTrace = replayObjectToTraceId.get(runtimeObject);
+            if (existingTrace != null && existingTrace.longValue() != traceKey) {
+                return false;
+            }
+            traceToReplayObject.putIfAbsent(traceKey, runtimeObject);
+            replayObjectToTraceId.putIfAbsent(runtimeObject, traceKey);
+        }
+        return true;
+    }
+
+    public static boolean isBoundTraceIdentity(int traceSite, int traceCount) {
+        return traceToReplayObject.containsKey(packBirthId(traceBirthId(traceSite, traceCount)));
+    }
+
+    public static long lookupTraceIdForObject(Object obj) {
+        if (obj == null) {
+            return packBirthId(BirthId.GLOBAL);
+        }
+        synchronized (replayBindingLock) {
+            Long traceId = replayObjectToTraceId.get(obj);
+            return traceId != null ? traceId.longValue() : Long.MIN_VALUE;
+        }
+    }
+
     public static BirthId getBirthId(Object obj, String ownerName, int currentInstructionSiteId) {
+        if (!usesTraceObjectIds()) {
+            throw new IllegalStateException("Replay must not request synthetic birth IDs");
+        }
         if (obj == null) {
             return BirthId.GLOBAL;
         }
@@ -164,9 +208,8 @@ public class IdentityMapper {
         if (obj instanceof String) {
             String str = (String) obj;
             if (str.intern() == str) {
-                // Pool (interned) string: route to poolStringToId, never objToId.
                 return poolStringToId.computeIfAbsent(str, k -> {
-                    BirthId.PoolString id = new BirthId.PoolString(currentInstructionSiteId);
+                    BirthId id = newTraceBirthId();
                     idToObj.put(id, str);
                     return id;
                 });
@@ -175,126 +218,60 @@ public class IdentityMapper {
 
         synchronized (objToId) {
             BirthId existing = objToId.get(obj);
-            if (existing != null)
+            if (existing != null) {
                 return existing;
-
-            // Fallback: object was not registered at allocation time (e.g. came from
-            // uninstrumented code). Use the same per-role-per-site scheme so the count
-            // is stable across capture and replay.
-            int roleId = getRoleId(Thread.currentThread().getId());
-            if (roleId < 0) roleId = 0;
-            String counterKey = currentInstructionSiteId + ":" + roleId;
-            AtomicInteger counter = siteCounters.computeIfAbsent(counterKey, k -> new AtomicInteger(1));
-            int perRoleCount = counter.getAndIncrement();
-            int encodedCount = (roleId << 16) | (perRoleCount & 0xFFFF);
-            BirthId.Heap newId = new BirthId.Heap(currentInstructionSiteId, roleId, encodedCount);
-            objToId.put(obj, newId);
-            idToObj.put(newId, obj);
-            return newId;
+            }
+            BirthId id = newTraceBirthId();
+            objToId.put(obj, id);
+            idToObj.put(id, obj);
+            return id;
         }
     }
 
-    /**
-     * Returns a unique ID for a field.
-     * If birthId is GLOBAL (Site 0), it generates a static field ID based on the
-     * class name.
-     */
     public static int getFieldId(BirthId birthId, String fieldName, String ownerClassName) {
         if (birthId.siteId == 0) {
-            // This is a static field. We map it by ClassName + FieldName.
-            // This ensures every thread in the JVM gets the same ID for "MyClass.myVar".
             String key = ownerClassName + "#" + fieldName;
             return staticFieldToId.computeIfAbsent(key, k -> fieldCounter.getAndIncrement());
         } else {
-            // This is an instance field. We map it by the Object's Birth Site + Field Name.
             String key = birthId.siteId + ":" + fieldName;
             return instanceFieldToId.computeIfAbsent(key, k -> fieldCounter.getAndIncrement());
         }
     }
 
-    /**
-     * Called immediately after a NEW/NEWARRAY/ANEWARRAY/MULTIANEWARRAY completes.
-     * Assigns a stable BirthId.Heap based on the allocation site and allocation
-     * order at that site. This ensures the same object gets the same BirthId in
-     * both capture and replay runs, regardless of access order.
-     */
     public static void registerAllocation(Object obj, int siteId) {
+        if (!usesTraceObjectIds()) return;
         if (obj == null) return;
-        int roleId = getRoleId(Thread.currentThread().getId());
-        if (roleId < 0) roleId = 0;
-        String counterKey = siteId + ":" + roleId;
         synchronized (objToId) {
-            if (objToId.containsKey(obj)) return; // already registered
-            AtomicInteger counter = siteCounters.computeIfAbsent(counterKey, k -> new AtomicInteger(1));
-            int perRoleCount = counter.getAndIncrement();
-            // Encode roleId in the upper 16 bits so the (siteId, count) pair is
-            // globally unique even when multiple roles allocate at the same site.
-            int encodedCount = (roleId << 16) | (perRoleCount & 0xFFFF);
-            BirthId.Heap id = new BirthId.Heap(siteId, roleId, encodedCount);
+            if (objToId.containsKey(obj)) return;
+            BirthId id = newTraceBirthId();
             objToId.put(obj, id);
             idToObj.put(id, obj);
         }
     }
 
-    /**
-     * Called for string LDC instructions (pool/interned strings).
-     * Pool strings are stored in a dedicated map keyed by string content so that
-     * every reference to the same literal — regardless of which class or thread
-     * loads it first — resolves to the same BirthId.PoolString across runs.
-     * They are deliberately kept out of objToId so that a heap String with
-     * identical content (e.g. new String("foo")) gets its own distinct BirthId
-     * through the normal registerAllocation path.
-     */
     public static void registerPoolString(String str, int contentSiteId) {
+        if (!usesTraceObjectIds()) return;
         if (str == null) return;
         poolStringToId.computeIfAbsent(str, k -> {
-            BirthId.PoolString id = new BirthId.PoolString(contentSiteId);
+            BirthId id = newTraceBirthId();
             idToObj.put(id, str);
             return id;
         });
     }
 
     public static Object resolveByBirthId(int valueSiteId, int valueCount) {
-        int creatorRole = (valueCount >>> 16) & 0xFFFF;
-        return idToObj.get(new BirthId.Heap(valueSiteId, creatorRole, valueCount));
+        if (usesTraceObjectIds()) {
+            return idToObj.get(traceBirthId(valueSiteId, valueCount));
+        }
+        return traceToReplayObject.get(packBirthId(traceBirthId(valueSiteId, valueCount)));
     }
 
-    /**
-     * Pure reverse lookup: returns the BirthId already registered for {@code obj},
-     * or {@code null} if the object is unknown (was never registered).
-     * Unlike {@link #getBirthId(Object, String, int)}, this method never allocates
-     * a new BirthId — it is safe to call on the replay hot path.
-     */
-    public static BirthId lookupBirthId(Object obj) {
-        if (obj == null) return BirthId.GLOBAL;
-        if (obj instanceof String) {
-            String str = (String) obj;
-            if (str.intern() == str) return poolStringToId.get(str);
-        }
-        synchronized (objToId) {
-            return objToId.get(obj);
-        }
-    }
-
-    /**
-     * Registers a live replay object under a birth ID taken directly from the trace.
-     * Used when the trace references an object (e.g. System.out) that was never
-     * passed through registerAllocation or getBirthId during this replay run.
-     */
     public static void registerByBirthId(int siteId, int count, Object obj) {
         if (obj == null) return;
-        int creatorRole = (count >>> 16) & 0xFFFF;
-        BirthId id = new BirthId.Heap(siteId, creatorRole, count);
-        synchronized (objToId) {
-            idToObj.putIfAbsent(id, obj);
-            // Use put (not putIfAbsent): if this object was already registered under its
-            // natural allocation BirthId, overwrite it with the trace BirthId so that
-            // subsequent getBirthId(obj) calls (e.g. when obj is used as a field owner)
-            // return the identity the trace expects, not the replay's allocation ordinal.
-            objToId.put(obj, id);
-        }
+        BirthId traceId = traceBirthId(siteId, count);
+        bindTraceToRuntime(traceId, obj);
     }
-    /** Looks up the roleId for a thread that has already been assigned one, or -1. */
+
     public static int getRoleId(long tid) {
         Integer preAssigned = preAssignedRoles.get(tid);
         if (preAssigned != null) return preAssigned;
@@ -306,7 +283,6 @@ public class IdentityMapper {
         preAssignedRoles.put(tid, roleId);
     }
 
-
     public static void reset() {
         tidToRoleId.clear();
         roleCounter.set(1);
@@ -317,7 +293,8 @@ public class IdentityMapper {
         objToId.clear();
         idToObj.clear();
         poolStringToId.clear();
-        siteCounters.clear();
+        traceToReplayObject.clear();
+        replayObjectToTraceId.clear();
         ignoredSites.clear();
         System.out.println("[IdentityMapper] All maps cleared for new trace.");
     }

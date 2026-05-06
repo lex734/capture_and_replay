@@ -132,6 +132,13 @@ public class TraceLogger {
         return BinarySchema.packType(eventType, flags);
     }
 
+    private static int packFieldObjectType(int eventType, boolean isVolatile, boolean isStatic) {
+        int flags = (isVolatile ? BinarySchema.Flags.IS_VOLATILE : 0)
+                  | (isStatic  ? BinarySchema.Flags.IS_STATIC   : 0)
+                  | BinarySchema.Flags.IS_OBJECT_VALUE;
+        return BinarySchema.packType(eventType, flags);
+    }
+
     public static void logFieldInt(int value, int eventType, Object owner, int currentSiteId,
             boolean isVolatile, boolean isStatic, String fieldName, String ownerName) {
         boolean advanceEpoch = isVolatile && (eventType == BinarySchema.Event.FIELD_WRITE);
@@ -174,7 +181,7 @@ public class TraceLogger {
         if (roleId == -1) return;
         BirthId birthId   = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
         BirthId valueBirth = IdentityMapper.getBirthId(value, null, currentSiteId);
-        int packedType = packFieldType(eventType, isVolatile, isStatic);
+        int packedType = packFieldObjectType(eventType, isVolatile, isStatic);
         String evName = (eventType == BinarySchema.Event.FIELD_READ) ? "READ" : "WRITE";
         debug("[FIELD]  epoch=%d seq=%d role=%d  %-5s%s %s.%s = %s",
                 seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
@@ -196,9 +203,11 @@ public class TraceLogger {
     //   Long: data1=value>>32,      data2=(int)value
     //   Obj:  data1=valueSiteId,    data2=valueCount
 
-    private static int packArrayValuedType(int eventType, int receiverSiteId) {
+    private static int packArrayValuedType(int eventType, int receiverSiteId, boolean isObjectValue) {
+        int flags = BinarySchema.Flags.IS_ARRAY_VALUED
+                | (isObjectValue ? BinarySchema.Flags.IS_OBJECT_VALUE : 0);
         return (eventType & 0xFF)
-                | (BinarySchema.Flags.IS_ARRAY_VALUED << 8)
+                | (flags << 8)
                 | ((receiverSiteId & 0xFFFF) << 16);
     }
 
@@ -208,7 +217,7 @@ public class TraceLogger {
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         if (roleId == -1) return;
         BirthId birthId = IdentityMapper.getBirthId(array, null, currentSiteId);
-        int packedType = packArrayValuedType(eventType, birthId.siteId);
+        int packedType = packArrayValuedType(eventType, birthId.siteId, false);
         String evName = (eventType == BinarySchema.Event.ARRAY_READ) ? "ARRAY_READ" : "ARRAY_WRITE";
         debug("[ARRAY]  epoch=%d seq=%d role=%d  %-12s %s[%d] = %d",
                 seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
@@ -224,7 +233,7 @@ public class TraceLogger {
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         if (roleId == -1) return;
         BirthId birthId = IdentityMapper.getBirthId(array, null, currentSiteId);
-        int packedType = packArrayValuedType(eventType, birthId.siteId);
+        int packedType = packArrayValuedType(eventType, birthId.siteId, false);
         String evName = (eventType == BinarySchema.Event.ARRAY_READ) ? "ARRAY_READ" : "ARRAY_WRITE";
         debug("[ARRAY]  epoch=%d seq=%d role=%d  %-12s %s[%d] = %dL",
                 seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
@@ -242,7 +251,7 @@ public class TraceLogger {
         if (roleId == -1) return;
         BirthId birthId    = IdentityMapper.getBirthId(array, null, currentSiteId);
         BirthId valueBirth = IdentityMapper.getBirthId(value, null, currentSiteId);
-        int packedType = packArrayValuedType(eventType, birthId.siteId);
+        int packedType = packArrayValuedType(eventType, birthId.siteId, true);
         String evName = (eventType == BinarySchema.Event.ARRAY_READ) ? "ARRAY_READ" : "ARRAY_WRITE";
         debug("[ARRAY]  epoch=%d seq=%d role=%d  %-12s %s[%d] = %s",
                 seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
@@ -269,9 +278,11 @@ public class TraceLogger {
     // objCount = receiver BirthId.count
     // data = value (int, lo-32-of-long, or value BirthId.siteId for Object)
 
-    private static int packAtomicArrayType(int eventType, int receiverSiteId) {
+    private static int packAtomicArrayType(int eventType, int receiverSiteId, boolean isObjectValue) {
+        int flags = BinarySchema.Flags.IS_ARRAY_ATOMIC
+                | (isObjectValue ? BinarySchema.Flags.IS_OBJECT_VALUE : 0);
         return (eventType & 0xFF)
-                | (BinarySchema.Flags.IS_ARRAY_ATOMIC << 8)
+                | (flags << 8)
                 | ((receiverSiteId & 0xFFFF) << 16);
     }
 
@@ -307,7 +318,7 @@ public class TraceLogger {
         // }
 
         if (isArray) {
-            int packedType = packAtomicArrayType(eventType, birthId.siteId);
+            int packedType = packAtomicArrayType(eventType, birthId.siteId, false);
             BinarySchema.write(seq, (long) roleId, packedType, birthId.count, index, intValue);
         } else {
             int packedType = BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
@@ -344,7 +355,7 @@ public class TraceLogger {
         // }
 
         if (isArray) {
-            int packedType = packAtomicArrayType(eventType, birthId.siteId);
+            int packedType = packAtomicArrayType(eventType, birthId.siteId, false);
             BinarySchema.write(seq, (long) roleId, packedType, birthId.count, index, (int) (longValue >> 32),
                     (int) longValue);
         } else {
@@ -387,11 +398,11 @@ public class TraceLogger {
         // }
 
         if (isArray) {
-            int packedType = packAtomicArrayType(eventType, receiverBirth.siteId);
-            BinarySchema.write(seq, (long) roleId, packedType, receiverBirth.count, index, valueBirth.siteId,
+            int packedType = packAtomicArrayType(eventType, receiverBirth.siteId, true);
+        BinarySchema.write(seq, (long) roleId, packedType, receiverBirth.count, index, valueBirth.siteId,
                     valueBirth.count);
         } else {
-            int packedType = BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
+            int packedType = BinarySchema.packType(eventType, BinarySchema.Flags.IS_OBJECT_VALUE);
             BinarySchema.write(seq, (long) roleId, packedType, receiverBirth.siteId, receiverBirth.count,
                     valueBirth.siteId, valueBirth.count);
         }
@@ -399,8 +410,13 @@ public class TraceLogger {
 
     /**
      * Logs a nondeterministic int-sized return value (int, boolean).
-     * Stored as: objSite=0, objCount=siteId, data2=value.
-     * The call site (siteId) is the unique key for matching during replay.
+     * Current binary-format encoding:
+     *   objSite  = 0
+     *   objCount = nondeterministic call-site key
+     *   data2    = value
+     *
+     * The objSite/objCount slots are reused here as a source key carrier, not
+     * as object identity.
      */
     public static void logNondetInt(int value, int siteId) {
         long seq = nextSeq(false);
@@ -430,7 +446,14 @@ public class TraceLogger {
 
     /**
      * Logs a nondeterministic long return value (long, System time).
-     * Stored as: objSite=0, objCount=siteId, data1=hi32, data2=lo32.
+     * Current binary-format encoding:
+     *   objSite  = 0
+     *   objCount = nondeterministic call-site key
+     *   data1    = hi32
+     *   data2    = lo32
+     *
+     * The objSite/objCount slots are reused here as a source key carrier, not
+     * as object identity.
      */
     public static void logNondetLong(long value, int siteId) {
         long seq = nextSeq(false);

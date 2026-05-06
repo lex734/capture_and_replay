@@ -65,6 +65,7 @@ public class BinarySchema {
         // Set on array field/array access events: siteId packed into upper 16 bits
         // of packedType, objSite = birthId.count, objCount = index, data = value.
         public static final int IS_ARRAY_VALUED = 1 << 3;
+        public static final int IS_OBJECT_VALUE = 1 << 4;
     }
 
     public static void init(String fileName, long maxEvents) throws Exception {

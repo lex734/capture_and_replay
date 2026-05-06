@@ -14,7 +14,6 @@ import java.nio.channels.FileChannel;
 import java.nio.MappedByteBuffer;
 
 public class ReplayAgent {
-
     public static void premain(String agentArgs, Instrumentation inst) {
         // System.out.println("[ReplayAgent] Initializing Enforcer...");
 

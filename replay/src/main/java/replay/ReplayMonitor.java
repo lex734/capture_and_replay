@@ -478,10 +478,9 @@ public class ReplayMonitor {
     private static int atomicObjSite(int index) { return 0; }
     private static int atomicObjCount(int index) { return index >= 0 ? index : 0; }
 
-    // ---- CAS replay ----
-    // CAS outcomes are observed against the reduced trace. Replay no longer
-    // injects the captured result; when the trace would require injection, the
-    // coordinator marks replay unsupported.
+    // ---- CAS injection ----
+    // CAS outcomes are non-deterministic across schedules; replay injects the
+    // captured result and records degraded replay when that substitution is used.
 
     public static int injectAtomicCasInt(Object receiver, int index, int eventType, int currentSiteId) {
         if (isInside.get()) return 0;
@@ -551,8 +550,8 @@ public class ReplayMonitor {
     // Divergence is logged but not injected (can't undo the completed operation).
 
     // ---- Deterministic atomic read/write check ----
-    // For plain atomic reads/writes (get/set), compare against trace and keep the
-    // natural value. Divergences are reported without injecting captured values.
+    // For plain atomic reads/writes (get/set), compare against trace and inject the
+    // captured value on read-side mismatches, recording degraded replay.
 
     public static int checkAtomicInt(int naturalValue, Object receiver, int index, int eventType, int currentSiteId) {
         if (isInside.get()) return naturalValue;
@@ -701,9 +700,9 @@ public class ReplayMonitor {
         }
     }
 
-    // ---- Nondeterministic replay ----
-    // These events are not object-based. Replay matches them structurally against
-    // the reduced trace, but does not inject captured values.
+    // ---- Nondeterministic value injection ----
+    // These events are not object-based. Replay returns the captured value and
+    // records degraded replay if that differs from the natural runtime value.
     //
     // In the current trace format the nondeterministic source key is encoded as:
     //   objSite  = 0

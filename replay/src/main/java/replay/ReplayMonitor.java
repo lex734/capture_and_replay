@@ -478,9 +478,10 @@ public class ReplayMonitor {
     private static int atomicObjSite(int index) { return 0; }
     private static int atomicObjCount(int index) { return index >= 0 ? index : 0; }
 
-    // ---- CAS injection ----
-    // CAS outcome is non-deterministic across schedules; inject the captured result
-    // and advance the epoch without reporting divergence.
+    // ---- CAS replay ----
+    // CAS outcomes are observed against the reduced trace. Replay no longer
+    // injects the captured result; when the trace would require injection, the
+    // coordinator marks replay unsupported.
 
     public static int injectAtomicCasInt(Object receiver, int index, int eventType, int currentSiteId) {
         if (isInside.get()) return 0;
@@ -550,8 +551,8 @@ public class ReplayMonitor {
     // Divergence is logged but not injected (can't undo the completed operation).
 
     // ---- Deterministic atomic read/write check ----
-    // For plain atomic reads/writes (get/set), compare against trace and inject the
-    // captured value when safe (same policy as field/array valued events).
+    // For plain atomic reads/writes (get/set), compare against trace and keep the
+    // natural value. Divergences are reported without injecting captured values.
 
     public static int checkAtomicInt(int naturalValue, Object receiver, int index, int eventType, int currentSiteId) {
         if (isInside.get()) return naturalValue;
@@ -700,9 +701,9 @@ public class ReplayMonitor {
         }
     }
 
-    // ---- Nondeterministic value injection ----
-    // During replay, instead of calling the real Random/System method, return the
-    // captured value. These events are not object-based.
+    // ---- Nondeterministic replay ----
+    // These events are not object-based. Replay matches them structurally against
+    // the reduced trace, but does not inject captured values.
     //
     // In the current trace format the nondeterministic source key is encoded as:
     //   objSite  = 0

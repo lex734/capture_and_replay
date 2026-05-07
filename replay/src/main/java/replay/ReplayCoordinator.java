@@ -244,9 +244,10 @@ public class ReplayCoordinator {
         int traceValue = (int) event[6];
         trackFidelityInt(packedType, objSite, objCount, naturalValue, event);
         if (naturalValue != traceValue) {
-            recordDegradation("value injection on nondeterministic int source");
+            recordUnsupported("nondeterministic int source diverged from trace value without injection");
+            recordNoInjectDisagreement();
         }
-        return traceValue;
+        return naturalValue;
     }
 
     public static long awaitTurnLong(int roleId, int packedType, int objSite, int objCount, Object runtimeObject) {
@@ -262,9 +263,10 @@ public class ReplayCoordinator {
         long traceValue = ((long) event[5] << 32) | (event[6] & 0xFFFFFFFFL);
         trackFidelityLong(packedType, objSite, objCount, naturalValue, event);
         if (naturalValue != traceValue) {
-            recordDegradation("value injection on nondeterministic long source");
+            recordUnsupported("nondeterministic long source diverged from trace value without injection");
+            recordNoInjectDisagreement();
         }
-        return traceValue;
+        return naturalValue;
     }
 
     public static Object awaitTurnObj(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
@@ -275,15 +277,16 @@ public class ReplayCoordinator {
         }
         Object traceValue = SemanticIdentity.resolveRuntime((int) event[5], (int) event[6]);
         if (traceValue == null && naturalValue != null) {
-            SemanticIdentity.bindValueIdentity((int) event[5], (int) event[6], naturalValue,
-                    semanticShapeKey(event, null));
-            traceValue = naturalValue;
+            reportDivergence(roleId, "required traced object value is no longer realizable at replay event "
+                    + event[0] + semanticDetail(event));
+            return naturalValue;
         }
         trackFidelityObj(packedType, objSite, objCount, naturalValue, event);
         if (traceValue != naturalValue) {
-            recordDegradation("value injection on object-valued replay event");
+            recordUnsupported("object-valued replay event diverged from trace value without injection");
+            recordNoInjectDisagreement();
         }
-        return traceValue;
+        return naturalValue;
     }
 
     public static int awaitTurnCasInt(int roleId, int packedType, int objSite, int objCount, Object runtimeObject) {
@@ -291,8 +294,9 @@ public class ReplayCoordinator {
         if (event == null) {
             return 0;
         }
-        recordDegradation("atomic CAS result injection");
-        return (int) event[6];
+        recordUnsupported("atomic CAS replay result would require injection");
+        recordNoInjectDisagreement();
+        return 0;
     }
 
     public static long awaitTurnCasLong(int roleId, int packedType, int objSite, int objCount, Object runtimeObject) {
@@ -300,8 +304,9 @@ public class ReplayCoordinator {
         if (event == null) {
             return 0L;
         }
-        recordDegradation("atomic CAS result injection");
-        return ((long) event[5] << 32) | (event[6] & 0xFFFFFFFFL);
+        recordUnsupported("atomic CAS replay result would require injection");
+        recordNoInjectDisagreement();
+        return 0L;
     }
 
     public static Object awaitTurnCasObj(int roleId, int packedType, int objSite, int objCount, Object runtimeObject) {
@@ -310,8 +315,14 @@ public class ReplayCoordinator {
             return null;
         }
         Object traceValue = SemanticIdentity.resolveRuntime((int) event[5], (int) event[6]);
-        recordDegradation("atomic CAS object result injection");
-        return traceValue;
+        if (traceValue == null && ((int) event[5] != 0 || (int) event[6] != 0)) {
+            reportDivergence(roleId, "required traced CAS object result is no longer realizable at replay event "
+                    + event[0] + semanticDetail(event));
+            return null;
+        }
+        recordUnsupported("atomic CAS object replay result would require injection");
+        recordNoInjectDisagreement();
+        return null;
     }
 
     public static int awaitTurnRmwInt(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
@@ -350,6 +361,11 @@ public class ReplayCoordinator {
             return naturalValue;
         }
         Object traceValue = SemanticIdentity.resolveRuntime((int) event[5], (int) event[6]);
+        if (traceValue == null && ((int) event[5] != 0 || (int) event[6] != 0)) {
+            reportDivergence(roleId, "required traced RMW object value is no longer realizable at replay event "
+                    + event[0] + semanticDetail(event));
+            return naturalValue;
+        }
         if (naturalValue != traceValue) {
             recordUnsupported("atomic object RMW diverged from trace value");
         }
@@ -376,12 +392,9 @@ public class ReplayCoordinator {
             return naturalValue;
         }
         int traceValue = (int) event[6];
-        if (shouldInjectReadValue(packedType) && naturalValue != traceValue) {
-            recordDegradation("plain read value injection");
-            return traceValue;
-        }
         if (naturalValue != traceValue) {
-            recordUnsupported("valued event diverged outside plain-read injection fallback");
+            recordUnsupported("valued event diverged from trace value without injection");
+            recordNoInjectDisagreement();
         }
         return naturalValue;
     }
@@ -394,12 +407,9 @@ public class ReplayCoordinator {
             return naturalValue;
         }
         long traceValue = ((long) event[5] << 32) | (event[6] & 0xFFFFFFFFL);
-        if (shouldInjectReadValue(packedType) && naturalValue != traceValue) {
-            recordDegradation("plain read value injection");
-            return traceValue;
-        }
         if (naturalValue != traceValue) {
-            recordUnsupported("valued event diverged outside plain-read injection fallback");
+            recordUnsupported("valued event diverged from trace value without injection");
+            recordNoInjectDisagreement();
         }
         return naturalValue;
     }
@@ -411,18 +421,25 @@ public class ReplayCoordinator {
             return naturalValue;
         }
         Object traceValue = SemanticIdentity.resolveRuntime((int) event[5], (int) event[6]);
-        if (traceValue == null && naturalValue != null) {
-            SemanticIdentity.bindValueIdentity((int) event[5], (int) event[6], naturalValue,
-                    semanticShapeKey(event, actualFieldKey));
-            traceValue = naturalValue;
+        boolean objectReferenceRequired = ((int) event[5] != 0 || (int) event[6] != 0);
+        boolean isRead = (((int) event[2] & 0xFF) == BinarySchema.Event.FIELD_READ)
+                || (((int) event[2] & 0xFF) == BinarySchema.Event.ARRAY_READ)
+                || (((int) event[2] & 0xFF) == BinarySchema.Event.ATOMIC_READ);
+        if (traceValue == null && objectReferenceRequired) {
+            if (isRead && naturalValue != null) {
+                SemanticIdentity.bindValueIdentity((int) event[5], (int) event[6], naturalValue,
+                        semanticShapeKey(event, actualFieldKey));
+                traceValue = naturalValue;
+            } else {
+                reportDivergence(roleId, "required traced object value is no longer realizable at replay event "
+                        + event[0] + semanticDetail(event));
+                return naturalValue;
+            }
         }
         trackFidelityObj(packedType, objSite, objCount, naturalValue, event);
-        if (shouldInjectReadValue(packedType) && naturalValue != traceValue) {
-            recordDegradation("plain object-read value injection");
-            return traceValue;
-        }
         if (naturalValue != traceValue) {
-            recordUnsupported("object-valued event diverged outside plain-read injection fallback");
+            recordUnsupported("object-valued event diverged from trace value without injection");
+            recordNoInjectDisagreement();
         }
         return naturalValue;
     }
@@ -502,6 +519,27 @@ public class ReplayCoordinator {
     private static long[] awaitSemanticEvent(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
             FieldKey actualFieldKey, int nondeterministicSourceKey) {
         roleIdToThread.put(roleId, Thread.currentThread());
+        if (!shouldSynchronizeAtEvent(packedType)) {
+            synchronized (controlLock) {
+                if (hasDiverged) {
+                    return null;
+                }
+                MatchSelection selection = selectCandidate(roleId, packedType, objSite, objCount, runtimeObject,
+                        actualFieldKey, nondeterministicSourceKey);
+                if (selection.state != MatchState.FOUND) {
+                    return null;
+                }
+                if (selection.ambiguous) {
+                    recordDegradation("ambiguous semantic match resolved to earliest candidate");
+                }
+                if (!commitBinding(selection.event, runtimeObject, actualFieldKey)) {
+                    reportDivergence(roleId, "conflicting object binding during replay match");
+                    return null;
+                }
+                consumeEvent(selection.event);
+                return selection.event;
+            }
+        }
         long deadline = System.currentTimeMillis() + MATCH_TIMEOUT_MS;
         synchronized (controlLock) {
             while (true) {
@@ -765,9 +803,23 @@ public class ReplayCoordinator {
         controlLock.notifyAll();
     }
 
-    private static boolean shouldInjectReadValue(int packedType) {
+    private static boolean shouldSynchronizeAtEvent(int packedType) {
         int baseType = packedType & 0xFF;
-        return baseType == BinarySchema.Event.FIELD_READ || baseType == BinarySchema.Event.ARRAY_READ;
+        if (baseType == BinarySchema.Event.FIELD_WRITE
+                && (((packedType >>> 8) & BinarySchema.Flags.IS_VOLATILE) != 0)) {
+            return true;
+        }
+        return baseType == BinarySchema.Event.MONITOR_EXIT
+                || baseType == BinarySchema.Event.THREAD_START
+                || baseType == BinarySchema.Event.THREAD_NOTIFY
+                || baseType == BinarySchema.Event.THREAD_NOTIFY_ALL
+                || baseType == BinarySchema.Event.THREAD_UNPARK
+                || baseType == BinarySchema.Event.THREAD_INTERRUPT
+                || baseType == BinarySchema.Event.THREAD_WAKEUP
+                || baseType == BinarySchema.Event.CLASS_INIT_END
+                || baseType == BinarySchema.Event.ATOMIC_WRITE
+                || baseType == BinarySchema.Event.ATOMIC_RMW
+                || baseType == BinarySchema.Event.ATOMIC_CAS;
     }
 
     private static boolean isArrayScoped(int packedType) {
@@ -878,8 +930,6 @@ public class ReplayCoordinator {
             totalValuedEvents.incrementAndGet();
             if (naturalValue == (int) event[6]) {
                 naturalAgreements.incrementAndGet();
-            } else if (shouldInjectReadValue(packedType)) {
-                injectedEvents.incrementAndGet();
             }
         }
     }
@@ -901,8 +951,6 @@ public class ReplayCoordinator {
             totalValuedEvents.incrementAndGet();
             if (naturalValue == traceValue) {
                 naturalAgreements.incrementAndGet();
-            } else if (shouldInjectReadValue(packedType)) {
-                injectedEvents.incrementAndGet();
             }
         }
     }
@@ -926,8 +974,6 @@ public class ReplayCoordinator {
             totalValuedEvents.incrementAndGet();
             if (naturalTrace == traceValue) {
                 naturalAgreements.incrementAndGet();
-            } else if (shouldInjectReadValue(packedType)) {
-                injectedEvents.incrementAndGet();
             }
         }
     }

@@ -16,19 +16,20 @@ public class Agent {
       System.out.println("[Agent] Initializing Recorder...");
       IdentityMapper.reset();
       TraceObjectId.resetSequence();
-      SemanticTraceRegistry.reset();
+      SemanticTraceRegistry.resetCaptureState();
+      SemanticTraceRegistry.resetReplayState();
       SyncTransformer.resetSiteRegistry();
       StaticPrePassRegistry.reset();
       // common is shaded into this agent jar, which is already on the system
       // classpath via -javaagent, so no separate appendToSystemClassLoaderSearch needed.
       // 1. Setup the binary trace file (1 million events for now)
       BinarySchema.init("trace.bin", 1_000_000);
-      SemanticTraceRegistry.initCapture("trace-semantics.tsv");
       Runtime.getRuntime().addShutdownHook(new Thread(() -> {
         try {
           BinarySchema.flush();
-          SemanticTraceRegistry.closeCapture();
           TraceReducer.reduceFieldInteractionsToFile("trace-reduced.tsv");
+          SemanticTraceRegistry.resetCaptureState();
+          SemanticTraceRegistry.resetReplayState();
         } catch (Exception e) {
           e.printStackTrace(System.err);
         }

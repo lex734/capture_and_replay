@@ -95,6 +95,7 @@ public class TraceLogger {
         if (roleId == -1) return;
         BirthId birthId = IdentityMapper.getBirthId(lock, null, currentSiteId);
         String eventName = getEventName(eventType);
+        int packedType = BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
 
         // For THREAD_START, eagerly pre-assign the child thread's roleId and store it
         // in data1. This lets the replay coordinator enforce causality: the child's
@@ -102,13 +103,29 @@ public class TraceLogger {
         if (eventType == BinarySchema.Event.THREAD_START && lock instanceof Thread) {
             long childTid = ((Thread) lock).getId();
             int childRoleId = IdentityMapper.getRoleIdBySite(childTid, currentSiteId);
+            SemanticTraceRegistry.recordThreadEvent(seq, roleId, packedType, birthId.siteId, birthId.count,
+                    lock.getClass().getName().replace('.', '/'), currentSiteId, childRoleId);
             debug("[SYNC]   epoch=%d seq=%d role=%d  %-24s lock=%s  site=%d  childRole=%d",
                     seq >>> 32, seq & 0xFFFFFFFFL, roleId, eventName,
                     lock.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(lock)),
                     currentSiteId, childRoleId);
-            BinarySchema.write(seq, (long) roleId, ((eventType & 0xFF) | (BinarySchema.Flags.NONE << 8)),
+            BinarySchema.write(seq, (long) roleId, packedType,
                     birthId.siteId, birthId.count, childRoleId, currentSiteId);
             return;
+        }
+
+        if (eventType == BinarySchema.Event.CLASS_INIT_BEGIN || eventType == BinarySchema.Event.CLASS_INIT_END) {
+            SemanticTraceRegistry.recordClassInitEvent(seq, roleId, packedType, currentSiteId);
+        } else if (eventType == BinarySchema.Event.THREAD_JOIN
+                || eventType == BinarySchema.Event.THREAD_JOIN_TIMEOUT
+                || eventType == BinarySchema.Event.THREAD_WAKEUP
+                || eventType == BinarySchema.Event.THREAD_INTERRUPT
+                || eventType == BinarySchema.Event.THREAD_INTERRUPT_CHECK) {
+            SemanticTraceRegistry.recordThreadEvent(seq, roleId, packedType, birthId.siteId, birthId.count,
+                    lock == null ? "" : lock.getClass().getName().replace('.', '/'), currentSiteId, -1);
+        } else {
+            SemanticTraceRegistry.recordSyncEvent(seq, roleId, packedType, birthId.siteId, birthId.count,
+                    lock == null ? "" : lock.getClass().getName().replace('.', '/'), currentSiteId);
         }
 
         debug("[SYNC]   epoch=%d seq=%d role=%d  %-24s lock=%s  site=%d",
@@ -117,7 +134,7 @@ public class TraceLogger {
                         ? lock.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(lock))
                         : "null",
                 currentSiteId);
-        BinarySchema.write(seq, (long) roleId, ((eventType & 0xFF) | (BinarySchema.Flags.NONE << 8)), birthId.siteId,
+        BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId,
                 birthId.count, currentSiteId);
     }
 
@@ -226,6 +243,8 @@ public class TraceLogger {
         if (roleId == -1) return;
         BirthId birthId = IdentityMapper.getBirthId(array, null, currentSiteId);
         int packedType = packArrayValuedType(eventType, birthId.siteId, false);
+        SemanticTraceRegistry.recordArrayEvent(seq, roleId, packedType, birthId.siteId, birthId.count,
+                array == null ? "" : array.getClass().getName().replace('.', '/'), index);
         String evName = (eventType == BinarySchema.Event.ARRAY_READ) ? "ARRAY_READ" : "ARRAY_WRITE";
         debug("[ARRAY]  epoch=%d seq=%d role=%d  %-12s %s[%d] = %d",
                 seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
@@ -242,6 +261,8 @@ public class TraceLogger {
         if (roleId == -1) return;
         BirthId birthId = IdentityMapper.getBirthId(array, null, currentSiteId);
         int packedType = packArrayValuedType(eventType, birthId.siteId, false);
+        SemanticTraceRegistry.recordArrayEvent(seq, roleId, packedType, birthId.siteId, birthId.count,
+                array == null ? "" : array.getClass().getName().replace('.', '/'), index);
         String evName = (eventType == BinarySchema.Event.ARRAY_READ) ? "ARRAY_READ" : "ARRAY_WRITE";
         debug("[ARRAY]  epoch=%d seq=%d role=%d  %-12s %s[%d] = %dL",
                 seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
@@ -260,6 +281,8 @@ public class TraceLogger {
         BirthId birthId    = IdentityMapper.getBirthId(array, null, currentSiteId);
         BirthId valueBirth = IdentityMapper.getBirthId(value, null, currentSiteId);
         int packedType = packArrayValuedType(eventType, birthId.siteId, true);
+        SemanticTraceRegistry.recordArrayEvent(seq, roleId, packedType, birthId.siteId, birthId.count,
+                array == null ? "" : array.getClass().getName().replace('.', '/'), index);
         String evName = (eventType == BinarySchema.Event.ARRAY_READ) ? "ARRAY_READ" : "ARRAY_WRITE";
         debug("[ARRAY]  epoch=%d seq=%d role=%d  %-12s %s[%d] = %s",
                 seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
@@ -310,6 +333,7 @@ public class TraceLogger {
 
         BirthId birthId = IdentityMapper.getBirthId(receiver, null, currentSiteId);
         boolean isArray = (index >= 0);
+        String ownerTypeName = receiver == null ? "" : receiver.getClass().getName().replace('.', '/');
 
         // String eventName = getEventName(eventType);
         // String receiverStr = receiver != null
@@ -327,9 +351,13 @@ public class TraceLogger {
 
         if (isArray) {
             int packedType = packAtomicArrayType(eventType, birthId.siteId, false);
+            SemanticTraceRegistry.recordAtomicEvent(seq, roleId, packedType, birthId.siteId, birthId.count,
+                    ownerTypeName, index);
             BinarySchema.write(seq, (long) roleId, packedType, birthId.count, index, intValue);
         } else {
             int packedType = BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
+            SemanticTraceRegistry.recordAtomicEvent(seq, roleId, packedType, birthId.siteId, birthId.count,
+                    ownerTypeName, -1);
             BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, intValue);
         }
     }
@@ -347,6 +375,7 @@ public class TraceLogger {
 
         BirthId birthId = IdentityMapper.getBirthId(receiver, null, currentSiteId);
         boolean isArray = (index >= 0);
+        String ownerTypeName = receiver == null ? "" : receiver.getClass().getName().replace('.', '/');
 
         // String eventName = getEventName(eventType);
         // String receiverStr = receiver != null
@@ -364,10 +393,14 @@ public class TraceLogger {
 
         if (isArray) {
             int packedType = packAtomicArrayType(eventType, birthId.siteId, false);
+            SemanticTraceRegistry.recordAtomicEvent(seq, roleId, packedType, birthId.siteId, birthId.count,
+                    ownerTypeName, index);
             BinarySchema.write(seq, (long) roleId, packedType, birthId.count, index, (int) (longValue >> 32),
                     (int) longValue);
         } else {
             int packedType = BinarySchema.packType(eventType, BinarySchema.Flags.NONE);
+            SemanticTraceRegistry.recordAtomicEvent(seq, roleId, packedType, birthId.siteId, birthId.count,
+                    ownerTypeName, -1);
             BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, (int) (longValue >> 32),
                     (int) longValue);
         }
@@ -387,6 +420,7 @@ public class TraceLogger {
         BirthId receiverBirth = IdentityMapper.getBirthId(receiver, null, currentSiteId);
         BirthId valueBirth = IdentityMapper.getBirthId(objValue, null, currentSiteId);
         boolean isArray = (index >= 0);
+        String ownerTypeName = receiver == null ? "" : receiver.getClass().getName().replace('.', '/');
 
         // String eventName = getEventName(eventType);
         // String receiverStr = receiver != null
@@ -407,10 +441,14 @@ public class TraceLogger {
 
         if (isArray) {
             int packedType = packAtomicArrayType(eventType, receiverBirth.siteId, true);
-        BinarySchema.write(seq, (long) roleId, packedType, receiverBirth.count, index, valueBirth.siteId,
+            SemanticTraceRegistry.recordAtomicEvent(seq, roleId, packedType, receiverBirth.siteId, receiverBirth.count,
+                    ownerTypeName, index);
+            BinarySchema.write(seq, (long) roleId, packedType, receiverBirth.count, index, valueBirth.siteId,
                     valueBirth.count);
         } else {
             int packedType = BinarySchema.packType(eventType, BinarySchema.Flags.IS_OBJECT_VALUE);
+            SemanticTraceRegistry.recordAtomicEvent(seq, roleId, packedType, receiverBirth.siteId, receiverBirth.count,
+                    ownerTypeName, -1);
             BinarySchema.write(seq, (long) roleId, packedType, receiverBirth.siteId, receiverBirth.count,
                     valueBirth.siteId, valueBirth.count);
         }
@@ -432,6 +470,7 @@ public class TraceLogger {
         int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
         if (roleId == -1) return;
         int packedType = BinarySchema.packType(BinarySchema.Event.NONDETERMINISTIC_INT, BinarySchema.Flags.NONE);
+        SemanticTraceRegistry.recordNondeterministicEvent(seq, roleId, packedType, siteId);
         debug("[NONDET] epoch=%d seq=%d role=%d  nondet_int=%d  site=%d",
                 seq >>> 32, seq & 0xFFFFFFFFL, roleId, value, siteId);
         BinarySchema.write(seq, (long) roleId, packedType, 0, siteId, value);
@@ -447,6 +486,7 @@ public class TraceLogger {
         if (roleId == -1) return;
         int bits = Float.floatToRawIntBits(value);
         int packedType = BinarySchema.packType(BinarySchema.Event.NONDETERMINISTIC_INT, BinarySchema.Flags.NONE);
+        SemanticTraceRegistry.recordNondeterministicEvent(seq, roleId, packedType, siteId);
         debug("[NONDET] epoch=%d seq=%d role=%d  nondet_float=%f  site=%d",
                 seq >>> 32, seq & 0xFFFFFFFFL, roleId, value, siteId);
         BinarySchema.write(seq, (long) roleId, packedType, 0, siteId, bits);
@@ -469,6 +509,7 @@ public class TraceLogger {
         int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
         if (roleId == -1) return;
         int packedType = BinarySchema.packType(BinarySchema.Event.NONDETERMINISTIC_LONG, BinarySchema.Flags.NONE);
+        SemanticTraceRegistry.recordNondeterministicEvent(seq, roleId, packedType, siteId);
         debug("[NONDET] epoch=%d seq=%d role=%d  nondet_long=%d  site=%d",
                 seq >>> 32, seq & 0xFFFFFFFFL, roleId, value, siteId);
         BinarySchema.write(seq, (long) roleId, packedType, 0, siteId, (int) (value >> 32), (int) value);
@@ -484,6 +525,7 @@ public class TraceLogger {
         if (roleId == -1) return;
         long bits = Double.doubleToRawLongBits(value);
         int packedType = BinarySchema.packType(BinarySchema.Event.NONDETERMINISTIC_LONG, BinarySchema.Flags.NONE);
+        SemanticTraceRegistry.recordNondeterministicEvent(seq, roleId, packedType, siteId);
         debug("[NONDET] epoch=%d seq=%d role=%d  nondet_double=%f  site=%d",
                 seq >>> 32, seq & 0xFFFFFFFFL, roleId, value, siteId);
         BinarySchema.write(seq, (long) roleId, packedType, 0, siteId, (int) (bits >> 32), (int) bits);
@@ -496,13 +538,15 @@ public class TraceLogger {
         if (roleId == -1) return;
 
         BirthId birthId = IdentityMapper.getBirthId(exception, null, siteId);
+        int packedType = BinarySchema.packType(BinarySchema.Event.EXCEPTION_THROW, BinarySchema.Flags.NONE);
+        SemanticTraceRegistry.recordExceptionEvent(seq, roleId, packedType, birthId.siteId, birthId.count,
+                exception == null ? "" : exception.getClass().getName().replace('.', '/'), siteId);
         // String className = exception.getClass().getName();
         // System.out.println(String.format(
         //         "[THROW]  epoch=%d seq=%d role=%d  %s  site=%d",
         //         seq >>> 32, seq & 0xFFFFFFFFL, roleId, className, siteId));
 
-        BinarySchema.write(seq, (long) roleId,
-                BinarySchema.packType(BinarySchema.Event.EXCEPTION_THROW, BinarySchema.Flags.NONE),
+        BinarySchema.write(seq, (long) roleId, packedType,
                 birthId.siteId, birthId.count, siteId);
     }
 

@@ -5,159 +5,769 @@ import common.IdentityMapper;
 import common.v1.FieldKey;
 import common.v1.FieldInteractionDomain;
 import common.v1.ReducedTraceRegistry;
-import common.v1.SemanticFieldEvent;
+import common.v1.ReplayConstraint;
+import common.v1.SemanticIdentity;
+import common.v1.SemanticObjectEvent;
 import common.v1.SemanticTraceRegistry;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.Writer;
-import java.nio.MappedByteBuffer;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
-import java.util.LinkedList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.NavigableSet;
 import java.util.Properties;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class ReplayCoordinator {
-    // Pre-sorted event array: each element is [seq, roleId, packedType, objSite,
-    // objCount, data]
-    private static long[][] sortedEvents;
-    private static long totalEvents;
-    private static final AtomicLong currentIdx = new AtomicLong(0);
-    private static final Object controlLock = new Object();
-    private static final AtomicLong releasedEpoch = new AtomicLong(0);
+    private static final long MATCH_WAIT_SLICE_MS = 100L;
+    private static final long MATCH_TIMEOUT_MS = 2_000L;
 
-    // Stores the seq of the last matched event for the calling thread,
-    // so ReplayMonitor can print epoch/seq after awaitTurn returns.
+    private static final Object controlLock = new Object();
     private static final ThreadLocal<Long> lastMatchedSeq = ThreadLocal.withInitial(() -> 0L);
 
-    // Universal target epoch: the lowest epoch any role is currently trying to
-    // advance releasedEpoch to. Roles with release events at higher epochs must
-    // defer until the pending lower-epoch release succeeds, preventing circular
-    // waits (e.g. Role A waiting for Role B at epoch N while Role B is waiting
-    // for Role A at epoch N+1).
-    private static final AtomicLong pendingTargetEpoch = new AtomicLong(Long.MAX_VALUE);
+    private static final Map<Long, long[]> eventsBySeq = new HashMap<>();
+    private static final Map<Integer, NavigableSet<Long>> pendingSeqsByRole = new HashMap<>();
+    private static final NavigableSet<Long> pendingSeqs = new TreeSet<>();
+    private static final Set<Long> matchedSeqs = new HashSet<>();
+    private static final Map<Integer, ArrayDeque<Long>> pendingThreadStartsByParent = new HashMap<>();
+    private static final Map<Long, Integer> threadStartChildRoleBySeq = new HashMap<>();
 
-    public static long getLastMatchedSeq() { return lastMatchedSeq.get(); }
-
-    // Roles seen in the trace that haven't checked in yet
-    private static final Set<Integer> pendingRoles = ConcurrentHashMap.newKeySet();
-    // Roles that have called awaitTurn at least once — they're alive in replay
-    private static final Set<Integer> activeRoles = ConcurrentHashMap.newKeySet();
-    private static final Set<Integer> startedRoles = ConcurrentHashMap.newKeySet();
-
-    // Map each role to its own sequence of events
-    private static final Map<Integer, LinkedList<long[]>> roleQueues = new ConcurrentHashMap<>();
-    private static final AtomicLong eventsMatched = new AtomicLong(0);
-    private static final AtomicLong globalMatchCount = new AtomicLong(0);
-    
-    // Maps roleId → the Thread object that owns it, so isAnyRoleBehind can skip
-    // roles whose thread has exited normally (without an uncaught exception).
     private static final ConcurrentHashMap<Integer, Thread> roleIdToThread = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<Long, Long> lastMatchedSeqByTraceObject = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<Long, Long> lastMatchedSeqByRole = new ConcurrentHashMap<>();
 
-    // Global divergence flag. Set at most once; once true all awaitTurn* methods
-    // return immediately so threads run freely rather than deadlocking.
     private static volatile boolean hasDiverged = false;
     private static volatile String firstDivergenceInfo = null;
+    private static volatile boolean degradedReplay = false;
+    private static volatile String firstDegradationInfo = "";
+    private static volatile boolean unsupportedReplay = false;
+    private static volatile String firstUnsupportedInfo = "";
     private static volatile boolean isIncomplete = false;
     private static volatile String incompleteReason = "";
     private static volatile String incompleteDetails = "";
+    private static volatile int firstRoleInTrace = -1;
 
-    public static boolean hasDiverged() { return hasDiverged; }
+    public static boolean hasDiverged() {
+        return hasDiverged;
+    }
 
-    // ---- Fidelity tracking (opt-in, zero cost when disabled) ----
-    // Activated by -Dtool.fidelity.output=<path>; set by ReplayAgent.premain().
-    static volatile boolean fidelityEnabled    = false;
-    static volatile String  fidelityOutputPath = null;
+    static volatile boolean fidelityEnabled = false;
+    static volatile String fidelityOutputPath = null;
 
-    // Counts all valued events (reads + writes) where we have a trace event to compare.
+    private static final AtomicLong totalEvents = new AtomicLong(0);
+    private static final AtomicLong eventsMatched = new AtomicLong(0);
     private static final AtomicLong totalValuedEvents = new AtomicLong(0);
     private static final AtomicLong naturalAgreements = new AtomicLong(0);
-    // Counts events (reads or writes) where the natural value differed from the trace.
-    private static final AtomicLong injectedEvents    = new AtomicLong(0);
-    // Counts valued events where natural != trace but replay intentionally keeps the
-    // natural value (no injection applied).
+    private static final AtomicLong injectedEvents = new AtomicLong(0);
     private static final AtomicLong noInjectDisagreements = new AtomicLong(0);
 
-    // key  = (objSite << 32) | (objCount & 0xFFFFFFFFL)
-    // v[0] = captured final value (packed data1<<32|data2)
-    // v[1] = last natural value seen during replay (Long.MIN_VALUE = never written)
     private static final ConcurrentHashMap<Long, long[]> finalStateMap = new ConcurrentHashMap<>();
 
-    public static void init(MappedByteBuffer traceBuffer, long count) {
-        // Clear all state so init() is safe to call more than once (e.g. in tests).
-        sortedEvents = null;
-        totalEvents = 0;
-        currentIdx.set(0);
-        releasedEpoch.set(0);
-        pendingTargetEpoch.set(Long.MAX_VALUE);
-        pendingRoles.clear();
-        activeRoles.clear();
-        startedRoles.clear();
-        roleQueues.clear();
-        globalMatchCount.set(0);
-        roleIdToThread.clear();
-        hasDiverged = false;
-        firstDivergenceInfo = null;
-        isIncomplete = false;
-        incompleteReason = "";
-        incompleteDetails = "";
-        eventsMatched.set(0);
-        totalValuedEvents.set(0);
-        naturalAgreements.set(0);
-        injectedEvents.set(0);
-        noInjectDisagreements.set(0);
-        finalStateMap.clear();
+    private enum MatchState {
+        FOUND,
+        WAIT,
+        NO_MATCH
+    }
 
-        ArrayList<long[]> allEvents = new ArrayList<>();
-        long maxSlots = traceBuffer.capacity() / BinarySchema.RECORD_SIZE;
+    private static final class MatchSelection {
+        private final MatchState state;
+        private final long[] event;
+        private final boolean ambiguous;
+        private final String reason;
 
-        for (long i = 0; i < maxSlots; i++) {
-            int pos = (int) (i * BinarySchema.RECORD_SIZE);
-            long seq = traceBuffer.getLong(pos);
-            if (seq == 0) continue; // Quick skip
-
-            allEvents.add(new long[] {
-                seq,                               // [0] Full Seq (Epoch | Local)
-                traceBuffer.getLong(pos + 8),      // [1] roleId
-                traceBuffer.getInt(pos + 16),      // [2] packedType
-                traceBuffer.getInt(pos + 20),      // [3] objSite
-                traceBuffer.getInt(pos + 24),      // [4] objCount
-                traceBuffer.getInt(pos + 28),      // [5] data1
-                traceBuffer.getInt(pos + 32)       // [6] data2
-            });
+        private MatchSelection(MatchState state, long[] event, boolean ambiguous, String reason) {
+            this.state = state;
+            this.event = event;
+            this.ambiguous = ambiguous;
+            this.reason = reason == null ? "" : reason;
         }
+    }
 
-        // Sort globally once to maintain the 'ideal' trace order
-        allEvents.sort(Comparator.comparingLong(a -> a[0]));
+    public static long getLastMatchedSeq() {
+        return lastMatchedSeq.get();
+    }
 
-        // Distribute into Per-Role Queues
-        for (long[] event : allEvents) {
-            int rId = (int) event[1];
-            roleQueues.computeIfAbsent(rId, k -> new LinkedList<>()).add(event);
-            pendingRoles.add(rId); 
-        }
+    public static void init(List<long[]> reducedEvents) {
+        synchronized (controlLock) {
+            eventsBySeq.clear();
+            pendingSeqsByRole.clear();
+            pendingSeqs.clear();
+            matchedSeqs.clear();
+            pendingThreadStartsByParent.clear();
+            threadStartChildRoleBySeq.clear();
+            roleIdToThread.clear();
+            lastMatchedSeqByTraceObject.clear();
+            lastMatchedSeqByRole.clear();
+            SemanticIdentity.reset();
 
-        totalEvents = allEvents.size();
-        // System.out.println("[Replay] Distributed " + totalEvents + " events into " + roleQueues.keySet().size() + " role queues.");
+            hasDiverged = false;
+            firstDivergenceInfo = null;
+            degradedReplay = false;
+            firstDegradationInfo = "";
+            unsupportedReplay = false;
+            firstUnsupportedInfo = "";
+            isIncomplete = false;
+            incompleteReason = "";
+            incompleteDetails = "";
+            firstRoleInTrace = -1;
 
-        // Pre-compute captured final state for fidelity tracking.
-        // Iterating in causal order means the last write per location wins.
-        if (fidelityEnabled) {
-            for (long[] ev : allEvents) {
-                if (!isWriteEvent((int) ev[2] & 0xFF)) continue;
-                long key = ((long)(int) ev[3] << 32) | ((int) ev[4] & 0xFFFFFFFFL);
-                long val = ((long)(int) ev[5] << 32) | ((int) ev[6] & 0xFFFFFFFFL);
-                finalStateMap.compute(key, (k, v) ->
-                    v == null ? new long[]{val, Long.MIN_VALUE} : new long[]{val, v[1]});
+            totalEvents.set(0);
+            eventsMatched.set(0);
+            totalValuedEvents.set(0);
+            naturalAgreements.set(0);
+            injectedEvents.set(0);
+            noInjectDisagreements.set(0);
+            finalStateMap.clear();
+
+            ArrayList<long[]> allEvents = new ArrayList<>();
+            if (reducedEvents != null) {
+                for (long[] event : reducedEvents) {
+                    if (event == null || event.length < 7) {
+                        continue;
+                    }
+                    allEvents.add(copyEvent(event));
+                }
+            }
+
+            allEvents.sort(Comparator.comparingLong(event -> event[0]));
+            totalEvents.set(allEvents.size());
+
+            for (long[] event : allEvents) {
+                long seq = event[0];
+                int roleId = (int) event[1];
+                int baseType = (int) event[2] & 0xFF;
+
+                if (firstRoleInTrace == -1) {
+                    firstRoleInTrace = roleId;
+                }
+
+                eventsBySeq.put(seq, event);
+                pendingSeqs.add(seq);
+                pendingSeqsByRole.computeIfAbsent(roleId, ignored -> new TreeSet<>()).add(seq);
+
+                if (baseType == BinarySchema.Event.THREAD_START) {
+                    pendingThreadStartsByParent.computeIfAbsent(roleId, ignored -> new ArrayDeque<>()).add(seq);
+                    threadStartChildRoleBySeq.put(seq, (int) event[5]);
+                }
+
+                if (fidelityEnabled && isWriteEvent(baseType)) {
+                    long key = replayLocationKey(event);
+                    long value = ((long) (int) event[5] << 32) | ((int) event[6] & 0xFFFFFFFFL);
+                    finalStateMap.compute(key, (ignored, current) ->
+                            current == null ? new long[] { value, Long.MIN_VALUE } : new long[] { value, current[1] });
+                }
             }
         }
     }
 
-    private static int packedShape(int packedType) {
-        return packedType & 0x0000FFFF;
+    public static void registerMainThread(long mainTid) {
+        if (firstRoleInTrace == -1) {
+            return;
+        }
+        IdentityMapper.preAssignRole(mainTid, firstRoleInTrace);
+        roleIdToThread.put(firstRoleInTrace, Thread.currentThread());
+    }
+
+    public static int peekNextPendingRole() {
+        synchronized (controlLock) {
+            long bestSeq = Long.MAX_VALUE;
+            int bestRole = -1;
+            for (Map.Entry<Integer, NavigableSet<Long>> entry : pendingSeqsByRole.entrySet()) {
+                Long seq = entry.getValue().isEmpty() ? null : entry.getValue().first();
+                if (seq != null && seq < bestSeq) {
+                    bestSeq = seq;
+                    bestRole = entry.getKey();
+                }
+            }
+            return bestRole;
+        }
+    }
+
+    public static int peekChildRoleFromThreadStart(int parentRoleId) {
+        synchronized (controlLock) {
+            ArrayDeque<Long> queue = pendingThreadStartsByParent.get(parentRoleId);
+            if (queue == null) {
+                return -1;
+            }
+            while (!queue.isEmpty() && !pendingSeqs.contains(queue.peek())) {
+                queue.poll();
+            }
+            Long seq = queue.peek();
+            return seq == null ? -1 : threadStartChildRoleBySeq.getOrDefault(seq, -1);
+        }
+    }
+
+    public static void checkIn(int roleId) {
+        if (roleId != -1) {
+            roleIdToThread.put(roleId, Thread.currentThread());
+        }
+    }
+
+    public static void reportThreadDead(int roleId) {
+        synchronized (controlLock) {
+            NavigableSet<Long> rolePending = pendingSeqsByRole.get(roleId);
+            if (rolePending != null && !rolePending.isEmpty()) {
+                reportDivergence(roleId, "thread exited with " + rolePending.size() + " unconsumed replay events");
+            }
+            controlLock.notifyAll();
+        }
+    }
+
+    public static void awaitTurn(int roleId, int packedType, int objSite, int objCount, Object runtimeObject, int data) {
+        long[] event = awaitSemanticEvent(roleId, packedType, objSite, objCount, runtimeObject, null, 0);
+        if (event == null) {
+            return;
+        }
+        lastMatchedSeq.set(event[0]);
+    }
+
+    public static int awaitTurnInt(int roleId, int packedType, int objSite, int objCount, Object runtimeObject) {
+        return awaitTurnInt(roleId, packedType, objSite, objCount, runtimeObject, 0);
+    }
+
+    public static int awaitTurnInt(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
+            int naturalValue) {
+        long[] event = awaitSemanticEvent(roleId, packedType, objSite, objCount, runtimeObject, null, objCount);
+        if (event == null) {
+            return naturalValue;
+        }
+        int traceValue = (int) event[6];
+        trackFidelityInt(packedType, objSite, objCount, naturalValue, event);
+        if (naturalValue != traceValue) {
+            recordDegradation("value injection on nondeterministic int source");
+        }
+        return traceValue;
+    }
+
+    public static long awaitTurnLong(int roleId, int packedType, int objSite, int objCount, Object runtimeObject) {
+        return awaitTurnLong(roleId, packedType, objSite, objCount, runtimeObject, 0L);
+    }
+
+    public static long awaitTurnLong(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
+            long naturalValue) {
+        long[] event = awaitSemanticEvent(roleId, packedType, objSite, objCount, runtimeObject, null, objCount);
+        if (event == null) {
+            return naturalValue;
+        }
+        long traceValue = ((long) event[5] << 32) | (event[6] & 0xFFFFFFFFL);
+        trackFidelityLong(packedType, objSite, objCount, naturalValue, event);
+        if (naturalValue != traceValue) {
+            recordDegradation("value injection on nondeterministic long source");
+        }
+        return traceValue;
+    }
+
+    public static Object awaitTurnObj(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
+            Object naturalValue) {
+        long[] event = awaitSemanticEvent(roleId, packedType, objSite, objCount, runtimeObject, null, objCount);
+        if (event == null) {
+            return naturalValue;
+        }
+        Object traceValue = SemanticIdentity.resolveRuntime((int) event[5], (int) event[6]);
+        if (traceValue == null && naturalValue != null) {
+            SemanticIdentity.bindValueIdentity((int) event[5], (int) event[6], naturalValue,
+                    semanticShapeKey(event, null));
+            traceValue = naturalValue;
+        }
+        trackFidelityObj(packedType, objSite, objCount, naturalValue, event);
+        if (traceValue != naturalValue) {
+            recordDegradation("value injection on object-valued replay event");
+        }
+        return traceValue;
+    }
+
+    public static int awaitTurnCasInt(int roleId, int packedType, int objSite, int objCount, Object runtimeObject) {
+        long[] event = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject, null);
+        if (event == null) {
+            return 0;
+        }
+        recordDegradation("atomic CAS result injection");
+        return (int) event[6];
+    }
+
+    public static long awaitTurnCasLong(int roleId, int packedType, int objSite, int objCount, Object runtimeObject) {
+        long[] event = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject, null);
+        if (event == null) {
+            return 0L;
+        }
+        recordDegradation("atomic CAS result injection");
+        return ((long) event[5] << 32) | (event[6] & 0xFFFFFFFFL);
+    }
+
+    public static Object awaitTurnCasObj(int roleId, int packedType, int objSite, int objCount, Object runtimeObject) {
+        long[] event = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject, null);
+        if (event == null) {
+            return null;
+        }
+        Object traceValue = SemanticIdentity.resolveRuntime((int) event[5], (int) event[6]);
+        recordDegradation("atomic CAS object result injection");
+        return traceValue;
+    }
+
+    public static int awaitTurnRmwInt(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
+            int naturalValue) {
+        long[] event = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject, null);
+        trackFidelityInt(packedType, objSite, objCount, naturalValue, event);
+        if (event == null) {
+            return naturalValue;
+        }
+        int traceValue = (int) event[6];
+        if (naturalValue != traceValue) {
+            recordUnsupported("atomic RMW diverged from trace value");
+        }
+        return naturalValue;
+    }
+
+    public static long awaitTurnRmwLong(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
+            long naturalValue) {
+        long[] event = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject, null);
+        trackFidelityLong(packedType, objSite, objCount, naturalValue, event);
+        if (event == null) {
+            return naturalValue;
+        }
+        long traceValue = ((long) event[5] << 32) | (event[6] & 0xFFFFFFFFL);
+        if (naturalValue != traceValue) {
+            recordUnsupported("atomic RMW diverged from trace value");
+        }
+        return naturalValue;
+    }
+
+    public static Object awaitTurnRmwObj(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
+            Object naturalValue) {
+        long[] event = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject, null);
+        trackFidelityObj(packedType, objSite, objCount, naturalValue, event);
+        if (event == null) {
+            return naturalValue;
+        }
+        Object traceValue = SemanticIdentity.resolveRuntime((int) event[5], (int) event[6]);
+        if (naturalValue != traceValue) {
+            recordUnsupported("atomic object RMW diverged from trace value");
+        }
+        return naturalValue;
+    }
+
+    public static void recordNoInjectDisagreement() {
+        if (!fidelityEnabled) {
+            return;
+        }
+        noInjectDisagreements.incrementAndGet();
+    }
+
+    public static long[] doAwaitTurnValued(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
+            FieldKey actualFieldKey) {
+        return awaitSemanticEvent(roleId, packedType, objSite, objCount, runtimeObject, actualFieldKey, 0);
+    }
+
+    public static int awaitTurnFieldInt(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
+            FieldKey actualFieldKey, int naturalValue) {
+        long[] event = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject, actualFieldKey);
+        trackFidelityInt(packedType, objSite, objCount, naturalValue, event);
+        if (event == null) {
+            return naturalValue;
+        }
+        int traceValue = (int) event[6];
+        if (shouldInjectReadValue(packedType) && naturalValue != traceValue) {
+            recordDegradation("plain read value injection");
+            return traceValue;
+        }
+        if (naturalValue != traceValue) {
+            recordUnsupported("valued event diverged outside plain-read injection fallback");
+        }
+        return naturalValue;
+    }
+
+    public static long awaitTurnFieldLong(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
+            FieldKey actualFieldKey, long naturalValue) {
+        long[] event = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject, actualFieldKey);
+        trackFidelityLong(packedType, objSite, objCount, naturalValue, event);
+        if (event == null) {
+            return naturalValue;
+        }
+        long traceValue = ((long) event[5] << 32) | (event[6] & 0xFFFFFFFFL);
+        if (shouldInjectReadValue(packedType) && naturalValue != traceValue) {
+            recordDegradation("plain read value injection");
+            return traceValue;
+        }
+        if (naturalValue != traceValue) {
+            recordUnsupported("valued event diverged outside plain-read injection fallback");
+        }
+        return naturalValue;
+    }
+
+    public static Object awaitTurnFieldObj(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
+            FieldKey actualFieldKey, Object naturalValue) {
+        long[] event = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject, actualFieldKey);
+        if (event == null) {
+            return naturalValue;
+        }
+        Object traceValue = SemanticIdentity.resolveRuntime((int) event[5], (int) event[6]);
+        if (traceValue == null && naturalValue != null) {
+            SemanticIdentity.bindValueIdentity((int) event[5], (int) event[6], naturalValue,
+                    semanticShapeKey(event, actualFieldKey));
+            traceValue = naturalValue;
+        }
+        trackFidelityObj(packedType, objSite, objCount, naturalValue, event);
+        if (shouldInjectReadValue(packedType) && naturalValue != traceValue) {
+            recordDegradation("plain object-read value injection");
+            return traceValue;
+        }
+        if (naturalValue != traceValue) {
+            recordUnsupported("object-valued event diverged outside plain-read injection fallback");
+        }
+        return naturalValue;
+    }
+
+    public static int awaitTurnArrayInt(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
+            int naturalValue) {
+        return awaitTurnFieldInt(roleId, packedType, objSite, objCount, runtimeObject, null, naturalValue);
+    }
+
+    public static long awaitTurnArrayLong(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
+            long naturalValue) {
+        return awaitTurnFieldLong(roleId, packedType, objSite, objCount, runtimeObject, null, naturalValue);
+    }
+
+    public static Object awaitTurnArrayObj(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
+            Object naturalValue) {
+        return awaitTurnFieldObj(roleId, packedType, objSite, objCount, runtimeObject, null, naturalValue);
+    }
+
+    public static void printFidelityReport() {
+        synchronized (controlLock) {
+            if (!hasDiverged && !pendingSeqs.isEmpty()) {
+                isIncomplete = true;
+                incompleteReason = unsupportedReplay ? "unsupported_tail" : "unconsumed_tail";
+                incompleteDetails = pendingEventSummary();
+            }
+        }
+
+        long total = totalValuedEvents.get();
+        long agreed = naturalAgreements.get();
+        long injected = injectedEvents.get();
+        long noInject = noInjectDisagreements.get();
+
+        int locs = finalStateMap.size();
+        int matched = 0;
+        int unseen = 0;
+        for (long[] value : finalStateMap.values()) {
+            if (value[1] == Long.MIN_VALUE) {
+                unseen++;
+                continue;
+            }
+            if (value[1] == value[0]) {
+                matched++;
+            }
+        }
+        int seen = locs - unseen;
+        boolean match = (seen > 0) && (matched == seen);
+
+        Properties properties = new Properties();
+        properties.setProperty("match", String.valueOf(match));
+        properties.setProperty("structural_divergence", String.valueOf(hasDiverged));
+        properties.setProperty("structural_divergence_details", firstDivergenceInfo == null ? "" : firstDivergenceInfo);
+        properties.setProperty("degraded", String.valueOf(degradedReplay));
+        properties.setProperty("degraded_details", firstDegradationInfo);
+        properties.setProperty("unsupported", String.valueOf(unsupportedReplay));
+        properties.setProperty("unsupported_details", firstUnsupportedInfo);
+        properties.setProperty("incomplete", String.valueOf(isIncomplete));
+        properties.setProperty("incomplete_reason", incompleteReason);
+        properties.setProperty("incomplete_details", incompleteDetails);
+        properties.setProperty("events_matched", String.valueOf(eventsMatched.get()));
+        properties.setProperty("events_total", String.valueOf(totalEvents.get()));
+        properties.setProperty("valued_events", String.valueOf(total));
+        properties.setProperty("natural_agreements", String.valueOf(agreed));
+        properties.setProperty("injections", String.valueOf(injected));
+        properties.setProperty("no_inject_disagreements", String.valueOf(noInject));
+        properties.setProperty("locations_matched", String.valueOf(matched));
+        properties.setProperty("locations_total", String.valueOf(locs));
+        properties.setProperty("locations_unseen", String.valueOf(unseen));
+
+        try (Writer writer = new FileWriter(fidelityOutputPath)) {
+            properties.store(writer, "Replay Fidelity Result");
+        } catch (IOException e) {
+            System.err.println("[FIDELITY] Failed to write result file: " + e.getMessage());
+        }
+    }
+
+    private static long[] awaitSemanticEvent(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
+            FieldKey actualFieldKey, int nondeterministicSourceKey) {
+        roleIdToThread.put(roleId, Thread.currentThread());
+        long deadline = System.currentTimeMillis() + MATCH_TIMEOUT_MS;
+        synchronized (controlLock) {
+            while (true) {
+                if (hasDiverged) {
+                    return null;
+                }
+
+                MatchSelection selection = selectCandidate(roleId, packedType, objSite, objCount, runtimeObject,
+                        actualFieldKey, nondeterministicSourceKey);
+                if (selection.state == MatchState.FOUND) {
+                    if (selection.ambiguous) {
+                        recordDegradation("ambiguous semantic match resolved to earliest candidate");
+                    }
+                    if (!commitBinding(selection.event, runtimeObject, actualFieldKey)) {
+                        reportDivergence(roleId, "conflicting object binding during replay match");
+                        return null;
+                    }
+                    consumeEvent(selection.event);
+                    return selection.event;
+                }
+
+                if (selection.state == MatchState.NO_MATCH) {
+                    recordUnsupported(selection.reason.isEmpty()
+                            ? "no semantically legal replay event matched the runtime event"
+                            : selection.reason);
+                    return null;
+                }
+
+                long remaining = deadline - System.currentTimeMillis();
+                if (remaining <= 0L) {
+                    recordUnsupported(selection.reason.isEmpty()
+                            ? "timed out waiting for predecessor constraints to become realizable"
+                            : selection.reason);
+                    return null;
+                }
+                try {
+                    controlLock.wait(Math.min(MATCH_WAIT_SLICE_MS, remaining));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    recordUnsupported("interrupted while waiting for replay constraints");
+                    return null;
+                }
+            }
+        }
+    }
+
+    private static MatchSelection selectCandidate(int roleId, int packedType, int objSite, int objCount,
+            Object runtimeObject, FieldKey actualFieldKey, int nondeterministicSourceKey) {
+        NavigableSet<Long> rolePending = pendingSeqsByRole.get(roleId);
+        if (rolePending == null || rolePending.isEmpty()) {
+            return new MatchSelection(MatchState.NO_MATCH, null, false, "no pending replay events for role " + roleId);
+        }
+
+        long[] chosen = null;
+        boolean ambiguous = false;
+        boolean sawSimilarButBlocked = false;
+        String blockedReason = "";
+
+        for (Long seq : rolePending) {
+            long[] event = eventsBySeq.get(seq);
+            if (event == null) {
+                continue;
+            }
+            if (!samePackedShape(event, packedType)
+                    || !sameSemanticEventContext(event, actualFieldKey, objCount, nondeterministicSourceKey)) {
+                continue;
+            }
+            if (!bindingCompatible(event, runtimeObject, objCount, actualFieldKey)) {
+                continue;
+            }
+            if (!predecessorsSatisfied(seq)) {
+                sawSimilarButBlocked = true;
+                blockedReason = "predecessor constraints for seq=" + seq + " are not yet satisfied";
+                continue;
+            }
+            if (!lifecyclePositionCompatible(event)) {
+                sawSimilarButBlocked = true;
+                blockedReason = "object lifecycle position does not yet allow seq=" + seq;
+                continue;
+            }
+            if (chosen == null) {
+                chosen = event;
+            } else {
+                ambiguous = true;
+                break;
+            }
+        }
+
+        if (chosen != null) {
+            return new MatchSelection(MatchState.FOUND, chosen, ambiguous, "");
+        }
+        if (sawSimilarButBlocked) {
+            return new MatchSelection(MatchState.WAIT, null, false, blockedReason);
+        }
+        return new MatchSelection(MatchState.NO_MATCH, null, false,
+                "no semantically compatible pending event for role " + roleId);
+    }
+
+    private static boolean samePackedShape(long[] expected, int actualPackedType) {
+        return ((int) expected[2] & 0xFFFF) == (actualPackedType & 0xFFFF);
+    }
+
+    private static boolean sameSemanticEventContext(long[] expected, FieldKey actualFieldKey,
+            int actualObjCount, int nondeterministicSourceKey) {
+        SemanticObjectEvent expectedObject = SemanticTraceRegistry.lookupObjectEvent(expected[0]);
+        if (expectedObject == null) {
+            return sameNondeterministicSourceKey(expected, nondeterministicSourceKey)
+                    && (actualFieldKey == null || sameFieldKeyFallback(expected, actualFieldKey));
+        }
+
+        if (expectedObject.fieldKey() != null && actualFieldKey != null
+                && !expectedObject.fieldKey().equals(actualFieldKey)) {
+            return false;
+        }
+        if ((expectedObject.isArray() || expectedObject.isAtomic()) && expectedObject.index() >= 0
+                && expectedObject.index() != actualObjCount) {
+            return false;
+        }
+        if (expectedObject.isNondeterministic()) {
+            return sameNondeterministicSourceKey(expected, nondeterministicSourceKey);
+        }
+        return true;
+    }
+
+    private static boolean sameFieldKeyFallback(long[] expected, FieldKey actualFieldKey) {
+        if (actualFieldKey == null) {
+            return true;
+        }
+        SemanticObjectEvent expectedObject = SemanticTraceRegistry.lookupObjectEvent(expected[0]);
+        return expectedObject == null
+                || expectedObject.fieldKey() == null
+                || expectedObject.fieldKey().equals(actualFieldKey);
+    }
+
+    private static boolean sameNondeterministicSourceKey(long[] expected, int actualSourceKey) {
+        int baseType = (int) expected[2] & 0xFF;
+        if (baseType != BinarySchema.Event.NONDETERMINISTIC_INT
+                && baseType != BinarySchema.Event.NONDETERMINISTIC_LONG) {
+            return true;
+        }
+        return actualSourceKey == (int) expected[4];
+    }
+
+    private static boolean bindingCompatible(long[] expected, Object runtimeObject, int actualObjCount,
+            FieldKey actualFieldKey) {
+        int packedType = (int) expected[2];
+        int baseType = packedType & 0xFF;
+        SemanticObjectEvent expectedObject = SemanticTraceRegistry.lookupObjectEvent(expected[0]);
+        String domainId = ReducedTraceRegistry.lookupDomainId(expected[0]);
+        long epoch = ReducedTraceRegistry.lookupEpoch(expected[0]);
+
+        if (baseType == BinarySchema.Event.NONDETERMINISTIC_INT
+                || baseType == BinarySchema.Event.NONDETERMINISTIC_LONG) {
+            return true;
+        }
+
+        int traceSite;
+        int traceCount;
+        if (isArrayScoped(packedType)) {
+            if (actualObjCount != (int) expected[4]) {
+                return false;
+            }
+            traceSite = packedType >>> 16;
+            traceCount = (int) expected[3];
+        } else {
+            traceSite = (int) expected[3];
+            traceCount = (int) expected[4];
+        }
+
+        if (runtimeObject == null) {
+            return traceSite == 0 && traceCount == 0;
+        }
+
+        return SemanticIdentity.canMatch(traceSite, traceCount, runtimeObject,
+                expectedObject, domainId, expected[0], epoch);
+    }
+
+    private static boolean commitBinding(long[] expected, Object runtimeObject, FieldKey actualFieldKey) {
+        int packedType = (int) expected[2];
+        int baseType = packedType & 0xFF;
+        SemanticObjectEvent expectedObject = SemanticTraceRegistry.lookupObjectEvent(expected[0]);
+        String domainId = ReducedTraceRegistry.lookupDomainId(expected[0]);
+        long epoch = ReducedTraceRegistry.lookupEpoch(expected[0]);
+        if (baseType == BinarySchema.Event.NONDETERMINISTIC_INT
+                || baseType == BinarySchema.Event.NONDETERMINISTIC_LONG) {
+            return true;
+        }
+
+        int traceSite;
+        int traceCount;
+        if (isArrayScoped(packedType)) {
+            traceSite = packedType >>> 16;
+            traceCount = (int) expected[3];
+        } else {
+            traceSite = (int) expected[3];
+            traceCount = (int) expected[4];
+        }
+        return SemanticIdentity.commitMatch(traceSite, traceCount, runtimeObject,
+                expectedObject, domainId, expected[0], epoch);
+    }
+
+    private static boolean predecessorsSatisfied(long seq) {
+        List<ReplayConstraint> constraints = ReducedTraceRegistry.lookupConstraints(seq);
+        for (ReplayConstraint constraint : constraints) {
+            if (!matchedSeqs.contains(constraint.predecessorSeq())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean lifecyclePositionCompatible(long[] event) {
+        long lifecycleKey = traceLifecycleKey(event);
+        if (lifecycleKey == Long.MIN_VALUE) {
+            return true;
+        }
+        Long previous = lastMatchedSeqByTraceObject.get(lifecycleKey);
+        return previous == null || previous.longValue() < event[0];
+    }
+
+    private static void consumeEvent(long[] event) {
+        long seq = event[0];
+        int roleId = (int) event[1];
+
+        matchedSeqs.add(seq);
+        pendingSeqs.remove(seq);
+        NavigableSet<Long> rolePending = pendingSeqsByRole.get(roleId);
+        if (rolePending != null) {
+            rolePending.remove(seq);
+            if (rolePending.isEmpty()) {
+                pendingSeqsByRole.remove(roleId);
+            }
+        }
+
+        lastMatchedSeq.set(seq);
+        lastMatchedSeqByRole.put((long) roleId, seq);
+
+        long lifecycleKey = traceLifecycleKey(event);
+        if (lifecycleKey != Long.MIN_VALUE) {
+            lastMatchedSeqByTraceObject.put(lifecycleKey, seq);
+        }
+
+        int baseType = (int) event[2] & 0xFF;
+        if (baseType == BinarySchema.Event.THREAD_START) {
+            ArrayDeque<Long> starts = pendingThreadStartsByParent.get(roleId);
+            if (starts != null) {
+                while (!starts.isEmpty() && starts.peek() != seq) {
+                    if (!pendingSeqs.contains(starts.peek())) {
+                        starts.poll();
+                    } else {
+                        break;
+                    }
+                }
+                if (!starts.isEmpty() && starts.peek() == seq) {
+                    starts.poll();
+                }
+            }
+        }
+
+        eventsMatched.incrementAndGet();
+        controlLock.notifyAll();
+    }
+
+    private static boolean shouldInjectReadValue(int packedType) {
+        int baseType = packedType & 0xFF;
+        return baseType == BinarySchema.Event.FIELD_READ || baseType == BinarySchema.Event.ARRAY_READ;
     }
 
     private static boolean isArrayScoped(int packedType) {
@@ -165,996 +775,234 @@ public class ReplayCoordinator {
         return (flags & (BinarySchema.Flags.IS_ARRAY_VALUED | BinarySchema.Flags.IS_ARRAY_ATOMIC)) != 0;
     }
 
-    private static boolean sameNondeterministicSourceKey(long[] expected, int actualSourceKind, int actualSourceKey) {
-        // NONDETERMINISTIC_* records do not use object identity at all.
-        // In the current binary format, the source is encoded as:
-        //   objSite  = 0
-        //   objCount = nondeterministic call-site key
-        return actualSourceKind == (int) expected[3] && actualSourceKey == (int) expected[4];
-    }
-
-    private static boolean sameSemanticIdentity(long[] expected, int actualPackedType, Object runtimeObject,
-            int actualObjSite, int actualObjCount) {
-        int expectedPackedType = (int) expected[2];
-        if (packedShape(expectedPackedType) != packedShape(actualPackedType)) {
-            return false;
+    private static long traceLifecycleKey(long[] event) {
+        int packedType = (int) event[2];
+        int baseType = packedType & 0xFF;
+        if (baseType == BinarySchema.Event.NONDETERMINISTIC_INT
+                || baseType == BinarySchema.Event.NONDETERMINISTIC_LONG) {
+            return Long.MIN_VALUE;
         }
-
-        int baseType = expectedPackedType & 0xFF;
-        if (baseType == BinarySchema.Event.NONDETERMINISTIC_INT || baseType == BinarySchema.Event.NONDETERMINISTIC_LONG) {
-            return sameNondeterministicSourceKey(expected, actualObjSite, actualObjCount);
+        if (isArrayScoped(packedType)) {
+            return packTraceKey(packedType >>> 16, (int) event[3]);
         }
+        return packTraceKey((int) event[3], (int) event[4]);
+    }
 
-        if (isArrayScoped(expectedPackedType)) {
-            if (actualObjCount != (int) expected[4]) {
-                return false;
-            }
-            int expectedOwnerSite = expectedPackedType >>> 16;
-            return IdentityMapper.bindOrCheckTraceObject(expectedOwnerSite, (int) expected[3], runtimeObject);
+    private static long replayLocationKey(long[] event) {
+        int packedType = (int) event[2];
+        if (isArrayScoped(packedType)) {
+            long arrayKey = packTraceKey(packedType >>> 16, (int) event[3]);
+            return (arrayKey * 31L) ^ ((int) event[4] & 0xFFFFFFFFL);
         }
-
-        return IdentityMapper.bindOrCheckTraceObject((int) expected[3], (int) expected[4], runtimeObject);
+        return packTraceKey((int) event[3], (int) event[4]);
     }
 
-    private static String semanticDetail(long[] expected) {
-        SemanticFieldEvent fieldEvent = SemanticTraceRegistry.lookupFieldEvent(expected[0]);
-        if (fieldEvent != null) {
-            return " field=" + fieldEvent.fieldKey();
-        }
-        FieldInteractionDomain domain = ReducedTraceRegistry.lookupFieldDomain(expected[0]);
-        if (domain != null) {
-            return " domain=" + domain.domainId();
-        }
-        return "";
-    }
-
-    private static boolean sameFieldSemanticKey(long[] expected, FieldKey actualFieldKey) {
-        if (actualFieldKey == null) {
-            return true;
-        }
-        SemanticFieldEvent expectedFieldEvent = SemanticTraceRegistry.lookupFieldEvent(expected[0]);
-        return expectedFieldEvent == null || expectedFieldEvent.fieldKey().equals(actualFieldKey);
-    }
-    /**
-     * Records the first structural divergence and wakes all waiting threads so
-     * they can exit their spin loops and run without synchronization guidance.
-     * Uses double-checked locking so only the very first divergence is recorded.
-     */
-    private static void reportDivergence(int roleId, long epoch,
-            int expectedType, int actualType, String extra) {
-        if (hasDiverged) return;
-        synchronized (controlLock) {
-            if (hasDiverged) return;
-            hasDiverged = true;
-            firstDivergenceInfo = String.format(
-                    "role=%d epoch=%d expectedType=0x%02x actualType=0x%02x | %s",
-                    roleId, epoch, expectedType & 0xFF, actualType & 0xFF, extra);
-            System.err.println("[DIVERGENCE] Replay has structurally diverged: " + firstDivergenceInfo);
-            System.err.println("[DIVERGENCE] Synchronization and injection will no longer be applied.");
-            controlLock.notifyAll();
-        }
-    }
-
-    /** Overload for divergences that have no expected/actual event type (e.g. early thread exit). */
-    private static void reportDivergence(int roleId, String extra) {
-        if (hasDiverged) return;
-        synchronized (controlLock) {
-            if (hasDiverged) return;
-            hasDiverged = true;
-            firstDivergenceInfo = "role=" + roleId + " | " + extra;
-            System.err.println("[DIVERGENCE] Replay has structurally diverged: " + firstDivergenceInfo);
-            System.err.println("[DIVERGENCE] Synchronization and injection will no longer be applied.");
-            controlLock.notifyAll();
-        }
-    }
-
-    /**
-     * Registers the main thread so its role is immediately active.
-     * The main thread is always the first role in the sorted trace.
-     * Without this, the main thread's early events (CLASS_INIT, etc.) would be
-     * treated as deadlocked because its role stays in pendingRoles until checkIn
-     * is called — but checkIn is only called for newly spawned threads.
-     */
-    public static void registerMainThread(long mainTid) {
-        if (sortedEvents == null || sortedEvents.length == 0) return;
-        int mainRole = (int) sortedEvents[0][1];
-        pendingRoles.remove(mainRole);
-        activeRoles.add(mainRole);
-        roleIdToThread.put(mainRole, Thread.currentThread());
-        IdentityMapper.preAssignRole(mainTid, mainRole);
-        // System.out.println("[Replay] main thread registered as role=" + mainRole);
-    }
-
-    public static int peekNextPendingRole() {
-        synchronized (controlLock) {
-            int bestRole = -1;
-            long lowestSeq = Long.MAX_VALUE;
-
-            // Iterate through all queues to find the 'next' logical thread to start
-            for (Map.Entry<Integer, LinkedList<long[]>> entry : roleQueues.entrySet()) {
-                int roleId = entry.getKey();
-
-                // Only consider roles that are truly PENDING (not started, not active)
-                if (pendingRoles.contains(roleId) && !startedRoles.contains(roleId) && !activeRoles.contains(roleId)) {
-                    LinkedList<long[]> queue = entry.getValue();
-                    if (queue != null && !queue.isEmpty()) {
-                        long headSeq = queue.peek()[0];
-
-                        // We want the role that appears EARLIEST in the global timeline
-                        if (headSeq < lowestSeq) {
-                            lowestSeq = headSeq;
-                            bestRole = roleId;
-                        }
-                    }
-                }
-            }
-            return bestRole;
-        }
-    }
-
-    /**
-     * Scans the parent role's event queue for its next unconsumed THREAD_START
-     * event and returns the child roleId stored in data1 (field [5]).
-     * During capture, TraceLogger.logSync writes childRoleId into data1 for
-     * every THREAD_START record, so this lookup is authoritative.
-     * Returns -1 if the parent queue has no pending THREAD_START event.
-     */
-    public static int peekChildRoleFromThreadStart(int parentRoleId) {
-        synchronized (controlLock) {
-            LinkedList<long[]> parentQueue = roleQueues.get(parentRoleId);
-            if (parentQueue == null) return -1;
-            for (long[] event : parentQueue) {
-                int eType = (int) event[2] & 0xFF;
-                if (eType == BinarySchema.Event.THREAD_START) {
-                    return (int) event[5]; // data1 = childRoleId written at capture time
-                }
-            }
-            return -1;
-        }
-    }
-
-    // In ReplayCoordinator — called from IdentityMapper on first role assignment
-    public static void checkIn(int roleId) {
-        if (pendingRoles.remove(roleId)) {
-            startedRoles.add(roleId);
-            roleIdToThread.put(roleId, Thread.currentThread());
-            synchronized (controlLock) {
-                // System.out.println("[Replay] role=" + roleId + " started, waiting to be scheduled.");
-                controlLock.notifyAll();
-            }
-        }
-    }
-
-    /** Called by the UncaughtExceptionHandler when a replay thread dies early. */
-    public static void reportThreadDead(int roleId) {
-        LinkedList<long[]> queue = roleQueues.get(roleId);
-        if (queue != null && !queue.isEmpty()) {
-            reportDivergence(roleId, "thread exited with " + queue.size() + " unconsumed events");
-        }
-        activeRoles.remove(roleId);
-        startedRoles.remove(roleId);
-        pendingRoles.remove(roleId);
-        synchronized (controlLock) {
-            controlLock.notifyAll();
-        }
-    }
-
-    private static void activateRole(int roleId) {
-        if (activeRoles.contains(roleId))
-            return;
-        // System.out.println("[Replay] Activating role=" + roleId);
-        synchronized (controlLock) {
-            // Re-check after acquiring lock to prevent double-activation
-            if (activeRoles.contains(roleId)) return;
-            // Move the role to active regardless of its current state (pending or started)
-            boolean removed = pendingRoles.remove(roleId) || startedRoles.remove(roleId);
-            activeRoles.add(roleId);
-            // Store the actual worker thread so that isAnyRoleBehind's t.isAlive()
-            // check reflects when THIS thread exits, not an earlier caller.
-            roleIdToThread.put(roleId, Thread.currentThread());
-            // System.out.println("[Replay] role=" + roleId + " is now active.");
-            controlLock.notifyAll();
-        }
-    }
-
-    /**
-     * Blocks the calling thread until its event matches the next expected event
-     * in the captured total order.
-     *
-     * Parameters mirror the fields written by BinarySchema.write() during capture
-     * (minus seq, which is only used for ordering):
-     *
-     * @param roleId     Resolved role ID for the current thread
-     * @param packedType Event type + flags (same packing as BinarySchema)
-     * @param objSite    Trace-format identity/source slot A.
-     *                   For object-bearing events this is legacy record storage that
-     *                   still participates in domain/index matching.
-     *                   For NONDETERMINISTIC_* events this is a source-kind slot
-     *                   and is currently always 0.
-     * @param objCount   Trace-format identity/source slot B.
-     *                   For object-bearing events this may carry an array index or
-     *                   other domain key.
-     *                   For NONDETERMINISTIC_* events this is the nondeterministic
-     *                   call-site key.
-     * @param data       Event-specific payload (siteId for sync, fieldId for
-     *                   fields,
-     *                   array index for arrays, return value / siteId for atomics)
-     */
-    public static void awaitTurn(int roleId, int packedType, int objSite, int objCount, Object runtimeObject, int data) {
-        activateRole(roleId);
-        LinkedList<long[]> myQueue = roleQueues.get(roleId);
-        if (myQueue == null) return;
-
-        synchronized (controlLock) {
-            while (true) {
-                if (hasDiverged) { controlLock.notifyAll(); return; }
-
-                long[] expected = myQueue.peek();
-                if (expected == null) return;
-
-                long eSeq = expected[0];
-                long eEpoch = eSeq >>> 32;
-                int eType = (int) expected[2];
-
-                // --- EPOCH GUARD ---
-                // Only release events may advance releasedEpoch (they are the synchronisation
-                // boundary). Non-release events (MONITOR_ENTER, field reads, etc.) just wait
-                // until the release event that opened this epoch has been processed.
-                if (eEpoch > releasedEpoch.get()) {
-                    if (isReleaseEvent(eType)) {
-                        // Register our target and get the current global minimum.
-                        // Only the role with the lowest pending target epoch may advance;
-                        // roles targeting higher epochs defer so lower-epoch releases go
-                        // first, breaking circular waits.
-                        long lowestPending = pendingTargetEpoch.accumulateAndGet(eEpoch, Math::min);
-                        if (lowestPending < eEpoch) {
-                            // An earlier epoch is pending — defer and wait for it to advance.
-                            try {
-                                controlLock.wait(100);
-                                continue;
-                            } catch (InterruptedException e) {
-                                Thread.currentThread().interrupt();
-                                return;
-                            }
-                        }
-                        if (!isAnyRoleBehind(eEpoch)) {
-                            // This release event is the epoch leader — open the new epoch.
-                            // System.out.println("[Replay] Role " + roleId + " advancing Epoch to " + eEpoch + " for type " + (eType & 0xFF));
-                            releasedEpoch.set(eEpoch);
-                            pendingTargetEpoch.compareAndSet(eEpoch, Long.MAX_VALUE);
-                        } else {
-                            try {
-                                controlLock.wait(100);
-                                continue;
-                            } catch (InterruptedException e) {
-                                Thread.currentThread().interrupt();
-                                return;
-                            }
-                        }
-                    } else {
-                        try {
-                            controlLock.wait(100);
-                            continue;
-                        } catch (InterruptedException e) {
-                            Thread.currentThread().interrupt();
-                            return;
-                        }
-                    }
-                }
-
-                // --- THE MATCH CHECK ---
-                if (sameSemanticIdentity(expected, packedType, runtimeObject, objSite, objCount)) {
-                    myQueue.poll();
-                    if (fidelityEnabled) eventsMatched.incrementAndGet();
-                    lastMatchedSeq.set(eSeq);
-                    // Standard JMM release check (redundant now, but good for safety)
-                    if (isReleaseEvent(eType)) {
-                        releasedEpoch.set(eEpoch);
-                    }
-                    
-                    controlLock.notifyAll(); // Wake up anyone waiting for this epoch/seq
-                    return;
-                }
-
-                // --- DIVERGENCE: structural mismatch — stop all synchronization ---
-                myQueue.poll();
-                lastMatchedSeq.set(eSeq);
-                if (isReleaseEvent(eType)) {
-                    releasedEpoch.set(eEpoch);
-                    pendingTargetEpoch.compareAndSet(eEpoch, Long.MAX_VALUE);
-                }
-                reportDivergence(roleId, eEpoch, eType, packedType,
-                        "sync event mismatch: objSite=" + objSite + " objCount=" + objCount
-                                + semanticDetail(expected));
-                return;
-            }
-        }
-    }
-
-    /** Convenience overload for events that carry no natural value (e.g. NONDETERMINISTIC_INT). */
-    public static int awaitTurnInt(int roleId, int packedType, int objSite, int objCount, Object runtimeObject) {
-        return awaitTurnInt(roleId, packedType, objSite, objCount, runtimeObject, 0);
-    }
-
-    public static int awaitTurnInt(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
-            int naturalValue) {
-        activateRole(roleId);
-        LinkedList<long[]> myQueue = roleQueues.get(roleId);
-        if (myQueue == null) return naturalValue;
-
-        synchronized (controlLock) {
-            while (true) {
-                long[] expected = myQueue.peek();
-                if (expected == null) return naturalValue;
-
-                long eSeq = expected[0];
-                long eEpoch = eSeq >>> 32;
-                int eType = (int) expected[2];
-
-                // Atomic reads are non-release: wait for the epoch but never advance it.
-                if (eEpoch > releasedEpoch.get()) {
-                    try { controlLock.wait(100); continue; }
-                    catch (InterruptedException e) { return naturalValue; }
-                }
-
-                if (sameSemanticIdentity(expected, packedType, runtimeObject, objSite, objCount)) {
-                    myQueue.poll();
-                    if (fidelityEnabled) eventsMatched.incrementAndGet();
-                    int traceValue = (int) expected[6];
-                    lastMatchedSeq.set(eSeq);
-                    if (isReleaseEvent(packedType)) releasedEpoch.set(eEpoch);
-                    controlLock.notifyAll();
-                    trackFidelityInt(packedType, objSite, objCount, naturalValue, expected);
-                    if (naturalValue != traceValue) {
-                        System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnInt role=%d: natural=%d trace=%d",
-                                roleId, naturalValue, traceValue));
-                        return traceValue;
-                    }
-                    return naturalValue;
-                }
-                myQueue.poll();
-                lastMatchedSeq.set(eSeq);
-                if (isReleaseEvent(eType)) releasedEpoch.set(eEpoch);
-                reportDivergence(roleId, eEpoch, eType, packedType,
-                        "awaitTurnInt mismatch: objSite=" + objSite + " objCount=" + objCount
-                                + semanticDetail(expected));
-                controlLock.notifyAll();
-                return naturalValue;
-            }
-        }
-    }
-
-    /** Convenience overload for events that carry no natural value (e.g. NONDETERMINISTIC_LONG). */
-    public static long awaitTurnLong(int roleId, int packedType, int objSite, int objCount, Object runtimeObject) {
-        return awaitTurnLong(roleId, packedType, objSite, objCount, runtimeObject, 0L);
-    }
-
-    public static long awaitTurnLong(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
-            long naturalValue) {
-        activateRole(roleId);
-        LinkedList<long[]> myQueue = roleQueues.get(roleId);
-        if (myQueue == null) return naturalValue;
-
-        synchronized (controlLock) {
-            while (true) {
-                long[] expected = myQueue.peek();
-                if (expected == null) return naturalValue;
-
-                long eSeq = expected[0];
-                long eEpoch = eSeq >>> 32;
-                int eType = (int) expected[2];
-
-                if (eEpoch > releasedEpoch.get()) {
-                    try { controlLock.wait(100); continue; }
-                    catch (InterruptedException e) { return naturalValue; }
-                }
-
-                if (sameSemanticIdentity(expected, packedType, runtimeObject, objSite, objCount)) {
-                    myQueue.poll();
-                    if (fidelityEnabled) eventsMatched.incrementAndGet();
-                    long traceValue = ((long) expected[5] << 32) | (expected[6] & 0xFFFFFFFFL);
-                    lastMatchedSeq.set(eSeq);
-                    if (isReleaseEvent(packedType)) releasedEpoch.set(eEpoch);
-                    controlLock.notifyAll();
-                    trackFidelityLong(packedType, objSite, objCount, naturalValue, expected);
-                    if (naturalValue != traceValue) {
-                        System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnLong role=%d: natural=%d trace=%d",
-                                roleId, naturalValue, traceValue));
-                        return traceValue;
-                    }
-                    return naturalValue;
-                }
-                myQueue.poll();
-                lastMatchedSeq.set(eSeq);
-                if (isReleaseEvent(eType)) releasedEpoch.set(eEpoch);
-                reportDivergence(roleId, eEpoch, eType, packedType,
-                        "awaitTurnLong mismatch: objSite=" + objSite + " objCount=" + objCount
-                                + semanticDetail(expected));
-                controlLock.notifyAll();
-                return naturalValue;
-            }
-        }
-    }
-
-    public static Object awaitTurnObj(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
-            Object naturalValue) {
-        activateRole(roleId);
-        LinkedList<long[]> myQueue = roleQueues.get(roleId);
-        if (myQueue == null) return naturalValue;
-
-        synchronized (controlLock) {
-            while (true) {
-                long[] expected = myQueue.peek();
-                if (expected == null) return naturalValue;
-
-                long eSeq = expected[0];
-                long eEpoch = eSeq >>> 32;
-                int eType = (int) expected[2];
-
-                if (eEpoch > releasedEpoch.get()) {
-                    try { controlLock.wait(100); continue; }
-                    catch (InterruptedException e) { return naturalValue; }
-                }
-
-                if (sameSemanticIdentity(expected, packedType, runtimeObject, objSite, objCount)) {
-                    myQueue.poll();
-                    if (fidelityEnabled) eventsMatched.incrementAndGet();
-                    Object traceValue = IdentityMapper.resolveByBirthId((int) expected[5], (int) expected[6]);
-                    lastMatchedSeq.set(eSeq);
-                    if (isReleaseEvent(packedType)) releasedEpoch.set(eEpoch);
-                    controlLock.notifyAll();
-                    if (traceValue == null && naturalValue != null) {
-                        IdentityMapper.registerByBirthId((int) expected[5], (int) expected[6], naturalValue);
-                        return naturalValue;
-                    }
-                    if (naturalValue != traceValue) {
-                        System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnObj role=%d: natural=%s trace=%s",
-                                roleId, naturalValue, traceValue));
-                        return traceValue;
-                    }
-                    return naturalValue;
-                }
-                myQueue.poll();
-                lastMatchedSeq.set(eSeq);
-                if (isReleaseEvent(eType)) releasedEpoch.set(eEpoch);
-                reportDivergence(roleId, eEpoch, eType, packedType,
-                        "awaitTurnObj mismatch: objSite=" + objSite + " objCount=" + objCount
-                                + semanticDetail(expected));
-                controlLock.notifyAll();
-                return naturalValue;
-            }
-        }
-    }
-
-    // ---- CAS injection methods ----
-    // Return the captured value directly; any value difference is expected (CAS is
-    // non-deterministic) so no divergence log is emitted.
-
-    public static int awaitTurnCasInt(int roleId, int packedType, int objSite, int objCount, Object runtimeObject) {
-        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject, null);
-        if (ev == null) return 0;
-        return (int) ev[6];
-    }
-
-    public static long awaitTurnCasLong(int roleId, int packedType, int objSite, int objCount, Object runtimeObject) {
-        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject, null);
-        if (ev == null) return 0L;
-        return ((long) ev[5] << 32) | (ev[6] & 0xFFFFFFFFL);
-    }
-
-    public static Object awaitTurnCasObj(int roleId, int packedType, int objSite, int objCount, Object runtimeObject) {
-        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject, null);
-        if (ev == null) return null;
-        return IdentityMapper.resolveByBirthId((int) ev[5], (int) ev[6]);
-    }
-
-    // ---- RMW divergence-check methods ----
-    // The atomic operation has already executed; natural value is returned regardless
-    // of divergence so the program continues on its actual execution path.
-
-    public static int awaitTurnRmwInt(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
-            int naturalValue) {
-        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject, null);
-        trackFidelityInt(packedType, objSite, objCount, naturalValue, ev);
-        if (ev == null) return naturalValue;
-        int traceValue = (int) ev[6];
-        if (naturalValue != traceValue) {
-            if (fidelityEnabled) noInjectDisagreements.incrementAndGet();
-            reportDivergence(roleId, ev[0] >>> 32, (int) ev[2], packedType,
-                    "RMW value mismatch: natural=" + naturalValue + " trace=" + traceValue);
-        }
-        return naturalValue;
-    }
-
-    public static long awaitTurnRmwLong(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
-            long naturalValue) {
-        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject, null);
-        trackFidelityLong(packedType, objSite, objCount, naturalValue, ev);
-        if (ev == null) return naturalValue;
-        long traceValue = ((long) ev[5] << 32) | (ev[6] & 0xFFFFFFFFL);
-        if (naturalValue != traceValue) {
-            if (fidelityEnabled) noInjectDisagreements.incrementAndGet();
-            reportDivergence(roleId, ev[0] >>> 32, (int) ev[2], packedType,
-                    "RMW value mismatch: natural=" + naturalValue + " trace=" + traceValue);
-        }
-        return naturalValue;
-    }
-
-    public static Object awaitTurnRmwObj(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
-            Object naturalValue) {
-        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject, null);
-        trackFidelityObj(packedType, objSite, objCount, naturalValue, ev);
-        if (ev == null) return naturalValue;
-        Object traceValue = IdentityMapper.resolveByBirthId((int) ev[5], (int) ev[6]);
-        if (naturalValue != traceValue) {
-            if (fidelityEnabled) noInjectDisagreements.incrementAndGet();
-            reportDivergence(roleId, ev[0] >>> 32, (int) ev[2], packedType,
-                    "RMW value mismatch: natural=" + naturalValue + " trace=" + traceValue);
-        }
-        return naturalValue;
-    }
-
-    public static void recordNoInjectDisagreement() {
-        if (!fidelityEnabled) return;
-        noInjectDisagreements.incrementAndGet();
-    }
-
-    // ---- Value-returning field turn methods ----
-    // Same wait-loop structure as awaitTurnInt/Long/Obj but include the pending/
-    // started-role deadlock detection that plain awaitTurn provides, since field
-    // accesses can be the first event a newly-started thread encounters.
-
-    public static long[] doAwaitTurnValued(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
-            FieldKey actualFieldKey) {
-        activateRole(roleId);
-        LinkedList<long[]> myQueue = roleQueues.get(roleId);
-        if (myQueue == null || myQueue.isEmpty()) return null;
-
-        synchronized (controlLock) {
-            while (true) {
-                if (hasDiverged) { controlLock.notifyAll(); return null; }
-
-                long[] expected = myQueue.peek();
-                long eSeq = expected[0];
-                long eEpoch = eSeq >>> 32;
-                int eType = (int) expected[2];
-
-                // // System.out.println(String.format("[Replay] Role %d awaiting event Type %d ObjSite %d ObjCount %d at Epoch %d (releasedEpoch=%d) but got event Type %d ObjSite %d ObjCount %d",
-                //         roleId, eType, (int) expected[3], (int) expected[4], eEpoch, releasedEpoch.get(), packedType, objSite, objCount));
-                // int eFlags = (eType >> 8) & 0xFF;
-                // // System.out.println(String.format("Flags: Volatile=%b Static=%b ArrayValued=%b Release=%b",
-                //         (eFlags & BinarySchema.Flags.IS_VOLATILE) != 0,
-                //         (eFlags & BinarySchema.Flags.IS_STATIC) != 0,
-                //         (eFlags & BinarySchema.Flags.IS_ARRAY_VALUED) != 0,
-                        // isReleaseEvent(eType)));
-
-                // --- EPOCH GUARD ---
-                // Only release events may advance releasedEpoch. Field/array reads and
-                // writes follow thread-local sequence without cross-thread epoch blocking;
-                // they wait here only until the release event that opened this epoch fires.
-                // Use > (same as awaitTurn) so events multiple epochs ahead don't bypass
-                // the guard and execute out of order.
-                if (eEpoch > releasedEpoch.get()) {
-                    if (isReleaseEvent(eType)) {
-                        // Same pendingTargetEpoch logic as awaitTurn: only the role
-                        // targeting the lowest pending epoch may advance.
-                        long lowestPending = pendingTargetEpoch.accumulateAndGet(eEpoch, Math::min);
-                        if (lowestPending < eEpoch) {
-                            try {
-                                controlLock.wait(100);
-                                continue;
-                            } catch (InterruptedException e) { return null; }
-                        }
-                        if (!isAnyRoleBehind(eEpoch)) {
-                            // System.out.println("[Replay] Role " + roleId + " advancing global epoch to " + eEpoch);
-                            releasedEpoch.set(eEpoch);
-                            pendingTargetEpoch.compareAndSet(eEpoch, Long.MAX_VALUE);
-                        } else {
-                            try {
-                                controlLock.wait(100);
-                                continue;
-                            } catch (InterruptedException e) { return null; }
-                        }
-                    } else {
-                        try {
-                            controlLock.wait(100);
-                            continue;
-                        } catch (InterruptedException e) { return null; }
-                    }
-                }
-
-                // --- THE MATCH ---
-                if (sameSemanticIdentity(expected, packedType, runtimeObject, objSite, objCount)
-                        && sameFieldSemanticKey(expected, actualFieldKey)) {
-                    // // System.out.println("Match found for Role " + roleId + " at Epoch " + eEpoch + " with Type " + (eType & 0xFF));
-                    myQueue.poll();
-                    if (fidelityEnabled) eventsMatched.incrementAndGet();
-                    lastMatchedSeq.set(eSeq);
-                    
-                    // If this specific event was a release, make sure we update (redundancy)
-                    if (isReleaseEvent((int)expected[2])) {
-                        releasedEpoch.set(eEpoch);
-                    }
-                    
-                    controlLock.notifyAll();
-                    return expected;
-                }
-
-                // --- DIVERGENCE: type/identity mismatch ---
-                myQueue.poll();
-                lastMatchedSeq.set(eSeq);
-                if (isReleaseEvent((int) expected[2])) {
-                    releasedEpoch.set(eEpoch);
-                    pendingTargetEpoch.compareAndSet(eEpoch, Long.MAX_VALUE);
-                }
-                controlLock.notifyAll();
-                // CAS is special: its boolean result drives if-branches, so keep
-                // injecting even on identity/type mismatch (Option B). For all other
-                // operations, stop synchronization — there is no safe value to inject.
-                if ((packedType & 0xFF) == BinarySchema.Event.ATOMIC_CAS) {
-                    return expected;
-                }
-                reportDivergence(roleId, eEpoch, (int) expected[2], packedType,
-                        "valued event mismatch: expected objSite=" + (int) expected[3]
-                        + " objCount=" + (int) expected[4]
-                        + " got objSite=" + objSite + " objCount=" + objCount
-                        + semanticDetail(expected));
-                return null;
-            }
-        }
-    }
-
-    public static int awaitTurnFieldInt(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
-            FieldKey actualFieldKey, int naturalValue) {
-        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject, actualFieldKey);
-        trackFidelityInt(packedType, objSite, objCount, naturalValue, ev);
-        if (ev == null) return naturalValue;
-        int traceValue = (int) ev[6];
-        if (naturalValue != traceValue) {
-            System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnFieldInt role=%d: natural=%d trace=%d",
-                    roleId, naturalValue, traceValue));
-            return traceValue;
-        }
-        return naturalValue;
-    }
-
-    public static long awaitTurnFieldLong(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
-            FieldKey actualFieldKey, long naturalValue) {
-        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject, actualFieldKey);
-        trackFidelityLong(packedType, objSite, objCount, naturalValue, ev);
-        if (ev == null) return naturalValue;
-        long traceValue = ((long) ev[5] << 32) | (ev[6] & 0xFFFFFFFFL);
-        if (naturalValue != traceValue) {
-            System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnFieldLong role=%d: natural=%d trace=%d",
-                    roleId, naturalValue, traceValue));
-            return traceValue;
-        }
-        return naturalValue;
-    }
-
-    public static Object awaitTurnFieldObj(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
-            FieldKey actualFieldKey, Object naturalValue) {
-        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject, actualFieldKey);
-        if (ev == null) return naturalValue;
-        Object traceValue = IdentityMapper.resolveByBirthId((int) ev[5], (int) ev[6]);
-        if (traceValue == null && naturalValue != null) {
-            IdentityMapper.registerByBirthId((int) ev[5], (int) ev[6], naturalValue);
-            // The replay object is now directly bound to the captured trace object ID.
-            trackFidelityObj(packedType, objSite, objCount, naturalValue, ev);
-            return naturalValue;
-        }
-        trackFidelityObj(packedType, objSite, objCount, naturalValue, ev);
-        if (naturalValue != traceValue) {
-            System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnFieldObj role=%d: natural=%s trace=%s",
-                    roleId, naturalValue, traceValue));
-            return traceValue;
-        }
-        return naturalValue;
-    }
-
-    // ---- Value-returning array turn methods ----
-    // Array records use the IS_ARRAY_VALUED packing:
-    //   packedType upper 16 bits = birthId.siteId
-    //   objSite = birthId.count,  objCount = index
-
-    public static int awaitTurnArrayInt(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
-            int naturalValue) {
-        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject, null);
-        // For arrays: objSite=array-birthId.count, objCount=element-index — key is per element.
-        trackFidelityInt(packedType, objSite, objCount, naturalValue, ev);
-        if (ev == null) return naturalValue;
-        int traceValue = (int) ev[6];
-        if (naturalValue != traceValue) {
-            System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnArrayInt role=%d: natural=%d trace=%d",
-                    roleId, naturalValue, traceValue));
-            return traceValue;
-        }
-        return naturalValue;
-    }
-
-    public static long awaitTurnArrayLong(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
-            long naturalValue) {
-        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject, null);
-        trackFidelityLong(packedType, objSite, objCount, naturalValue, ev);
-        if (ev == null) return naturalValue;
-        long traceValue = ((long) ev[5] << 32) | (ev[6] & 0xFFFFFFFFL);
-        if (naturalValue != traceValue) {
-            System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnArrayLong role=%d: natural=%d trace=%d",
-                    roleId, naturalValue, traceValue));
-            return traceValue;
-        }
-        return naturalValue;
-    }
-
-    public static Object awaitTurnArrayObj(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
-            Object naturalValue) {
-        long[] ev = doAwaitTurnValued(roleId, packedType, objSite, objCount, runtimeObject, null);
-        if (ev == null) return naturalValue;
-        Object traceValue = IdentityMapper.resolveByBirthId((int) ev[5], (int) ev[6]);
-        if (traceValue == null && naturalValue != null) {
-            IdentityMapper.registerByBirthId((int) ev[5], (int) ev[6], naturalValue);
-            trackFidelityObj(packedType, objSite, objCount, naturalValue, ev);
-            return naturalValue;
-        }
-        trackFidelityObj(packedType, objSite, objCount, naturalValue, ev);
-        if (naturalValue != traceValue) {
-            System.err.println(String.format("[VALUE-DIVERGENCE] awaitTurnArrayObj role=%d: natural=%s trace=%s",
-                    roleId, naturalValue, traceValue));
-            return traceValue;
-        }
-        return naturalValue;
+    private static long packTraceKey(int siteId, int count) {
+        return ((long) siteId << 32) | (count & 0xFFFFFFFFL);
     }
 
     private static boolean isWriteEvent(int baseType) {
         return baseType == BinarySchema.Event.FIELD_WRITE
-            || baseType == BinarySchema.Event.ARRAY_WRITE
-            || baseType == BinarySchema.Event.ATOMIC_WRITE
-            || baseType == BinarySchema.Event.ATOMIC_RMW
-            || baseType == BinarySchema.Event.ATOMIC_CAS;
+                || baseType == BinarySchema.Event.ARRAY_WRITE
+                || baseType == BinarySchema.Event.ATOMIC_WRITE
+                || baseType == BinarySchema.Event.ATOMIC_RMW
+                || baseType == BinarySchema.Event.ATOMIC_CAS;
     }
 
-    /** True for all valued memory-access events (reads + writes). Excludes nondeterministic. */
     private static boolean isTrackedEvent(int baseType) {
         return baseType == BinarySchema.Event.FIELD_READ
-            || baseType == BinarySchema.Event.FIELD_WRITE
-            || baseType == BinarySchema.Event.ARRAY_READ
-            || baseType == BinarySchema.Event.ARRAY_WRITE
-            || baseType == BinarySchema.Event.ATOMIC_READ
-            || baseType == BinarySchema.Event.ATOMIC_WRITE
-            || baseType == BinarySchema.Event.ATOMIC_RMW;
+                || baseType == BinarySchema.Event.FIELD_WRITE
+                || baseType == BinarySchema.Event.ARRAY_READ
+                || baseType == BinarySchema.Event.ARRAY_WRITE
+                || baseType == BinarySchema.Event.ATOMIC_READ
+                || baseType == BinarySchema.Event.ATOMIC_WRITE
+                || baseType == BinarySchema.Event.ATOMIC_RMW;
     }
 
-    /**
-     * Records fidelity stats for one int-sized valued event.
-     *
-     * <p>The finalStateMap update is done unconditionally (ev may be null when the
-     * run has diverged, but the last natural write still determines final state).
-     * Counter increments are only done when ev is non-null, i.e. we have a matched
-     * trace event to compare against.
-     */
-    private static void trackFidelityInt(int packedType, int objSite, int objCount,
-                                         int naturalValue, long[] ev) {
-        if (!fidelityEnabled) return;
-        int baseType = packedType & 0xFF;
-        if (isWriteEvent(baseType)) {
-            long key = ev != null
-                    ? (((long) (int) ev[3] << 32) | ((int) ev[4] & 0xFFFFFFFFL))
-                    : (((long) objSite << 32) | (objCount & 0xFFFFFFFFL));
-            long natLong = naturalValue & 0xFFFFFFFFL;
-            finalStateMap.computeIfPresent(key, (k, v) -> { v[1] = natLong; return v; });
-        }
-        if (ev != null && isTrackedEvent(baseType)) {
-            totalValuedEvents.incrementAndGet();
-            if (naturalValue == (int) ev[6]) naturalAgreements.incrementAndGet();
-            else if (baseType != BinarySchema.Event.ATOMIC_RMW) injectedEvents.incrementAndGet();
-        }
+    private static long[] copyEvent(long[] event) {
+        return new long[] { event[0], event[1], event[2], event[3], event[4], event[5], event[6] };
     }
 
-    /** Same as {@link #trackFidelityInt} but for long-sized valued events. */
-    private static void trackFidelityLong(int packedType, int objSite, int objCount,
-                                          long naturalValue, long[] ev) {
-        if (!fidelityEnabled) return;
-        int baseType = packedType & 0xFF;
-        if (isWriteEvent(baseType)) {
-            long key = ev != null
-                    ? (((long) (int) ev[3] << 32) | ((int) ev[4] & 0xFFFFFFFFL))
-                    : (((long) objSite << 32) | (objCount & 0xFFFFFFFFL));
-            finalStateMap.computeIfPresent(key, (k, v) -> { v[1] = naturalValue; return v; });
+    private static String pendingEventSummary() {
+        StringBuilder builder = new StringBuilder();
+        builder.append("pending_events=").append(pendingSeqs.size());
+        builder.append(",roles=");
+        boolean first = true;
+        for (Map.Entry<Integer, NavigableSet<Long>> entry : pendingSeqsByRole.entrySet()) {
+            if (!first) {
+                builder.append(',');
+            }
+            first = false;
+            builder.append(entry.getKey()).append('(').append(entry.getValue().size()).append(')');
         }
-        if (ev != null && isTrackedEvent(baseType)) {
-            long traceValue = ((long) ev[5] << 32) | (ev[6] & 0xFFFFFFFFL);
-            totalValuedEvents.incrementAndGet();
-            if (naturalValue == traceValue) naturalAgreements.incrementAndGet();
-            else if (baseType != BinarySchema.Event.ATOMIC_RMW) injectedEvents.incrementAndGet();
+        return builder.toString();
+    }
+
+    private static void recordDegradation(String details) {
+        degradedReplay = true;
+        if (firstDegradationInfo.isEmpty()) {
+            firstDegradationInfo = details == null ? "" : details;
         }
     }
 
-    /**
-     * Records fidelity stats for one object-reference valued event.
-     *
-     * <p>For write events the location's entry in finalStateMap is updated with the
-     * natural object's birth ID packed as {@code (siteId << 32) | count}, matching
-     * the format used by {@link #init()} when it pre-computes the captured final
-     * state.  The captured birth ID is read directly from {@code ev[5..6]}.
-     *
-     * <p>This method must be called <em>after</em> any {@code registerByBirthId}
-     * call (the {@code traceValue == null} branch) so that
-     * {@link IdentityMapper#lookupBirthId} returns the updated identity.
-     *
-     * <p>{@code ev} may be null when the run has already diverged; in that case
-     * only the finalStateMap write update (if applicable) is performed.
-     */
-    private static void trackFidelityObj(int packedType, int objSite, int objCount,
-                                          Object naturalValue, long[] ev) {
-        if (!fidelityEnabled) return;
-        int baseType = packedType & 0xFF;
-        int flags = (packedType >>> 8) & 0xFF;
-        boolean isArrayValued = (flags & BinarySchema.Flags.IS_ARRAY_VALUED) != 0;
-        if (isWriteEvent(baseType)) {
-            long natLong = IdentityMapper.lookupTraceIdForObject(naturalValue);
-            long key = ev != null
-                    ? (((long) (int) ev[3] << 32) | ((int) ev[4] & 0xFFFFFFFFL))
-                    : (((long) objSite << 32) | (objCount & 0xFFFFFFFFL));
-            finalStateMap.computeIfPresent(key, (k, v) -> { v[1] = natLong; return v; });
+    private static void recordUnsupported(String details) {
+        unsupportedReplay = true;
+        if (firstUnsupportedInfo.isEmpty()) {
+            firstUnsupportedInfo = details == null ? "" : details;
         }
-        if (ev != null && isTrackedEvent(baseType)) {
-            long capturedBirthId = ((long)(int) ev[5] << 32) | ((int) ev[6] & 0xFFFFFFFFL);
-            long natBirthId = IdentityMapper.lookupTraceIdForObject(naturalValue);
+    }
+
+    private static void reportDivergence(int roleId, String details) {
+        if (hasDiverged) {
+            return;
+        }
+        hasDiverged = true;
+        firstDivergenceInfo = "role=" + roleId + " | " + details;
+        System.err.println("[DIVERGENCE] Replay has structurally diverged: " + firstDivergenceInfo);
+    }
+
+    private static void trackFidelityInt(int packedType, int objSite, int objCount, int naturalValue, long[] event) {
+        if (!fidelityEnabled) {
+            return;
+        }
+        int baseType = packedType & 0xFF;
+        if (isWriteEvent(baseType)) {
+            long key = event != null ? replayLocationKey(event) : packTraceKey(objSite, objCount);
+            long naturalLong = naturalValue & 0xFFFFFFFFL;
+            finalStateMap.computeIfPresent(key, (ignored, current) -> {
+                current[1] = naturalLong;
+                return current;
+            });
+        }
+        if (event != null && isTrackedEvent(baseType)) {
             totalValuedEvents.incrementAndGet();
-            if (natBirthId == capturedBirthId) naturalAgreements.incrementAndGet();
-            else if (baseType != BinarySchema.Event.ATOMIC_RMW && !isArrayValued) {
+            if (naturalValue == (int) event[6]) {
+                naturalAgreements.incrementAndGet();
+            } else if (shouldInjectReadValue(packedType)) {
                 injectedEvents.incrementAndGet();
             }
         }
     }
 
-    public static void printFidelityReport() {
-        // If the run ends with required trace events still pending and no structural
-        // mismatch/dead-role failure was observed, classify the run as incomplete.
-        if (!hasDiverged) {
-            int pendingWithTail = 0;
-            int startedWithTail = 0;
-            int activeWithTail = 0;
-            int deadStartedOrActiveWithTail = 0;
-            int otherWithTail = 0;
-            StringBuilder rolesWithTail = new StringBuilder();
-            for (Map.Entry<Integer, LinkedList<long[]>> entry : roleQueues.entrySet()) {
-                int roleId = entry.getKey();
-                LinkedList<long[]> queue = entry.getValue();
-                if (queue != null && !queue.isEmpty()) {
-                    isIncomplete = true;
-                    if (rolesWithTail.length() > 0) rolesWithTail.append(',');
-                    rolesWithTail.append(roleId).append('(').append(queue.size()).append(')');
-
-                    boolean isPending = pendingRoles.contains(roleId);
-                    boolean isStarted = startedRoles.contains(roleId);
-                    boolean isActive = activeRoles.contains(roleId);
-                    Thread t = roleIdToThread.get(roleId);
-                    boolean deadThread = (t != null && !t.isAlive());
-
-                    if (isPending) pendingWithTail++;
-                    else if (isStarted) {
-                        startedWithTail++;
-                        if (deadThread) deadStartedOrActiveWithTail++;
-                    } else if (isActive) {
-                        activeWithTail++;
-                        if (deadThread) deadStartedOrActiveWithTail++;
-                    } else otherWithTail++;
-                }
-            }
-
-            if (isIncomplete) {
-                if (pendingWithTail > 0) {
-                    incompleteReason = "role_not_started";
-                } else if (deadStartedOrActiveWithTail > 0) {
-                    incompleteReason = "thread_exited_with_unconsumed_tail";
-                } else if (startedWithTail > 0 || activeWithTail > 0) {
-                    incompleteReason = "stalled_with_live_roles";
-                } else {
-                    incompleteReason = "unconsumed_tail_unknown_owner";
-                }
-                incompleteDetails = "pending=" + pendingWithTail
-                        + ",started=" + startedWithTail
-                        + ",active=" + activeWithTail
-                        + ",dead_started_or_active=" + deadStartedOrActiveWithTail
-                        + ",other=" + otherWithTail
-                        + ",tail_roles=" + rolesWithTail;
-            }
+    private static void trackFidelityLong(int packedType, int objSite, int objCount, long naturalValue, long[] event) {
+        if (!fidelityEnabled) {
+            return;
         }
-
-        long total    = totalValuedEvents.get();
-        long agreed   = naturalAgreements.get();
-        long injected = injectedEvents.get();
-        long noInject = noInjectDisagreements.get();
-
-        int locs = finalStateMap.size(), matched = 0, unseen = 0;
-        for (long[] v : finalStateMap.values()) {
-            if (v[1] == Long.MIN_VALUE) { unseen++; continue; }
-            if (v[1] == v[0]) matched++;
+        int baseType = packedType & 0xFF;
+        if (isWriteEvent(baseType)) {
+            long key = event != null ? replayLocationKey(event) : packTraceKey(objSite, objCount);
+            finalStateMap.computeIfPresent(key, (ignored, current) -> {
+                current[1] = naturalValue;
+                return current;
+            });
         }
-        // A run "matches" if every tracked write location's last natural value equals
-        // the captured final value.  Structural divergence is reported separately.
-        int seen = locs - unseen;
-        boolean match = (seen > 0) && (matched == seen);
-
-        Properties p = new Properties();
-        p.setProperty("match",                 String.valueOf(match));
-        p.setProperty("structural_divergence", String.valueOf(hasDiverged));
-        p.setProperty("incomplete",            String.valueOf(isIncomplete));
-        p.setProperty("incomplete_reason",     incompleteReason);
-        p.setProperty("incomplete_details",    incompleteDetails);
-        p.setProperty("events_matched",        String.valueOf(eventsMatched.get()));
-        p.setProperty("events_total",          String.valueOf(totalEvents));
-        p.setProperty("valued_events",         String.valueOf(total));
-        p.setProperty("natural_agreements",    String.valueOf(agreed));
-        p.setProperty("injections",            String.valueOf(injected));
-        p.setProperty("no_inject_disagreements", String.valueOf(noInject));
-        p.setProperty("locations_matched",     String.valueOf(matched));
-        p.setProperty("locations_total",       String.valueOf(locs));
-        p.setProperty("locations_unseen",      String.valueOf(unseen));
-
-        try (Writer w = new FileWriter(fidelityOutputPath)) {
-            p.store(w, "Replay Fidelity Result");
-        } catch (IOException e) {
-            System.err.println("[FIDELITY] Failed to write result file: " + e.getMessage());
+        if (event != null && isTrackedEvent(baseType)) {
+            long traceValue = ((long) event[5] << 32) | (event[6] & 0xFFFFFFFFL);
+            totalValuedEvents.incrementAndGet();
+            if (naturalValue == traceValue) {
+                naturalAgreements.incrementAndGet();
+            } else if (shouldInjectReadValue(packedType)) {
+                injectedEvents.incrementAndGet();
+            }
         }
     }
 
-    private static boolean isReleaseEvent(int packedType) {
-        int eventType = packedType & 0xFF;
-        int flags = (packedType >> 8) & 0xFF;
-        boolean isVolatile = (flags & common.BinarySchema.Flags.IS_VOLATILE) != 0;
-        return eventType == BinarySchema.Event.MONITOR_EXIT
-                || eventType == BinarySchema.Event.THREAD_START
-                || eventType == BinarySchema.Event.THREAD_NOTIFY
-                || eventType == BinarySchema.Event.THREAD_NOTIFY_ALL
-                || eventType == BinarySchema.Event.THREAD_UNPARK
-                || eventType == BinarySchema.Event.THREAD_INTERRUPT
-                || eventType == BinarySchema.Event.THREAD_WAKEUP
-                || eventType == BinarySchema.Event.CLASS_INIT_END
-                || eventType == BinarySchema.Event.ATOMIC_WRITE
-                || eventType == BinarySchema.Event.ATOMIC_RMW
-                || eventType == BinarySchema.Event.ATOMIC_CAS
-                || (eventType == BinarySchema.Event.FIELD_WRITE && isVolatile);
-    }
-
-    private static boolean isRoleBehind(int roleId, long targetEpoch, boolean shouldHaveLiveThread) {
-        LinkedList<long[]> queue = roleQueues.get(roleId);
-        if (queue == null || queue.isEmpty()) return false;
-
-        long headEpoch = queue.peek()[0] >>> 32;
-        if (headEpoch >= targetEpoch) return false;
-
-        if (shouldHaveLiveThread) {
-            Thread t = roleIdToThread.get(roleId);
-            if (t != null && !t.isAlive()) {
-                reportDivergence(roleId, "thread exited with " + queue.size() + " unconsumed events");
-                return false;
+    private static void trackFidelityObj(int packedType, int objSite, int objCount, Object naturalValue, long[] event) {
+        if (!fidelityEnabled) {
+            return;
+        }
+        int baseType = packedType & 0xFF;
+        if (isWriteEvent(baseType)) {
+            long key = event != null ? replayLocationKey(event) : packTraceKey(objSite, objCount);
+            long naturalTrace = SemanticIdentity.lookupTraceId(naturalValue);
+            finalStateMap.computeIfPresent(key, (ignored, current) -> {
+                current[1] = naturalTrace;
+                return current;
+            });
+        }
+        if (event != null && isTrackedEvent(baseType)) {
+            long traceValue = ((long) (int) event[5] << 32) | ((int) event[6] & 0xFFFFFFFFL);
+            long naturalTrace = SemanticIdentity.lookupTraceId(naturalValue);
+            totalValuedEvents.incrementAndGet();
+            if (naturalTrace == traceValue) {
+                naturalAgreements.incrementAndGet();
+            } else if (shouldInjectReadValue(packedType)) {
+                injectedEvents.incrementAndGet();
             }
         }
-        return true;
     }
 
-    private static boolean isAnyRoleBehind(long targetEpoch) {
-        for (Integer activeId : activeRoles) {
-            if (isRoleBehind(activeId, targetEpoch, true)) return true;
+    private static String semanticDetail(long[] expected) {
+        SemanticObjectEvent objectEvent = SemanticTraceRegistry.lookupObjectEvent(expected[0]);
+        if (objectEvent != null) {
+            if (objectEvent.fieldKey() != null) {
+                return " field=" + objectEvent.fieldKey();
+            }
+            if (objectEvent.isArray() || objectEvent.isAtomic()) {
+                return " owner=" + objectEvent.ownerTypeName() + " index=" + objectEvent.index();
+            }
+            if (objectEvent.isThread()) {
+                return " thread=" + objectEvent.ownerTypeName()
+                        + " sourceSite=" + objectEvent.sourceSiteId()
+                        + " targetRole=" + objectEvent.targetRoleId();
+            }
+            if (objectEvent.isClassInit()) {
+                return " classInitSite=" + objectEvent.sourceSiteId();
+            }
+            if (objectEvent.isException()) {
+                return " exception=" + objectEvent.ownerTypeName()
+                        + " sourceSite=" + objectEvent.sourceSiteId();
+            }
+            if (objectEvent.isNondeterministic()) {
+                return " nondetSite=" + objectEvent.sourceSiteId();
+            }
+            if (objectEvent.isSync()) {
+                return " sync=" + objectEvent.ownerTypeName()
+                        + " sourceSite=" + objectEvent.sourceSiteId();
+            }
         }
-
-        // Also check roles that have called checkIn() but haven't yet called
-        // awaitTurn() (so activateRole() hasn't moved them to activeRoles yet).
-        // Without this, a freshly-started thread sitting in startedRoles is invisible
-        // to the epoch guard and the epoch can race past its early events.
-        for (Integer startedId : startedRoles) {
-            if (isRoleBehind(startedId, targetEpoch, true)) return true;
+        FieldInteractionDomain domain = ReducedTraceRegistry.lookupFieldDomain(expected[0]);
+        if (domain != null) {
+            return " domain=" + domain.domainId();
         }
-
-        // Pending roles have not checked in yet, but their queue head still
-        // represents required earlier-epoch work. A later epoch must not open
-        // until that older epoch is fully drained.
-        for (Integer pendingId : pendingRoles) {
-            if (isRoleBehind(pendingId, targetEpoch, false)) return true;
+        String domainId = ReducedTraceRegistry.lookupDomainId(expected[0]);
+        if (domainId != null && !domainId.isEmpty()) {
+            return " domain=" + domainId;
         }
+        return "";
+    }
 
-        return false;
+    private static String semanticShapeKey(long[] expected, FieldKey actualFieldKey) {
+        String domainId = ReducedTraceRegistry.lookupDomainId(expected[0]);
+        String traceShape = SemanticTraceRegistry.semanticShapeKey(expected[0], domainId);
+        if (!traceShape.isEmpty()) {
+            return traceShape;
+        }
+        StringBuilder builder = new StringBuilder();
+        builder.append((int) expected[2] & 0xFF);
+        if (domainId != null && !domainId.isEmpty()) {
+            builder.append('|').append(domainId);
+        }
+        SemanticObjectEvent objectEvent = SemanticTraceRegistry.lookupObjectEvent(expected[0]);
+        if (objectEvent != null) {
+            if (objectEvent.fieldKey() != null) {
+                builder.append('|').append(objectEvent.fieldKey());
+            }
+            if (!objectEvent.ownerTypeName().isEmpty()) {
+                builder.append('|').append(objectEvent.ownerTypeName());
+            }
+            if (objectEvent.index() >= 0) {
+                builder.append('|').append(objectEvent.index());
+            }
+            if (objectEvent.sourceSiteId() >= 0) {
+                builder.append('|').append("site=").append(objectEvent.sourceSiteId());
+            }
+            if (objectEvent.targetRoleId() >= 0) {
+                builder.append('|').append("targetRole=").append(objectEvent.targetRoleId());
+            }
+        } else if (actualFieldKey != null) {
+            builder.append('|').append(actualFieldKey);
+        }
+        return builder.toString();
     }
 }

@@ -1,122 +1,112 @@
 package common.v1;
 
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
-import java.util.Map;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class SemanticTraceRegistry {
-    private static final String VERSION = "v1-field-semantics";
-    private static final Object writerLock = new Object();
-
-    private static volatile BufferedWriter fieldWriter;
-    private static final Map<Long, SemanticFieldEvent> fieldEventsBySeq = new ConcurrentHashMap<>();
+    private static final List<SemanticObjectEvent> capturedObjectEvents =
+            Collections.synchronizedList(new ArrayList<>());
+    private static final Map<Long, SemanticObjectEvent> replayObjectEventsBySeq = new ConcurrentHashMap<>();
+    private static final Map<Long, SemanticFieldEvent> replayFieldEventsBySeq = new ConcurrentHashMap<>();
 
     private SemanticTraceRegistry() {
     }
 
     public static void reset() {
-        closeCapture();
-        fieldEventsBySeq.clear();
+        resetCaptureState();
+        resetReplayState();
     }
 
-    public static void closeCapture() {
-        synchronized (writerLock) {
-            if (fieldWriter != null) {
-                try {
-                    fieldWriter.close();
-                } catch (IOException ignored) {
-                }
-                fieldWriter = null;
-            }
-        }
+    public static void resetCaptureState() {
+        capturedObjectEvents.clear();
     }
 
-    public static void initCapture(String fileName) throws IOException {
-        Path path = Path.of(fileName);
-        BufferedWriter writer = Files.newBufferedWriter(path, StandardCharsets.UTF_8,
-                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
-        writer.write("# " + VERSION);
-        writer.newLine();
-        synchronized (writerLock) {
-            if (fieldWriter != null) {
-                fieldWriter.close();
-            }
-            fieldWriter = writer;
-        }
-    }
-
-    public static void load(String fileName) throws IOException {
-        Path path = Path.of(fileName);
-        if (!Files.exists(path)) {
-            return;
-        }
-        try (BufferedReader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                if (line.isEmpty() || line.charAt(0) == '#') {
-                    continue;
-                }
-                String[] parts = line.split("\t", -1);
-                if (parts.length != 9 || !"FIELD".equals(parts[0])) {
-                    continue;
-                }
-                long seq = Long.parseLong(parts[1]);
-                long roleId = Long.parseLong(parts[2]);
-                int packedType = Integer.parseInt(parts[3]);
-                int ownerSite = Integer.parseInt(parts[4]);
-                int ownerCount = Integer.parseInt(parts[5]);
-                FieldKey fieldKey = FieldKey.of(parts[6], parts[7], parts[8]);
-                fieldEventsBySeq.put(seq, new SemanticFieldEvent(seq, roleId, packedType, ownerSite, ownerCount, fieldKey));
-            }
-        }
+    public static void resetReplayState() {
+        replayObjectEventsBySeq.clear();
+        replayFieldEventsBySeq.clear();
     }
 
     public static void recordFieldEvent(long seq, long roleId, int packedType, int ownerSite, int ownerCount, FieldKey fieldKey) {
-        BufferedWriter writer = fieldWriter;
-        if (writer == null || fieldKey == null) {
+        if (fieldKey == null) {
             return;
         }
-        fieldEventsBySeq.put(seq, new SemanticFieldEvent(seq, roleId, packedType, ownerSite, ownerCount, fieldKey));
-        synchronized (writerLock) {
-            try {
-                writer.write("FIELD");
-                writer.write('\t');
-                writer.write(Long.toString(seq));
-                writer.write('\t');
-                writer.write(Long.toString(roleId));
-                writer.write('\t');
-                writer.write(Integer.toString(packedType));
-                writer.write('\t');
-                writer.write(Integer.toString(ownerSite));
-                writer.write('\t');
-                writer.write(Integer.toString(ownerCount));
-                writer.write('\t');
-                writer.write(fieldKey.owner().internalName());
-                writer.write('\t');
-                writer.write(fieldKey.name());
-                writer.write('\t');
-                writer.write(fieldKey.descriptor());
-                writer.newLine();
-                writer.flush();
-            } catch (IOException e) {
-                throw new IllegalStateException("Failed to write semantic field event", e);
-            }
+        SemanticFieldEvent event = SemanticFieldEvent.capture(
+                seq, roleId, packedType, ownerSite, ownerCount, fieldKey);
+        capturedObjectEvents.add(event.event());
+    }
+
+    public static void recordArrayEvent(long seq, long roleId, int packedType,
+            int ownerSite, int ownerCount, String ownerTypeName, int index) {
+        SemanticObjectEvent event = SemanticObjectEvent.array(
+                seq, roleId, packedType, ownerSite, ownerCount, ownerTypeName, index);
+        capturedObjectEvents.add(event);
+    }
+
+    public static void recordAtomicEvent(long seq, long roleId, int packedType,
+            int ownerSite, int ownerCount, String ownerTypeName, int index) {
+        SemanticObjectEvent event = SemanticObjectEvent.atomic(
+                seq, roleId, packedType, ownerSite, ownerCount, ownerTypeName, index);
+        capturedObjectEvents.add(event);
+    }
+
+    public static void recordSyncEvent(long seq, long roleId, int packedType,
+            int ownerSite, int ownerCount, String ownerTypeName, int sourceSiteId) {
+        capturedObjectEvents.add(SemanticObjectEvent.sync(
+                seq, roleId, packedType, ownerSite, ownerCount, ownerTypeName, sourceSiteId));
+    }
+
+    public static void recordThreadEvent(long seq, long roleId, int packedType,
+            int ownerSite, int ownerCount, String ownerTypeName, int sourceSiteId, int targetRoleId) {
+        capturedObjectEvents.add(SemanticObjectEvent.thread(
+                seq, roleId, packedType, ownerSite, ownerCount, ownerTypeName, sourceSiteId, targetRoleId));
+    }
+
+    public static void recordClassInitEvent(long seq, long roleId, int packedType, int sourceSiteId) {
+        capturedObjectEvents.add(SemanticObjectEvent.classInit(seq, roleId, packedType, sourceSiteId));
+    }
+
+    public static void recordExceptionEvent(long seq, long roleId, int packedType,
+            int ownerSite, int ownerCount, String ownerTypeName, int sourceSiteId) {
+        capturedObjectEvents.add(SemanticObjectEvent.exception(
+                seq, roleId, packedType, ownerSite, ownerCount, ownerTypeName, sourceSiteId));
+    }
+
+    public static void recordNondeterministicEvent(long seq, long roleId, int packedType, int sourceSiteId) {
+        capturedObjectEvents.add(SemanticObjectEvent.nondeterministic(seq, roleId, packedType, sourceSiteId));
+    }
+
+    public static void recordReplayObjectEvent(long replaySeq, SemanticObjectEvent event) {
+        if (event == null) {
+            return;
+        }
+        replayObjectEventsBySeq.put(replaySeq, event);
+        if (event.isField() && event.fieldKey() != null) {
+            replayFieldEventsBySeq.put(replaySeq,
+                    SemanticFieldEvent.capture(event.seq(), event.roleId(), event.packedType(),
+                            event.ownerSite(), event.ownerCount(), event.fieldKey()));
         }
     }
 
-    public static SemanticFieldEvent lookupFieldEvent(long seq) {
-        return fieldEventsBySeq.get(seq);
+    public static SemanticFieldEvent lookupFieldEvent(long replaySeq) {
+        return replayFieldEventsBySeq.get(replaySeq);
     }
 
-    public static Collection<SemanticFieldEvent> snapshotFieldEvents() {
-        return new ArrayList<>(fieldEventsBySeq.values());
+    public static SemanticObjectEvent lookupObjectEvent(long replaySeq) {
+        return replayObjectEventsBySeq.get(replaySeq);
+    }
+
+    public static Collection<SemanticObjectEvent> snapshotCapturedObjectEvents() {
+        synchronized (capturedObjectEvents) {
+            return new ArrayList<>(capturedObjectEvents);
+        }
+    }
+
+    public static String semanticShapeKey(long replaySeq, String domainId) {
+        SemanticObjectEvent event = lookupObjectEvent(replaySeq);
+        return event == null ? "" : event.semanticObjectShape(domainId);
     }
 }

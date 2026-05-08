@@ -9,6 +9,7 @@ import common.v1.ReplayConstraint;
 import common.v1.SemanticIdentity;
 import common.v1.SemanticObjectEvent;
 import common.v1.SemanticTraceRegistry;
+import java.lang.reflect.Field;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.Writer;
@@ -208,6 +209,35 @@ public class ReplayCoordinator {
             }
             Long seq = queue.peek();
             return seq == null ? -1 : threadStartChildRoleBySeq.getOrDefault(seq, -1);
+        }
+    }
+
+    public static void prebindStableRoots(ClassLoader loader) {
+        Map<FieldKey, long[]> firstStaticObjectEvents = new HashMap<>();
+        synchronized (controlLock) {
+            for (Long seq : pendingSeqs) {
+                SemanticObjectEvent objectEvent = SemanticTraceRegistry.lookupObjectEvent(seq);
+                long[] rawEvent = eventsBySeq.get(seq);
+                if (objectEvent == null || rawEvent == null) {
+                    continue;
+                }
+                if (!objectEvent.isField()
+                        || !objectEvent.isStatic()
+                        || !objectEvent.isObjectValued()
+                        || objectEvent.fieldKey() == null) {
+                    continue;
+                }
+                int traceValueSite = (int) rawEvent[5];
+                int traceValueCount = (int) rawEvent[6];
+                if (traceValueSite == 0 && traceValueCount == 0) {
+                    continue;
+                }
+                firstStaticObjectEvents.putIfAbsent(objectEvent.fieldKey(), rawEvent);
+            }
+        }
+
+        for (Map.Entry<FieldKey, long[]> entry : firstStaticObjectEvents.entrySet()) {
+            tryPrebindStaticFieldValue(entry.getKey(), entry.getValue(), loader);
         }
     }
 
@@ -436,7 +466,11 @@ public class ReplayCoordinator {
                 || (((int) event[2] & 0xFF) == BinarySchema.Event.ARRAY_READ)
                 || (((int) event[2] & 0xFF) == BinarySchema.Event.ATOMIC_READ);
         if (traceValue == null && objectReferenceRequired) {
-            if (isRead && naturalValue != null) {
+            if (naturalValue != null) {
+                // The first observed object-valued interaction may be a publication
+                // write (for example a static field storing a freshly created
+                // AtomicInteger). Use that concrete runtime value to establish the
+                // trace-object binding instead of diverging immediately.
                 SemanticIdentity.bindValueIdentity((int) event[5], (int) event[6], naturalValue,
                         semanticShapeKey(event, actualFieldKey));
                 traceValue = naturalValue;
@@ -932,6 +966,29 @@ public class ReplayCoordinator {
         unsupportedReplay = true;
         if (firstUnsupportedInfo.isEmpty()) {
             firstUnsupportedInfo = details == null ? "" : details;
+        }
+    }
+
+    private static void tryPrebindStaticFieldValue(FieldKey fieldKey, long[] event, ClassLoader loader) {
+        if (fieldKey == null || event == null) {
+            return;
+        }
+        try {
+            String ownerName = fieldKey.owner().internalName().replace('/', '.');
+            ClassLoader effectiveLoader = loader != null ? loader : Thread.currentThread().getContextClassLoader();
+            if (effectiveLoader == null) {
+                effectiveLoader = ClassLoader.getSystemClassLoader();
+            }
+            Class<?> ownerClass = Class.forName(ownerName, true, effectiveLoader);
+            Field field = ownerClass.getDeclaredField(fieldKey.name());
+            field.setAccessible(true);
+            Object value = field.get(null);
+            if (value == null) {
+                return;
+            }
+            SemanticIdentity.bindValueIdentity((int) event[5], (int) event[6], value, semanticShapeKey(event, fieldKey));
+        } catch (Throwable ignored) {
+            // Pre-binding is best-effort. Replay can still fall back to runtime binding.
         }
     }
 

@@ -36,6 +36,7 @@ public class ReplayAgent {
             ReplayCoordinator.fidelityEnabled    = (fidelityOutput != null);
             ReplayCoordinator.fidelityOutputPath = fidelityOutput;
             ReplayCoordinator.init(ReducedTraceRegistry.snapshotReducedEvents());
+            ReplayCoordinator.prebindStableRoots(Thread.currentThread().getContextClassLoader());
 
             // 3a. Install a global handler so threads that die from uncaught exceptions
             // are removed from the active-role set, preventing coordinator deadlock.

@@ -420,18 +420,14 @@ public class SyncTransformer implements ClassFileTransformer {
                         mv.visitVarInsn(Opcodes.ALOAD, arrLocal);
                         mv.visitVarInsn(Opcodes.ILOAD, idxLocal);
                         mv.visitLdcInsn(siteId);
-                        String arrayReplayMethod = isObjOp ? "checkArrayObjNoInject" : "checkArray" + typeSuffix;
+                        String arrayReplayMethod = isObjOp ? "checkArrayObj" : "checkArray" + typeSuffix;
                         mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, arrayReplayMethod, checkDesc, false);
                         // Stack: [approvedValue]
                         int resultLocal = newLocal(elemType);
                         mv.visitVarInsn(valStoreOp, resultLocal);
                         mv.visitVarInsn(Opcodes.ALOAD, arrLocal);
                         mv.visitVarInsn(Opcodes.ILOAD, idxLocal);
-                        if (isObjOp) {
-                            mv.visitVarInsn(valLoadOp, valLocal);
-                        } else {
-                            mv.visitVarInsn(valLoadOp, resultLocal);
-                        }
+                        mv.visitVarInsn(valLoadOp, resultLocal);
                         super.visitInsn(opcode); // actual XASTORE
                     }
                     return;

@@ -25,3 +25,4 @@ target/
 *.pyc
 *.ctrl
 tmp/
+trace.bin

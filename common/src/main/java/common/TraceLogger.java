@@ -61,9 +61,6 @@ public class TraceLogger {
      * notify/notifyAll HB wait return → THREAD_NOTIFY[_ALL] is release
      * unpark(t) HB park() return in t → THREAD_UNPARK is release
      * interrupt() HB detection → THREAD_INTERRUPT is release
-     * thread termination HB join() return → THREAD_WAKEUP as acquire-side proxy
-     * (thread termination has no explicit event, so WAKEUP after join/wait/park
-     * serves as the epoch boundary for the acquiring thread)
      * end of <clinit> HB subsequent use → CLASS_INIT_END is release
      * atomic write/RMW HB atomic read → ATOMIC_WRITE, ATOMIC_RMW are release
      * volatile write HB volatile read → handled in logField via isVolatile flag
@@ -76,7 +73,6 @@ public class TraceLogger {
             case BinarySchema.Event.THREAD_NOTIFY_ALL:
             case BinarySchema.Event.THREAD_UNPARK:
             case BinarySchema.Event.THREAD_INTERRUPT:
-            case BinarySchema.Event.THREAD_WAKEUP:
             case BinarySchema.Event.CLASS_INIT_END:
             case BinarySchema.Event.ATOMIC_WRITE:
             case BinarySchema.Event.ATOMIC_RMW:

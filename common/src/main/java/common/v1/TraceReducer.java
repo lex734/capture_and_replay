@@ -237,8 +237,6 @@ public final class TraceReducer {
                 work.add(parentStart);
             }
 
-            enqueueAll(work, threadLifecycleEventsByRole.get(event.roleId));
-
             long ownerKey = ownerTraceKey(event);
             if (ownerKey != Long.MIN_VALUE) {
                 enqueueAll(work, publisherEventsByValueObject.get(ownerKey));
@@ -507,7 +505,6 @@ public final class TraceReducer {
                 case BinarySchema.Event.THREAD_NOTIFY_ALL:
                 case BinarySchema.Event.THREAD_UNPARK:
                 case BinarySchema.Event.THREAD_INTERRUPT:
-                case BinarySchema.Event.THREAD_WAKEUP:
                 case BinarySchema.Event.CLASS_INIT_END:
                 case BinarySchema.Event.ATOMIC_WRITE:
                 case BinarySchema.Event.ATOMIC_RMW:

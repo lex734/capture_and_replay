@@ -96,7 +96,7 @@ public final class SemanticIdentity {
             Binding existingBinding = traceToRuntime.get(traceKey);
             if (existingBinding != null) {
                 return existingBinding.runtimeObject == runtimeObject
-                        && existingBinding.accepts(expectedEvent, semanticShapeKey, lifecyclePosition, epoch);
+                        && existingBinding.accepts(expectedEvent, semanticShapeKey, lifecyclePosition);
             }
 
             Long existingTraceKey = runtimeToTrace.get(runtimeObject);
@@ -119,10 +119,10 @@ public final class SemanticIdentity {
             Binding existingBinding = traceToRuntime.get(traceKey);
             if (existingBinding != null) {
                 if (existingBinding.runtimeObject != runtimeObject
-                        || !existingBinding.accepts(expectedEvent, semanticShapeKey, lifecyclePosition, epoch)) {
+                        || !existingBinding.accepts(expectedEvent, semanticShapeKey, lifecyclePosition)) {
                     return false;
                 }
-                existingBinding.observe(expectedEvent, semanticShapeKey, lifecyclePosition, epoch, domainId);
+                existingBinding.observe(expectedEvent, semanticShapeKey, lifecyclePosition, domainId);
                 return true;
             }
 
@@ -136,7 +136,7 @@ public final class SemanticIdentity {
             }
 
             Binding binding = new Binding(runtimeObject, runtimeObject.getClass().getName(),
-                    semanticShapeKey, lifecyclePosition, epoch, expectedEvent, domainId);
+                    semanticShapeKey, lifecyclePosition, expectedEvent, domainId);
             traceToRuntime.put(traceKey, binding);
             runtimeToTrace.put(runtimeObject, traceKey);
             return true;
@@ -156,11 +156,11 @@ public final class SemanticIdentity {
         synchronized (bindingLock) {
             Binding existingBinding = traceToRuntime.get(traceKey);
             if (existingBinding != null) {
-                existingBinding.observe(null, semanticShapeKey, Long.MAX_VALUE, Long.MAX_VALUE, "");
+                existingBinding.observe(null, semanticShapeKey, Long.MAX_VALUE, "");
                 return;
             }
             Binding binding = new Binding(runtimeObject, runtimeObject.getClass().getName(),
-                    semanticShapeKey, Long.MAX_VALUE, Long.MAX_VALUE, null, "");
+                    semanticShapeKey, Long.MAX_VALUE, null, "");
             traceToRuntime.put(traceKey, binding);
             runtimeToTrace.put(runtimeObject, traceKey);
         }
@@ -213,27 +213,23 @@ public final class SemanticIdentity {
         private String semanticShapeKey;
         private long firstLifecyclePosition;
         private long lastLifecyclePosition;
-        private long firstEpoch;
-        private long lastEpoch;
         private final Set<String> observedDomains = new HashSet<>();
         private SemanticObjectEvent.Kind kind;
 
         private Binding(Object runtimeObject, String runtimeClassName, String semanticShapeKey,
-                long lifecyclePosition, long epoch, SemanticObjectEvent expectedEvent, String domainId) {
+                long lifecyclePosition, SemanticObjectEvent expectedEvent, String domainId) {
             this.runtimeObject = runtimeObject;
             this.runtimeClassName = runtimeClassName;
             this.semanticShapeKey = semanticShapeKey == null ? "" : semanticShapeKey;
             this.firstLifecyclePosition = lifecyclePosition;
             this.lastLifecyclePosition = lifecyclePosition;
-            this.firstEpoch = epoch;
-            this.lastEpoch = epoch;
             this.kind = expectedEvent == null ? null : expectedEvent.kind();
             if (domainId != null && !domainId.isEmpty()) {
                 this.observedDomains.add(domainId);
             }
         }
 
-        private boolean accepts(SemanticObjectEvent expectedEvent, String shapeKey, long lifecyclePosition, long epoch) {
+        private boolean accepts(SemanticObjectEvent expectedEvent, String shapeKey, long lifecyclePosition) {
             if (expectedEvent != null && kind != null && expectedEvent.kind() != kind) {
                 return false;
             }
@@ -246,13 +242,10 @@ public final class SemanticIdentity {
                     return false;
                 }
             }
-            if (epoch != Long.MAX_VALUE && lastEpoch != Long.MAX_VALUE && epoch < lastEpoch) {
-                return false;
-            }
             return lifecyclePosition >= firstLifecyclePosition && lifecyclePosition >= lastLifecyclePosition;
         }
 
-        private void observe(SemanticObjectEvent expectedEvent, String shapeKey, long lifecyclePosition, long epoch,
+        private void observe(SemanticObjectEvent expectedEvent, String shapeKey, long lifecyclePosition,
                 String domainId) {
             if (shapeKey != null && !shapeKey.isEmpty() && semanticShapeKey.isEmpty()) {
                 semanticShapeKey = shapeKey;
@@ -265,12 +258,6 @@ public final class SemanticIdentity {
             }
             if (lifecyclePosition > lastLifecyclePosition) {
                 lastLifecyclePosition = lifecyclePosition;
-            }
-            if (epoch < firstEpoch) {
-                firstEpoch = epoch;
-            }
-            if (epoch > lastEpoch) {
-                lastEpoch = epoch;
             }
             if (domainId != null && !domainId.isEmpty()) {
                 observedDomains.add(domainId);

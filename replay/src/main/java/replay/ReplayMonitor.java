@@ -823,7 +823,7 @@ public class ReplayMonitor {
     }
 
     private static void debug(String message) {
-        // System.out.println(message);
+        System.out.println(message);
     }
 
     private static String getEventName(int eventType) {

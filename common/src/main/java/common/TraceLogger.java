@@ -99,16 +99,19 @@ public class TraceLogger {
         if (eventType == BinarySchema.Event.THREAD_START && lock instanceof Thread) {
             long childTid = ((Thread) lock).getId();
             int childRoleId = IdentityMapper.getRoleIdBySite(childTid, currentSiteId);
+            BinarySchema.write(seq, (long) roleId, packedType,
+                    birthId.siteId, birthId.count, childRoleId, currentSiteId);
             SemanticTraceRegistry.recordThreadEvent(seq, roleId, packedType, birthId.siteId, birthId.count,
                     lock.getClass().getName().replace('.', '/'), currentSiteId, childRoleId);
             debug("[SYNC]   epoch=%d seq=%d role=%d  %-24s lock=%s  site=%d  childRole=%d",
                     seq >>> 32, seq & 0xFFFFFFFFL, roleId, eventName,
                     lock.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(lock)),
                     currentSiteId, childRoleId);
-            BinarySchema.write(seq, (long) roleId, packedType,
-                    birthId.siteId, birthId.count, childRoleId, currentSiteId);
             return;
         }
+
+        BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId,
+                birthId.count, currentSiteId);
 
         if (eventType == BinarySchema.Event.CLASS_INIT_BEGIN || eventType == BinarySchema.Event.CLASS_INIT_END) {
             SemanticTraceRegistry.recordClassInitEvent(seq, roleId, packedType, currentSiteId);
@@ -130,8 +133,6 @@ public class TraceLogger {
                         ? lock.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(lock))
                         : "null",
                 currentSiteId);
-        BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId,
-                birthId.count, currentSiteId);
     }
 
     // ---- Field loggers (capture) ----
@@ -163,13 +164,13 @@ public class TraceLogger {
         if (roleId == -1) return;
         BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
         int packedType = packFieldType(eventType, isVolatile, isStatic);
+        BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, 0, value);
         SemanticTraceRegistry.recordFieldEvent(seq, roleId, packedType, birthId.siteId, birthId.count,
                 FieldKey.of(ownerName, fieldName, descriptor));
         String evName = (eventType == BinarySchema.Event.FIELD_READ) ? "READ" : "WRITE";
         debug("[FIELD]  epoch=%d seq=%d role=%d  %-5s%s %s.%s = %d",
                 seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
                 isVolatile ? "(volatile)" : "", ownerName, fieldName, value);
-        BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count, 0, value);
     }
 
     public static void logFieldLong(long value, int eventType, Object owner, int currentSiteId,
@@ -181,14 +182,14 @@ public class TraceLogger {
         if (roleId == -1) return;
         BirthId birthId = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
         int packedType = packFieldType(eventType, isVolatile, isStatic);
+        BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count,
+                (int) (value >> 32), (int) value);
         SemanticTraceRegistry.recordFieldEvent(seq, roleId, packedType, birthId.siteId, birthId.count,
                 FieldKey.of(ownerName, fieldName, descriptor));
         String evName = (eventType == BinarySchema.Event.FIELD_READ) ? "READ" : "WRITE";
         debug("[FIELD]  epoch=%d seq=%d role=%d  %-5s%s %s.%s = %dL",
                 seq >>> 32, seq & 0xFFFFFFFFL, roleId, evName,
                 isVolatile ? "(volatile)" : "", ownerName, fieldName, value);
-        BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count,
-                (int) (value >> 32), (int) value);
     }
 
     public static void logFieldObj(Object value, int eventType, Object owner, int currentSiteId,
@@ -201,6 +202,8 @@ public class TraceLogger {
         BirthId birthId   = IdentityMapper.getBirthId(owner, ownerName, currentSiteId);
         BirthId valueBirth = IdentityMapper.getBirthId(value, null, currentSiteId);
         int packedType = packFieldObjectType(eventType, isVolatile, isStatic);
+        BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count,
+                valueBirth.siteId, valueBirth.count);
         SemanticTraceRegistry.recordFieldEvent(seq, roleId, packedType, birthId.siteId, birthId.count,
                 FieldKey.of(ownerName, fieldName, descriptor));
         String evName = (eventType == BinarySchema.Event.FIELD_READ) ? "READ" : "WRITE";
@@ -209,8 +212,6 @@ public class TraceLogger {
                 isVolatile ? "(volatile)" : "", ownerName, fieldName,
                 value != null ? value.getClass().getSimpleName()
                         + "@" + Integer.toHexString(System.identityHashCode(value)) : "null");
-        BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId, birthId.count,
-                valueBirth.siteId, valueBirth.count);
     }
 
     // ---- Array loggers (capture) ----

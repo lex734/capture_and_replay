@@ -53,6 +53,66 @@ public class ReplayMonitor {
         }
     }
 
+    public static void beforeMonitorEnter(Object lock, int currentSiteId) {
+        if (isInside.get() || lock == null) return;
+        isInside.set(true);
+        try {
+            long tid = Thread.currentThread().getId();
+            int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+            if (roleId == -1) return;
+            int packedType = BinarySchema.packType(BinarySchema.Event.MONITOR_ENTER, BinarySchema.Flags.NONE);
+            ReplayCoordinator.prepareSyncTurn(roleId, packedType, 0, 0, lock, currentSiteId);
+        } finally {
+            isInside.set(false);
+        }
+    }
+
+    public static void afterMonitorEnter(Object lock, int currentSiteId) {
+        if (isInside.get() || lock == null) return;
+        isInside.set(true);
+        try {
+            ReplayCoordinator.completePreparedSyncTurn();
+            long tid = Thread.currentThread().getId();
+            int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+            if (roleId == -1) return;
+            long seq = ReplayCoordinator.getLastMatchedSeq();
+            debug(String.format(
+                    "[CHECK-SYNC]  epoch=%d seq=%d role=%d  %-24s lock=%s  site=%d",
+                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(BinarySchema.Event.MONITOR_ENTER),
+                    lock.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(lock)),
+                    currentSiteId));
+        } finally {
+            isInside.set(false);
+        }
+    }
+
+    public static void beforeMonitorExit(Object lock, int currentSiteId) {
+        if (isInside.get() || lock == null) return;
+        isInside.set(true);
+        try {
+            long tid = Thread.currentThread().getId();
+            int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
+            if (roleId == -1) return;
+            int packedType = BinarySchema.packType(BinarySchema.Event.MONITOR_EXIT, BinarySchema.Flags.NONE);
+            ReplayCoordinator.prepareSyncTurn(roleId, packedType, 0, 0, lock, currentSiteId);
+            ReplayCoordinator.completePreparedSyncTurn();
+            long seq = ReplayCoordinator.getLastMatchedSeq();
+            debug(String.format(
+                    "[CHECK-SYNC]  epoch=%d seq=%d role=%d  %-24s lock=%s  site=%d",
+                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(BinarySchema.Event.MONITOR_EXIT),
+                    lock.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(lock)),
+                    currentSiteId));
+        } finally {
+            isInside.set(false);
+        }
+    }
+
+    public static void afterMonitorExit(Object lock, int currentSiteId) {
+        // Explicit MONITOREXIT is coordinated before the actual JVM release.
+        // Capture records the event post-release; replay decides the exit first and
+        // then lets the opcode perform the real monitor release immediately after.
+    }
+
     public static void replayThreadStart(Thread thread, int currentSiteId) {
         if (thread == null) return;
         if (isInside.get()) {
@@ -66,10 +126,83 @@ public class ReplayMonitor {
 
             long tid = Thread.currentThread().getId();
             int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
-            if (roleId == -1) return;
+            if (roleId == -1) {
+                return;
+            }
 
             int packedType = BinarySchema.packType(BinarySchema.Event.THREAD_START, BinarySchema.Flags.NONE);
             ReplayCoordinator.awaitTurn(roleId, packedType, 0, 0, thread, currentSiteId);
+        } finally {
+            isInside.set(false);
+        }
+    }
+
+    public static void replayThreadJoin(Thread thread, int joinSiteId, int wakeupSiteId) throws InterruptedException {
+        if (thread == null) return;
+        if (isInside.get()) {
+            thread.join();
+            return;
+        }
+        isInside.set(true);
+        try {
+            thread.join();
+
+            long tid = Thread.currentThread().getId();
+            int roleId = IdentityMapper.getRoleIdBySite(tid, joinSiteId);
+            if (roleId == -1) return;
+
+            int joinPackedType = BinarySchema.packType(BinarySchema.Event.THREAD_JOIN, BinarySchema.Flags.NONE);
+            ReplayCoordinator.awaitTurn(roleId, joinPackedType, 0, 0, thread, joinSiteId);
+            int wakePackedType = BinarySchema.packType(BinarySchema.Event.THREAD_WAKEUP, BinarySchema.Flags.NONE);
+            ReplayCoordinator.awaitTurn(roleId, wakePackedType, 0, 0, null, wakeupSiteId);
+        } finally {
+            isInside.set(false);
+        }
+    }
+
+    public static void replayThreadJoinTimed(Thread thread, long millis, int joinSiteId, int wakeupSiteId)
+            throws InterruptedException {
+        if (thread == null) return;
+        if (isInside.get()) {
+            thread.join(millis);
+            return;
+        }
+        isInside.set(true);
+        try {
+            thread.join(millis);
+
+            long tid = Thread.currentThread().getId();
+            int roleId = IdentityMapper.getRoleIdBySite(tid, joinSiteId);
+            if (roleId == -1) return;
+
+            int joinPackedType = BinarySchema.packType(BinarySchema.Event.THREAD_JOIN_TIMEOUT, BinarySchema.Flags.NONE);
+            ReplayCoordinator.awaitTurn(roleId, joinPackedType, 0, 0, thread, joinSiteId);
+            int wakePackedType = BinarySchema.packType(BinarySchema.Event.THREAD_WAKEUP, BinarySchema.Flags.NONE);
+            ReplayCoordinator.awaitTurn(roleId, wakePackedType, 0, 0, null, wakeupSiteId);
+        } finally {
+            isInside.set(false);
+        }
+    }
+
+    public static void replayThreadJoinTimedNanos(Thread thread, long millis, int nanos, int joinSiteId, int wakeupSiteId)
+            throws InterruptedException {
+        if (thread == null) return;
+        if (isInside.get()) {
+            thread.join(millis, nanos);
+            return;
+        }
+        isInside.set(true);
+        try {
+            thread.join(millis, nanos);
+
+            long tid = Thread.currentThread().getId();
+            int roleId = IdentityMapper.getRoleIdBySite(tid, joinSiteId);
+            if (roleId == -1) return;
+
+            int joinPackedType = BinarySchema.packType(BinarySchema.Event.THREAD_JOIN_TIMEOUT, BinarySchema.Flags.NONE);
+            ReplayCoordinator.awaitTurn(roleId, joinPackedType, 0, 0, thread, joinSiteId);
+            int wakePackedType = BinarySchema.packType(BinarySchema.Event.THREAD_WAKEUP, BinarySchema.Flags.NONE);
+            ReplayCoordinator.awaitTurn(roleId, wakePackedType, 0, 0, null, wakeupSiteId);
         } finally {
             isInside.set(false);
         }
@@ -89,11 +222,12 @@ public class ReplayMonitor {
                 return;
             }
             int packedType = BinarySchema.packType(BinarySchema.Event.MONITOR_ENTER, BinarySchema.Flags.NONE);
+            int[] traceId = boundTraceId(lock);
+            ReplayCoordinator.awaitTurn(roleId, packedType, traceId[0], traceId[1], lock, currentSiteId);
+            // For wrapper-based ReentrantLock replay, coordinate before the real
+            // acquire so a later thread cannot block inside replay while already
+            // holding the JVM lock.
             lock.lock();
-            // Capture records MONITOR_ENTER after successful acquisition. Replay must do
-            // the same so lock-dependent control flow (for example isLocked()) observes
-            // natural ownership state before matching the event.
-            ReplayCoordinator.awaitTurn(roleId, packedType, 0, 0, lock, currentSiteId);
         } finally {
             isInside.set(false);
         }
@@ -133,7 +267,8 @@ public class ReplayMonitor {
                 System.err.println("[DIVERGENCE] replayUnlock: unlock without ownership; skipping sync consume");
                 return;
             }
-            ReplayCoordinator.awaitTurn(roleId, packedType, 0, 0, lock, currentSiteId);
+            int[] traceId = boundTraceId(lock);
+            ReplayCoordinator.awaitTurn(roleId, packedType, traceId[0], traceId[1], lock, currentSiteId);
         } finally {
             isInside.set(false);
         }
@@ -145,6 +280,7 @@ public class ReplayMonitor {
         if (isInside.get() || condition == null) return condition;
         isInside.set(true);
         try {
+            IdentityMapper.registerAllocation(condition, currentSiteId);
             return condition;
         } finally {
             isInside.set(false);
@@ -156,7 +292,8 @@ public class ReplayMonitor {
         int roleId = IdentityMapper.getRoleIdBySite(tid, currentSiteId);
         if (roleId == -1) return;
         int packedType = BinarySchema.packType(BinarySchema.Event.THREAD_WAIT, BinarySchema.Flags.NONE);
-        ReplayCoordinator.awaitTurn(roleId, packedType, 0, 0, condition, currentSiteId);
+        int[] traceId = boundTraceId(condition);
+        ReplayCoordinator.awaitTurn(roleId, packedType, traceId[0], traceId[1], condition, currentSiteId);
     }
 
     public static void replayAwait(Condition condition, int currentSiteId) throws InterruptedException {
@@ -241,7 +378,8 @@ public class ReplayMonitor {
             condition.signal();
             if (roleId != -1) {
                 int packedType = BinarySchema.packType(BinarySchema.Event.THREAD_NOTIFY, BinarySchema.Flags.NONE);
-                ReplayCoordinator.awaitTurn(roleId, packedType, 0, 0, condition, currentSiteId);
+                int[] traceId = boundTraceId(condition);
+                ReplayCoordinator.awaitTurn(roleId, packedType, traceId[0], traceId[1], condition, currentSiteId);
             }
         } finally {
             isInside.set(false);
@@ -260,11 +398,20 @@ public class ReplayMonitor {
             condition.signalAll();
             if (roleId != -1) {
                 int packedType = BinarySchema.packType(BinarySchema.Event.THREAD_NOTIFY_ALL, BinarySchema.Flags.NONE);
-                ReplayCoordinator.awaitTurn(roleId, packedType, 0, 0, condition, currentSiteId);
+                int[] traceId = boundTraceId(condition);
+                ReplayCoordinator.awaitTurn(roleId, packedType, traceId[0], traceId[1], condition, currentSiteId);
             }
         } finally {
             isInside.set(false);
         }
+    }
+
+    private static int[] boundTraceId(Object runtimeObject) {
+        long traceId = IdentityMapper.lookupTraceIdForObject(runtimeObject);
+        if (traceId == Long.MIN_VALUE) {
+            return new int[] { 0, 0 };
+        }
+        return new int[] { (int) (traceId >>> 32), (int) traceId };
     }
 
     // ---- Field access events ----
@@ -823,7 +970,9 @@ public class ReplayMonitor {
     }
 
     private static void debug(String message) {
-        System.out.println(message);
+        if (Boolean.getBoolean("tool.trace.debug")) {
+            System.err.println(message);
+        }
     }
 
     private static String getEventName(int eventType) {

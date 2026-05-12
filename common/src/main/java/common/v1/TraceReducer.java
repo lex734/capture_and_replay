@@ -7,7 +7,6 @@ import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Comparator;
 import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -16,30 +15,38 @@ import java.util.Map;
 import java.util.Set;
 
 public final class TraceReducer {
+    private static final String DEFAULT_TRACE_FILE = "trace.bin";
+    private static final String DEFAULT_SEMANTIC_CAPTURE_FILE = "trace-semantic.tsv";
+
     private TraceReducer() {
     }
 
     public static void reduceFieldInteractionsToFile(String fileName) throws IOException {
+        reduceFieldInteractionsToFile(fileName, DEFAULT_TRACE_FILE, DEFAULT_SEMANTIC_CAPTURE_FILE);
+    }
+
+    public static void reduceFieldInteractionsToFile(String fileName, String traceFileName, String semanticFileName)
+            throws IOException {
         ReducedTraceRegistry.reset();
         SemanticTraceRegistry.resetReplayState();
 
-        List<RawEvent> rawEvents = readRawEvents("trace.bin");
+        List<RawEvent> rawEvents = readRawEvents(traceFileName);
         Map<CaptureSemanticKey, ArrayDeque<SemanticObjectEvent>> semanticEvents = new HashMap<>();
         Collection<SemanticObjectEvent> objectEvents = SemanticTraceRegistry.snapshotCapturedObjectEvents();
+        if (objectEvents.isEmpty() && semanticFileName != null && !semanticFileName.isEmpty()) {
+            objectEvents = SemanticTraceRegistry.loadCaptured(semanticFileName);
+        }
         for (SemanticObjectEvent objectEvent : objectEvents) {
             semanticEvents.computeIfAbsent(CaptureSemanticKey.of(objectEvent), ignored -> new ArrayDeque<>())
                     .add(objectEvent);
         }
 
         List<RawEvent> events = new ArrayList<>();
-        Map<String, Set<Long>> rolesByDomain = new HashMap<>();
-        Map<String, List<RawEvent>> eventsByDomain = new HashMap<>();
-        Map<Long, List<RawEvent>> publisherEventsByValueObject = new HashMap<>();
-        Map<Long, List<RawEvent>> threadLifecycleEventsByRole = new HashMap<>();
-        Map<Long, RawEvent> threadStartByChildRole = new HashMap<>();
-        Map<Long, RawEvent> epochReleaseByEpoch = new HashMap<>();
 
         for (RawEvent event : rawEvents) {
+            if (!isReplayRole(event.roleId)) {
+                continue;
+            }
             if (!isSupportedReplayEvent(event)) {
                 continue;
             }
@@ -47,6 +54,18 @@ public final class TraceReducer {
             event.domainId = resolveDomainId(event, semanticEvent);
             event.semanticEvent = semanticEvent;
             events.add(event);
+        }
+
+        long concurrentWindowStartSeq = firstConcurrentWindowStartSeq(events);
+        List<RawEvent> concurrentEvents = filterConcurrentWindow(events, concurrentWindowStartSeq);
+        Map<String, Set<Long>> rolesByDomain = new HashMap<>();
+        Map<String, List<RawEvent>> eventsByDomain = new HashMap<>();
+        Map<Long, List<RawEvent>> publisherEventsByValueObject = new HashMap<>();
+        Map<Long, List<RawEvent>> threadLifecycleEventsByRole = new HashMap<>();
+        Map<Long, RawEvent> threadStartByChildRole = new HashMap<>();
+        Map<Long, RawEvent> epochReleaseByEpoch = new HashMap<>();
+
+        for (RawEvent event : concurrentEvents) {
             if (event.domainId != null && !event.domainId.isEmpty()) {
                 rolesByDomain.computeIfAbsent(event.domainId, ignored -> new HashSet<>()).add(event.roleId);
                 eventsByDomain.computeIfAbsent(event.domainId, ignored -> new ArrayList<>()).add(event);
@@ -76,21 +95,34 @@ public final class TraceReducer {
         Map<String, RawEvent> lastByDomain = new HashMap<>();
         Map<RawEvent, Long> replayIdByEvent = new HashMap<>();
         Set<RawEvent> relevantEvents = computeRelevantEventClosure(
-                events,
+                concurrentEvents,
                 rolesByDomain,
                 eventsByDomain,
                 publisherEventsByValueObject,
                 threadLifecycleEventsByRole,
                 threadStartByChildRole,
                 epochReleaseByEpoch);
+        Set<String> concurrentOwnerKeys = computeConcurrentOwnerKeys(concurrentEvents);
+        Set<RawEvent> retainedEvents = new HashSet<>(relevantEvents);
+        for (RawEvent event : concurrentEvents) {
+            if (isSynchronizationProtocolEvent(event.baseType)) {
+                retainedEvents.add(event);
+                continue;
+            }
+            if (shouldRetainConcurrentOwnerEvent(event, concurrentOwnerKeys, concurrentWindowStartSeq)) {
+                retainedEvents.add(event);
+            }
+        }
+        retainedEvents.removeIf(event -> !shouldRetainRelevantEvent(event, rolesByDomain, concurrentOwnerKeys,
+                concurrentWindowStartSeq));
         long nextReplayEventId = 1L;
 
-        for (RawEvent event : events) {
-            if (!relevantEvents.contains(event)) {
+        for (RawEvent event : concurrentEvents) {
+            if (!retainedEvents.contains(event)) {
                 continue;
             }
 
-            long replayEventId = nextReplayEventId++;
+            long replayEventId = nextReplaySeq(nextReplayEventId++, event.seq());
             replayIdByEvent.put(event, replayEventId);
 
             ReducedTraceRegistry.recordReducedEvent(replayEventId, event.toArray());
@@ -122,7 +154,7 @@ public final class TraceReducer {
 
             if (event.domainId != null && !event.domainId.isEmpty()) {
                 RawEvent previousDomainEvent = lastByDomain.put(event.domainId, event);
-                if (previousDomainEvent != null) {
+                if (previousDomainEvent != null && shouldRecordDomainOrder(previousDomainEvent, event)) {
                     ReducedTraceRegistry.recordConstraint(new ReplayConstraint(
                             ReducedConstraintKind.DOMAIN_ORDER,
                             replayIdByEvent.get(previousDomainEvent),
@@ -144,8 +176,8 @@ public final class TraceReducer {
             }
         }
 
-        for (RawEvent event : events) {
-            if (event.baseType != BinarySchema.Event.THREAD_START || !relevantEvents.contains(event)) {
+        for (RawEvent event : concurrentEvents) {
+            if (event.baseType != BinarySchema.Event.THREAD_START || !retainedEvents.contains(event)) {
                 continue;
             }
             long childRole = event.data1;
@@ -162,10 +194,138 @@ public final class TraceReducer {
         ReducedTraceRegistry.save(fileName);
     }
 
+    private static Set<String> computeConcurrentOwnerKeys(List<RawEvent> events) {
+        Map<String, Set<Long>> rolesByOwner = new HashMap<>();
+        Set<String> concurrentOwnerKeys = new HashSet<>();
+        for (RawEvent event : events) {
+            if (event == null || !event.isOwnerScopedRuntimeEvent()) {
+                continue;
+            }
+            String ownerKey = concurrentRetentionKey(event);
+            if (ownerKey == null || ownerKey.isEmpty()) {
+                continue;
+            }
+            Set<Long> roles = rolesByOwner.computeIfAbsent(ownerKey, ignored -> new HashSet<>());
+            roles.add(event.roleId);
+            if (roles.size() > 1) {
+                concurrentOwnerKeys.add(ownerKey);
+            }
+        }
+        return concurrentOwnerKeys;
+    }
+
+    private static boolean shouldRetainConcurrentOwnerEvent(RawEvent event, Set<String> concurrentOwnerKeys,
+            long concurrentWindowStartSeq) {
+        if (event == null || !event.isOwnerScopedRuntimeEvent()) {
+            return false;
+        }
+        if (concurrentWindowStartSeq != Long.MAX_VALUE && event.seq() < concurrentWindowStartSeq) {
+            return false;
+        }
+        String ownerKey = concurrentRetentionKey(event);
+        return ownerKey != null && !ownerKey.isEmpty() && concurrentOwnerKeys.contains(ownerKey);
+    }
+
+    private static boolean shouldRetainRelevantEvent(RawEvent event, Map<String, Set<Long>> rolesByDomain,
+            Set<String> concurrentOwnerKeys, long concurrentWindowStartSeq) {
+        if (event == null) {
+            return false;
+        }
+        if (concurrentWindowStartSeq != Long.MAX_VALUE && event.seq() < concurrentWindowStartSeq) {
+            return false;
+        }
+        switch (event.baseType) {
+            case BinarySchema.Event.MONITOR_ENTER:
+            case BinarySchema.Event.MONITOR_EXIT:
+            case BinarySchema.Event.THREAD_WAIT:
+            case BinarySchema.Event.THREAD_NOTIFY:
+            case BinarySchema.Event.THREAD_NOTIFY_ALL:
+                return true;
+            default:
+                break;
+        }
+        if (isStaticObjectFieldEvent(event)) {
+            return false;
+        }
+        String ownerKey = concurrentRetentionKey(event);
+        if (ownerKey != null && !ownerKey.isEmpty() && event.isOwnerScopedRuntimeEvent()) {
+            return concurrentOwnerKeys.contains(ownerKey);
+        }
+        if (ownerKey != null && !ownerKey.isEmpty() && concurrentOwnerKeys.contains(ownerKey)) {
+            return true;
+        }
+        if (event.domainId == null || event.domainId.isEmpty()) {
+            return true;
+        }
+        Set<Long> roles = rolesByDomain.get(event.domainId);
+        if (roles != null && roles.size() > 1) {
+            return true;
+        }
+        switch (event.baseType) {
+            case BinarySchema.Event.THREAD_START:
+            case BinarySchema.Event.THREAD_JOIN:
+            case BinarySchema.Event.THREAD_JOIN_TIMEOUT:
+            case BinarySchema.Event.CLASS_INIT_BEGIN:
+            case BinarySchema.Event.CLASS_INIT_END:
+                return true;
+            default:
+                break;
+        }
+        return false;
+    }
+
+    private static boolean isStaticObjectFieldEvent(RawEvent event) {
+        return event != null
+                && event.semanticEvent != null
+                && event.semanticEvent.isField()
+                && event.semanticEvent.isStatic()
+                && event.semanticEvent.isObjectValued();
+    }
+
+    private static String concurrentRetentionKey(RawEvent event) {
+        if (event == null || !event.isOwnerScopedRuntimeEvent()) {
+            return null;
+        }
+        if (event.semanticEvent != null && event.semanticEvent.isField() && event.semanticEvent.isStatic()) {
+            return event.domainId == null || event.domainId.isEmpty() ? null : "static-field:" + event.domainId;
+        }
+        long ownerKey = ownerTraceKey(event);
+        return ownerKey == Long.MIN_VALUE ? null : "owner:" + ownerKey;
+    }
+
+    private static long firstConcurrentWindowStartSeq(List<RawEvent> events) {
+        for (RawEvent event : events) {
+            if (event != null
+                    && event.baseType == BinarySchema.Event.THREAD_START
+                    && event.data1 > 0) {
+                return event.seq();
+            }
+        }
+        return Long.MIN_VALUE;
+    }
+
+    private static List<RawEvent> filterConcurrentWindow(List<RawEvent> events, long concurrentWindowStartSeq) {
+        if (concurrentWindowStartSeq == Long.MIN_VALUE) {
+            return new ArrayList<>(events);
+        }
+        List<RawEvent> concurrentEvents = new ArrayList<>();
+        for (RawEvent event : events) {
+            if (event != null && event.seq() >= concurrentWindowStartSeq) {
+                concurrentEvents.add(event);
+            }
+        }
+        return concurrentEvents;
+    }
+
     private static SemanticObjectEvent pollSemanticEvent(Map<CaptureSemanticKey, ArrayDeque<SemanticObjectEvent>> semanticEvents,
             RawEvent event) {
         ArrayDeque<SemanticObjectEvent> queue = semanticEvents.get(CaptureSemanticKey.of(event));
         return queue == null ? null : queue.pollFirst();
+    }
+
+    private static long nextReplaySeq(long replayOrdinal, long capturedSeq) {
+        long localSeq = capturedSeq & 0xFFFFFFFFL;
+        return (replayOrdinal << 32) | localSeq;
     }
 
     private static SemanticObjectEvent rekeySemanticEvent(long replayEventId, SemanticObjectEvent event) {
@@ -289,6 +449,36 @@ public final class TraceReducer {
 
     private static boolean isVolatileEvent(SemanticObjectEvent event) {
         return event != null && event.isVolatile();
+    }
+
+    private static boolean shouldRecordDomainOrder(RawEvent previousDomainEvent, RawEvent event) {
+        if (previousDomainEvent == null || event == null) {
+            return false;
+        }
+        // Synchronization protocol events are already anchored by per-thread order and
+        // JMM release edges. Adding raw post-observation domain order between them can
+        // manufacture impossible requirements such as a later acquire needing to
+        // precede the exiting thread's post-release MONITOR_EXIT log on the same
+        // monitor.
+        return !(isSynchronizationProtocolEvent(previousDomainEvent.baseType)
+                && isSynchronizationProtocolEvent(event.baseType));
+    }
+
+    private static boolean isSynchronizationProtocolEvent(int baseType) {
+        switch (baseType) {
+            case BinarySchema.Event.MONITOR_ENTER:
+            case BinarySchema.Event.MONITOR_EXIT:
+            case BinarySchema.Event.THREAD_WAIT:
+            case BinarySchema.Event.THREAD_NOTIFY:
+            case BinarySchema.Event.THREAD_NOTIFY_ALL:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private static boolean isReplayRole(long roleId) {
+        return roleId > 0;
     }
 
     private static void enqueueAll(ArrayDeque<RawEvent> work, List<RawEvent> events) {
@@ -418,7 +608,6 @@ public final class TraceReducer {
                         buffer.getInt(pos + 32)));
             }
         }
-        events.sort(Comparator.comparingLong(event -> event.seq));
         return events;
     }
 
@@ -473,6 +662,29 @@ public final class TraceReducer {
 
         private boolean isArrayScopedLike() {
             return (flags & (BinarySchema.Flags.IS_ARRAY_ATOMIC | BinarySchema.Flags.IS_ARRAY_VALUED)) != 0;
+        }
+
+        private boolean isOwnerScopedRuntimeEvent() {
+            switch (baseType) {
+                case BinarySchema.Event.FIELD_READ:
+                case BinarySchema.Event.FIELD_WRITE:
+                case BinarySchema.Event.ARRAY_READ:
+                case BinarySchema.Event.ARRAY_WRITE:
+                case BinarySchema.Event.ATOMIC_READ:
+                case BinarySchema.Event.ATOMIC_WRITE:
+                case BinarySchema.Event.ATOMIC_RMW:
+                case BinarySchema.Event.ATOMIC_CAS:
+                case BinarySchema.Event.MONITOR_ENTER:
+                case BinarySchema.Event.MONITOR_EXIT:
+                case BinarySchema.Event.THREAD_WAIT:
+                case BinarySchema.Event.THREAD_NOTIFY:
+                case BinarySchema.Event.THREAD_NOTIFY_ALL:
+                case BinarySchema.Event.THREAD_INTERRUPT:
+                case BinarySchema.Event.THREAD_INTERRUPT_CHECK:
+                    return true;
+                default:
+                    return false;
+            }
         }
 
         private int ownerSiteFromPacked() {

@@ -27,6 +27,7 @@ public class Agent {
       Runtime.getRuntime().addShutdownHook(new Thread(() -> {
         try {
           BinarySchema.flush();
+          SemanticTraceRegistry.saveCaptured("trace-semantic.tsv");
           TraceReducer.reduceFieldInteractionsToFile("trace-reduced.tsv");
           SemanticTraceRegistry.resetCaptureState();
           SemanticTraceRegistry.resetReplayState();

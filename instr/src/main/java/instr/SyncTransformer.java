@@ -1,5 +1,6 @@
 package instr;
 
+import common.BinarySchema;
 import common.v1.AgentRuntimeConfig;
 import java.lang.instrument.ClassFileTransformer;
 import java.security.ProtectionDomain;
@@ -319,6 +320,11 @@ public class SyncTransformer implements ClassFileTransformer {
             this.isConstructor = "<init>".equals(methodName);
             this.superInitCalled = !isConstructor; // non-constructors are always "ready"
         }
+
+        @Override
+        public void visitCode() {
+            super.visitCode();
+        }
         
         @Override
         public void visitInsn(int opcode) {
@@ -338,17 +344,44 @@ public class SyncTransformer implements ClassFileTransformer {
             }
             // Handle Intrinsic Locks
             if (opcode == Opcodes.MONITORENTER || opcode == Opcodes.MONITOREXIT) {
-                String monitorMethod = isReplay ? "checkSync" : "logSync";
                 int eventType = (opcode == Opcodes.MONITORENTER) ? 1 : 2;
                 int siteId = SyncTransformer.registerSiteId(className + "." + methodName + "#" + instructionId++);
-                // Log/check intrinsic monitor events after the actual monitor opcode so
-                // the trace reflects real acquisition/release order (not just attempts).
-                mv.visitInsn(Opcodes.DUP);
-                super.visitInsn(opcode);
-                mv.visitLdcInsn(eventType);
-                mv.visitInsn(Opcodes.SWAP);
-                mv.visitLdcInsn(siteId);
-                mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, monitorMethod, "(ILjava/lang/Object;I)V", false);
+                if (isReplay) {
+                    int lockLocal = newLocal(Type.getType(Object.class));
+                    boolean isEnter = opcode == Opcodes.MONITORENTER;
+                    mv.visitVarInsn(Opcodes.ASTORE, lockLocal);
+                    if (isEnter) {
+                        mv.visitVarInsn(Opcodes.ALOAD, lockLocal);
+                        mv.visitLdcInsn(siteId);
+                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "beforeMonitorEnter",
+                                "(Ljava/lang/Object;I)V", false);
+                        mv.visitVarInsn(Opcodes.ALOAD, lockLocal);
+                        super.visitInsn(opcode);
+                        mv.visitVarInsn(Opcodes.ALOAD, lockLocal);
+                        mv.visitLdcInsn(siteId);
+                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "afterMonitorEnter",
+                                "(Ljava/lang/Object;I)V", false);
+                    } else {
+                        mv.visitVarInsn(Opcodes.ALOAD, lockLocal);
+                        super.visitInsn(opcode);
+                        mv.visitLdcInsn(eventType);
+                        mv.visitVarInsn(Opcodes.ALOAD, lockLocal);
+                        mv.visitLdcInsn(siteId);
+                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "checkSync",
+                                "(ILjava/lang/Object;I)V", false);
+                    }
+                } else {
+                    String monitorMethod = "logSync";
+                    // Capture logs explicit monitor events after the actual JVM
+                    // operation so the trace reflects real acquisition/release order.
+                    mv.visitInsn(Opcodes.DUP);
+                    super.visitInsn(opcode);
+                    mv.visitLdcInsn(eventType);
+                    mv.visitInsn(Opcodes.SWAP);
+                    mv.visitLdcInsn(siteId);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, monitorMethod,
+                            "(ILjava/lang/Object;I)V", false);
+                }
                 return;
             }
 
@@ -665,28 +698,49 @@ public class SyncTransformer implements ClassFileTransformer {
                     }
                     return;
                 } else if (name.equals("join")) {
-                    // Determine if it is a timed join or infinite join
-                    int eventType = descriptor.equals("()V") ? 10 : 18; // 10=JOIN, 18=JOIN_TIMEOUT
-
+                    String wakeupSite = className + "." + methodName + "#" + instructionId++;
+                    int wakeupSiteId = SyncTransformer.registerSiteId(wakeupSite);
+                    String wrapperOwner = monitorClass;
                     if (descriptor.equals("()V")) {
-                        // Same as start(): receiver may be Object after array instrumentation.
                         mv.visitTypeInsn(Opcodes.CHECKCAST, "java/lang/Thread");
-                        mv.visitInsn(Opcodes.DUP);
-                    } else {
-                        // Stack: [threadRef, longValue] — save args in locals, log, then restore
+                        mv.visitLdcInsn(siteId);
+                        mv.visitLdcInsn(wakeupSiteId);
+                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, wrapperOwner,
+                                isReplay ? "replayThreadJoin" : "captureThreadJoin",
+                                "(Ljava/lang/Thread;II)V", false);
+                        return;
+                    } else if (descriptor.equals("(J)V")) {
                         int millisLocal = newLocal(Type.LONG_TYPE);
                         int threadLocal = newLocal(Type.getType("Ljava/lang/Thread;"));
                         mv.visitVarInsn(Opcodes.LSTORE, millisLocal);
                         mv.visitTypeInsn(Opcodes.CHECKCAST, "java/lang/Thread");
                         mv.visitVarInsn(Opcodes.ASTORE, threadLocal);
                         mv.visitVarInsn(Opcodes.ALOAD, threadLocal);
-                        logSyncCall(eventType, siteId);
+                        mv.visitVarInsn(Opcodes.LLOAD, millisLocal);
+                        mv.visitLdcInsn(siteId);
+                        mv.visitLdcInsn(wakeupSiteId);
+                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, wrapperOwner,
+                                isReplay ? "replayThreadJoinTimed" : "captureThreadJoinTimed",
+                                "(Ljava/lang/Thread;JII)V", false);
+                        return;
+                    } else if (descriptor.equals("(JI)V")) {
+                        int nanosLocal = newLocal(Type.INT_TYPE);
+                        int millisLocal = newLocal(Type.LONG_TYPE);
+                        int threadLocal = newLocal(Type.getType("Ljava/lang/Thread;"));
+                        mv.visitVarInsn(Opcodes.ISTORE, nanosLocal);
+                        mv.visitVarInsn(Opcodes.LSTORE, millisLocal);
+                        mv.visitTypeInsn(Opcodes.CHECKCAST, "java/lang/Thread");
+                        mv.visitVarInsn(Opcodes.ASTORE, threadLocal);
                         mv.visitVarInsn(Opcodes.ALOAD, threadLocal);
                         mv.visitVarInsn(Opcodes.LLOAD, millisLocal);
-                        super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
+                        mv.visitVarInsn(Opcodes.ILOAD, nanosLocal);
+                        mv.visitLdcInsn(siteId);
+                        mv.visitLdcInsn(wakeupSiteId);
+                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, wrapperOwner,
+                                isReplay ? "replayThreadJoinTimedNanos" : "captureThreadJoinTimedNanos",
+                                "(Ljava/lang/Thread;JIII)V", false);
                         return;
                     }
-                    logSyncCall(eventType, siteId);
                 } else if (name.equals("sleep")) {
                     mv.visitInsn(Opcodes.ACONST_NULL);
                     logSyncCall(12, siteId); // THREAD_SLEEP

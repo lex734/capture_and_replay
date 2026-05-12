@@ -19,6 +19,7 @@ import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -35,11 +36,14 @@ public class ReplayCoordinator {
 
     private static final Object controlLock = new Object();
     private static final ThreadLocal<Long> lastMatchedSeq = ThreadLocal.withInitial(() -> 0L);
+    private static final ThreadLocal<long[]> preparedSyncEvent = new ThreadLocal<>();
 
     private static final Map<Long, long[]> eventsBySeq = new HashMap<>();
     private static final Map<Integer, NavigableSet<Long>> pendingSeqsByRole = new HashMap<>();
+    private static final Map<String, NavigableSet<Long>> pendingSeqsBySharedDomain = new HashMap<>();
     private static final NavigableSet<Long> pendingSeqs = new TreeSet<>();
     private static final Set<Long> matchedSeqs = new HashSet<>();
+    private static final Set<String> sharedDomains = new HashSet<>();
     private static final Map<Integer, ArrayDeque<Long>> pendingThreadStartsByParent = new HashMap<>();
     private static final Map<Long, Integer> threadStartChildRoleBySeq = new HashMap<>();
     private static final Set<Integer> pendingRoles = ConcurrentHashMap.newKeySet();
@@ -109,8 +113,10 @@ public class ReplayCoordinator {
         synchronized (controlLock) {
             eventsBySeq.clear();
             pendingSeqsByRole.clear();
+            pendingSeqsBySharedDomain.clear();
             pendingSeqs.clear();
             matchedSeqs.clear();
+            sharedDomains.clear();
             pendingThreadStartsByParent.clear();
             threadStartChildRoleBySeq.clear();
             pendingRoles.clear();
@@ -144,23 +150,40 @@ public class ReplayCoordinator {
             noInjectDisagreements.set(0);
             finalStateMap.clear();
 
-            ArrayList<long[]> allEvents = new ArrayList<>();
+            Map<Long, long[]> uniqueEventsBySeq = new LinkedHashMap<>();
             if (reducedEvents != null) {
                 for (long[] event : reducedEvents) {
                     if (event == null || event.length < 7) {
                         continue;
                     }
-                    allEvents.add(copyEvent(event));
+                    long[] copied = copyEvent(event);
+                    uniqueEventsBySeq.putIfAbsent(copied[0], copied);
                 }
             }
 
+            ArrayList<long[]> allEvents = new ArrayList<>(uniqueEventsBySeq.values());
             allEvents.sort(Comparator.comparingLong(event -> event[0]));
             totalEvents.set(allEvents.size());
+
+            Map<String, Set<Integer>> rolesByDomain = new HashMap<>();
+            for (long[] event : allEvents) {
+                String domainId = ReducedTraceRegistry.lookupDomainId(event[0]);
+                if (domainId == null || domainId.isEmpty()) {
+                    continue;
+                }
+                rolesByDomain.computeIfAbsent(domainId, ignored -> new HashSet<>()).add((int) event[1]);
+            }
+            for (Map.Entry<String, Set<Integer>> entry : rolesByDomain.entrySet()) {
+                if (entry.getValue().size() > 1) {
+                    sharedDomains.add(entry.getKey());
+                }
+            }
 
             for (long[] event : allEvents) {
                 long seq = event[0];
                 int roleId = (int) event[1];
                 int baseType = (int) event[2] & 0xFF;
+                String domainId = ReducedTraceRegistry.lookupDomainId(seq);
 
                 if (firstRoleInTrace == -1) {
                     firstRoleInTrace = roleId;
@@ -169,6 +192,9 @@ public class ReplayCoordinator {
                 eventsBySeq.put(seq, event);
                 pendingSeqs.add(seq);
                 pendingSeqsByRole.computeIfAbsent(roleId, ignored -> new TreeSet<>()).add(seq);
+                if (domainId != null && sharedDomains.contains(domainId)) {
+                    pendingSeqsBySharedDomain.computeIfAbsent(domainId, ignored -> new TreeSet<>()).add(seq);
+                }
                 pendingRoles.add(roleId);
 
                 if (baseType == BinarySchema.Event.THREAD_START) {
@@ -226,7 +252,7 @@ public class ReplayCoordinator {
         }
     }
 
-    public static void prebindStableRoots(ClassLoader loader) {
+    public static void prebindStableRoots(ClassLoader loader, Set<String> loadedClassNames) {
         Map<FieldKey, long[]> firstStaticObjectEvents = new HashMap<>();
         synchronized (controlLock) {
             for (Long seq : pendingSeqs) {
@@ -251,7 +277,7 @@ public class ReplayCoordinator {
         }
 
         for (Map.Entry<FieldKey, long[]> entry : firstStaticObjectEvents.entrySet()) {
-            tryPrebindStaticFieldValue(entry.getKey(), entry.getValue(), loader);
+            tryPrebindStaticFieldValue(entry.getKey(), entry.getValue(), loader, loadedClassNames);
         }
     }
 
@@ -302,6 +328,27 @@ public class ReplayCoordinator {
             return;
         }
         lastMatchedSeq.set(event[0]);
+    }
+
+    public static void prepareSyncTurn(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
+            int data) {
+        long[] event = awaitPreparedSemanticEvent(roleId, packedType, objSite, objCount, runtimeObject, null, data);
+        if (event == null) {
+            return;
+        }
+        preparedSyncEvent.set(event);
+        lastMatchedSeq.set(event[0]);
+    }
+
+    public static void completePreparedSyncTurn() {
+        long[] event = preparedSyncEvent.get();
+        if (event == null) {
+            return;
+        }
+        preparedSyncEvent.remove();
+        synchronized (controlLock) {
+            consumeEvent(event);
+        }
     }
 
     public static int awaitTurnInt(int roleId, int packedType, int objSite, int objCount, Object runtimeObject) {
@@ -551,6 +598,9 @@ public class ReplayCoordinator {
                 isIncomplete = true;
                 incompleteReason = unsupportedReplay ? "unsupported_tail" : "unconsumed_tail";
                 incompleteDetails = pendingEventSummary();
+            } else if (!hasDiverged) {
+                unsupportedReplay = false;
+                firstUnsupportedInfo = "";
             }
         }
 
@@ -615,26 +665,28 @@ public class ReplayCoordinator {
                     if (hasDiverged) {
                         return null;
                     }
+                    failFastOnDeadPendingRole();
                     Long headSeq = headSeq(roleId);
                     if (headSeq == null) {
                         debug(String.format("[Replay] role=%d has no pending non-release head", roleId));
                         return null;
                     }
-                    long headEpoch = ReducedTraceRegistry.lookupEpoch(headSeq);
-                    if (headEpoch > releasedEpoch.get()) {
-                        debug(String.format("[Replay] role=%d waiting for epoch gate headSeq=%d headEpoch=%d released=%d",
-                                roleId, headSeq, headEpoch, releasedEpoch.get()));
-                        try {
-                            controlLock.wait(Math.min(MATCH_WAIT_SLICE_MS, Math.max(1L, deadline - System.currentTimeMillis())));
-                            continue;
-                        } catch (InterruptedException e) {
-                            Thread.currentThread().interrupt();
-                            return null;
-                        }
-                    }
                     MatchSelection selection = selectCandidate(roleId, packedType, objSite, objCount, runtimeObject,
                             actualFieldKey, nondeterministicSourceKey);
                     if (selection.state == MatchState.FOUND) {
+                        long headEpoch = ReducedTraceRegistry.lookupEpoch(headSeq);
+                        if (headEpoch > releasedEpoch.get()) {
+                            debug(String.format("[Replay] role=%d waiting for epoch gate headSeq=%d headEpoch=%d released=%d",
+                                    roleId, headSeq, headEpoch, releasedEpoch.get()));
+                            try {
+                                controlLock.wait(Math.min(MATCH_WAIT_SLICE_MS,
+                                        Math.max(1L, deadline - System.currentTimeMillis())));
+                                continue;
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                                return null;
+                            }
+                        }
                         if (selection.ambiguous) {
                             recordDegradation("ambiguous semantic match resolved to earliest candidate");
                         }
@@ -650,11 +702,13 @@ public class ReplayCoordinator {
                         return null;
                     }
                     if (selection.state == MatchState.WAIT) {
-                        if (selection.reason.startsWith("predecessor constraints")
-                                || selection.reason.startsWith("object lifecycle position")) {
+                        if (selection.reason.startsWith("object lifecycle position")) {
                             debug(String.format("[Replay] role=%d non-release deferring: %s", roleId, selection.reason));
                             return null;
                         }
+                        debug(String.format("[Replay] role=%d non-release waiting condition treated as pass-through: %s",
+                                roleId, selection.reason));
+                        return null;
                     }
                     long remaining = deadline - System.currentTimeMillis();
                     if (remaining <= 0L) {
@@ -676,6 +730,7 @@ public class ReplayCoordinator {
                 if (hasDiverged) {
                     return null;
                 }
+                failFastOnDeadPendingRole();
                 Long headSeq = headSeq(roleId);
                 if (headSeq == null) {
                     debug(String.format("[Replay] role=%d has no pending synchronized head", roleId));
@@ -730,9 +785,6 @@ public class ReplayCoordinator {
                 }
 
                 if (selection.state == MatchState.NO_MATCH) {
-                    recordUnsupported(selection.reason.isEmpty()
-                            ? "no semantically legal replay event matched the runtime event"
-                            : selection.reason);
                     return null;
                 }
 
@@ -748,6 +800,87 @@ public class ReplayCoordinator {
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     recordUnsupported("interrupted while waiting for replay constraints");
+                    return null;
+                }
+            }
+        }
+    }
+
+    private static long[] awaitPreparedSemanticEvent(int roleId, int packedType, int objSite, int objCount,
+            Object runtimeObject, FieldKey actualFieldKey, int nondeterministicSourceKey) {
+        activateRole(roleId);
+        roleIdToThread.put(roleId, Thread.currentThread());
+        long deadline = System.currentTimeMillis() + MATCH_TIMEOUT_MS;
+        synchronized (controlLock) {
+            while (true) {
+                if (hasDiverged) {
+                    return null;
+                }
+                failFastOnDeadPendingRole();
+                Long headSeq = headSeq(roleId);
+                if (headSeq == null) {
+                    debug(String.format("[Replay] role=%d has no pending prepared sync head", roleId));
+                    return null;
+                }
+                long headEpoch = ReducedTraceRegistry.lookupEpoch(headSeq);
+                if (headEpoch > releasedEpoch.get()) {
+                    int headPackedType = (int) eventsBySeq.get(headSeq)[2];
+                    if (shouldSynchronizeAtEvent(headPackedType)) {
+                        long lowestPending = pendingTargetEpoch.accumulateAndGet(headEpoch, Math::min);
+                        if (lowestPending == headEpoch && !isAnyRoleBehind(headEpoch)) {
+                            debug(String.format("[Replay] role=%d advancing released epoch to %d via headSeq=%d",
+                                    roleId, headEpoch, headSeq));
+                            releasedEpoch.set(headEpoch);
+                            pendingTargetEpoch.compareAndSet(headEpoch, Long.MAX_VALUE);
+                        } else {
+                            try {
+                                controlLock.wait(Math.min(MATCH_WAIT_SLICE_MS,
+                                        Math.max(1L, deadline - System.currentTimeMillis())));
+                                continue;
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                                return null;
+                            }
+                        }
+                    } else {
+                        try {
+                            controlLock.wait(Math.min(MATCH_WAIT_SLICE_MS,
+                                    Math.max(1L, deadline - System.currentTimeMillis())));
+                            continue;
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            return null;
+                        }
+                    }
+                }
+
+                MatchSelection selection = selectCandidate(roleId, packedType, objSite, objCount, runtimeObject,
+                        actualFieldKey, nondeterministicSourceKey);
+                if (selection.state == MatchState.FOUND) {
+                    if (selection.ambiguous) {
+                        recordDegradation("ambiguous semantic match resolved to earliest candidate");
+                    }
+                    if (!commitBinding(selection.event, runtimeObject, actualFieldKey)) {
+                        reportDivergence(roleId, "conflicting object binding during replay match");
+                        return null;
+                    }
+                    return selection.event;
+                }
+                if (selection.state == MatchState.NO_MATCH) {
+                    debug(String.format("[Replay] role=%d prepared sync no-match: %s", roleId, selection.reason));
+                    return null;
+                }
+                long remaining = deadline - System.currentTimeMillis();
+                if (remaining <= 0L) {
+                    recordUnsupported(selection.reason.isEmpty()
+                            ? "timed out waiting for replay constraints to become realizable"
+                            : selection.reason);
+                    return null;
+                }
+                try {
+                    controlLock.wait(Math.min(MATCH_WAIT_SLICE_MS, remaining));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
                     return null;
                 }
             }
@@ -774,32 +907,27 @@ public class ReplayCoordinator {
                 return new MatchSelection(MatchState.WAIT, null, false,
                         "predecessor constraints for seq=" + headSeq + " are not yet satisfied");
             }
-            if (!lifecyclePositionCompatible(head)) {
-                return new MatchSelection(MatchState.WAIT, null, false,
-                        "object lifecycle position does not yet allow seq=" + headSeq);
-            }
             return new MatchSelection(MatchState.FOUND, head, false, "");
         }
 
-        for (Long seq : rolePending) {
-            if (seq.longValue() == headSeq.longValue()) {
-                continue;
-            }
-            long[] later = eventsBySeq.get(seq);
-            if (later == null) {
-                continue;
-            }
-            if (!samePackedShape(later, packedType)
-                    || !sameSemanticEventContext(later, actualFieldKey, objCount, nondeterministicSourceKey)
-                    || !bindingCompatible(later, runtimeObject, objCount, actualFieldKey)) {
-                continue;
-            }
-            return new MatchSelection(MatchState.NO_MATCH, null, false,
-                    "role-local replay order violation: seq=" + headSeq + " must occur before later compatible seq=" + seq);
+        if (shouldBlockForRelevantObject(runtimeObject)) {
+            return new MatchSelection(MatchState.WAIT, null, false,
+                    "bound relevant object awaiting exact role-head seq=" + headSeq);
         }
 
+        boolean headBaseShapeMatches = samePackedShape(head, packedType);
+        boolean headContextMatches = headBaseShapeMatches
+                && sameSemanticEventContext(head, actualFieldKey, objCount, nondeterministicSourceKey);
+        if (headContextMatches) {
+            return new MatchSelection(MatchState.NO_MATCH, null, false,
+                    "runtime event matched role-head shape/context but could not bind to seq=" + headSeq);
+        }
+        if (headBaseShapeMatches) {
+            return new MatchSelection(MatchState.NO_MATCH, null, false,
+                    "runtime event matched role-head base type but not role-head semantic context seq=" + headSeq);
+        }
         return new MatchSelection(MatchState.NO_MATCH, null, false,
-                "no semantically compatible pending event for role " + roleId);
+                "runtime event does not match current role-head seq=" + headSeq);
     }
 
     private static boolean shouldEnforcePredecessors(long[] event) {
@@ -926,8 +1054,12 @@ public class ReplayCoordinator {
             traceSite = (int) expected[3];
             traceCount = (int) expected[4];
         }
-        return SemanticIdentity.commitMatch(traceSite, traceCount, runtimeObject,
+        boolean committed = SemanticIdentity.commitMatch(traceSite, traceCount, runtimeObject,
                 expectedObject, domainId, expected[0], epoch);
+        if (committed && runtimeObject != null) {
+            IdentityMapper.registerByBirthId(traceSite, traceCount, runtimeObject);
+        }
+        return committed;
     }
 
     private static boolean predecessorsSatisfied(long seq) {
@@ -963,8 +1095,9 @@ public class ReplayCoordinator {
     private static void consumeEvent(long[] event) {
         long seq = event[0];
         int roleId = (int) event[1];
+        long epoch = ReducedTraceRegistry.lookupEpoch(seq);
         debug(String.format("[Replay] consume seq=%d epoch=%d role=%d type=0x%04x%s",
-                seq, ReducedTraceRegistry.lookupEpoch(seq), roleId, (int) event[2], semanticDetail(event)));
+                seq, epoch, roleId, (int) event[2], semanticDetail(event)));
 
         matchedSeqs.add(seq);
         pendingSeqs.remove(seq);
@@ -973,6 +1106,16 @@ public class ReplayCoordinator {
             rolePending.remove(seq);
             if (rolePending.isEmpty()) {
                 pendingSeqsByRole.remove(roleId);
+            }
+        }
+        String domainId = ReducedTraceRegistry.lookupDomainId(seq);
+        if (domainId != null && sharedDomains.contains(domainId)) {
+            NavigableSet<Long> domainPending = pendingSeqsBySharedDomain.get(domainId);
+            if (domainPending != null) {
+                domainPending.remove(seq);
+                if (domainPending.isEmpty()) {
+                    pendingSeqsBySharedDomain.remove(domainId);
+                }
             }
         }
 
@@ -1002,6 +1145,10 @@ public class ReplayCoordinator {
         }
 
         eventsMatched.incrementAndGet();
+        if (shouldSynchronizeAtEvent((int) event[2])) {
+            releasedEpoch.updateAndGet(current -> Math.max(current, epoch));
+            pendingTargetEpoch.compareAndSet(epoch, Long.MAX_VALUE);
+        }
         controlLock.notifyAll();
     }
 
@@ -1035,6 +1182,72 @@ public class ReplayCoordinator {
         return (rolePending == null || rolePending.isEmpty()) ? null : rolePending.first();
     }
 
+    private static boolean sharedDomainTurnReady(long[] event) {
+        if (event == null) {
+            return false;
+        }
+        String domainId = ReducedTraceRegistry.lookupDomainId(event[0]);
+        if (domainId == null || !sharedDomains.contains(domainId)) {
+            return true;
+        }
+        NavigableSet<Long> domainPending = pendingSeqsBySharedDomain.get(domainId);
+        return domainPending != null
+                && !domainPending.isEmpty()
+                && domainPending.first().longValue() == event[0];
+    }
+
+    private static boolean shouldBlockForSharedDomainTurn(int packedType, Object runtimeObject,
+            FieldKey actualFieldKey, int actualObjCount) {
+        if (runtimeObject == null) {
+            return false;
+        }
+        String actualDomainId = actualDomainIdForRuntimeEvent(packedType, runtimeObject, actualFieldKey, actualObjCount);
+        if (actualDomainId == null || !sharedDomains.contains(actualDomainId)) {
+            return false;
+        }
+        NavigableSet<Long> pendingForDomain = pendingSeqsBySharedDomain.get(actualDomainId);
+        if (pendingForDomain == null || pendingForDomain.isEmpty()) {
+            return false;
+        }
+        long headSeq = pendingForDomain.first();
+        long[] head = eventsBySeq.get(headSeq);
+        return head != null && !samePackedShape(head, packedType);
+    }
+
+    private static boolean shouldBlockForRelevantObject(Object runtimeObject) {
+        if (runtimeObject == null) {
+            return false;
+        }
+        long traceId = SemanticIdentity.lookupTraceId(runtimeObject);
+        return traceId != Long.MIN_VALUE;
+    }
+
+    private static String actualDomainIdForRuntimeEvent(int packedType, Object runtimeObject,
+            FieldKey actualFieldKey, int actualObjCount) {
+        long traceId = SemanticIdentity.lookupTraceId(runtimeObject);
+        if (traceId == Long.MIN_VALUE) {
+            return null;
+        }
+        int traceSite = (int) (traceId >>> 32);
+        int traceCount = (int) traceId;
+        int baseType = packedType & 0xFF;
+        if ((baseType == BinarySchema.Event.FIELD_READ || baseType == BinarySchema.Event.FIELD_WRITE)
+                && actualFieldKey != null) {
+            return "field:" + traceSite + ":" + traceCount + ":"
+                    + actualFieldKey.owner().internalName() + "." + actualFieldKey.name() + ":" + actualFieldKey.descriptor();
+        }
+        if (baseType == BinarySchema.Event.ARRAY_READ || baseType == BinarySchema.Event.ARRAY_WRITE) {
+            return "array:" + traceSite + ":" + traceCount + ":" + actualObjCount;
+        }
+        if (baseType == BinarySchema.Event.ATOMIC_READ
+                || baseType == BinarySchema.Event.ATOMIC_WRITE
+                || baseType == BinarySchema.Event.ATOMIC_RMW
+                || baseType == BinarySchema.Event.ATOMIC_CAS) {
+            return "atomic-object:" + traceSite + ":" + traceCount;
+        }
+        return null;
+    }
+
     private static boolean isAnyRoleBehind(long targetEpoch) {
         for (Integer roleId : activeRoles) {
             if (isRoleBehind(roleId, targetEpoch, true)) {
@@ -1052,6 +1265,21 @@ public class ReplayCoordinator {
             }
         }
         return false;
+    }
+
+    private static void failFastOnDeadPendingRole() {
+        for (Map.Entry<Integer, NavigableSet<Long>> entry : pendingSeqsByRole.entrySet()) {
+            NavigableSet<Long> rolePending = entry.getValue();
+            if (rolePending == null || rolePending.isEmpty()) {
+                continue;
+            }
+            Integer ownerRole = entry.getKey();
+            Thread ownerThread = roleIdToThread.get(ownerRole);
+            if (ownerThread != null && !ownerThread.isAlive()) {
+                reportDivergence(ownerRole, "thread exited with pending replay head seq=" + rolePending.first());
+                return;
+            }
+        }
     }
 
     private static boolean isRoleBehind(int roleId, long targetEpoch, boolean requireLiveThread) {
@@ -1164,17 +1392,21 @@ public class ReplayCoordinator {
         }
     }
 
-    private static void tryPrebindStaticFieldValue(FieldKey fieldKey, long[] event, ClassLoader loader) {
+    private static void tryPrebindStaticFieldValue(FieldKey fieldKey, long[] event, ClassLoader loader,
+            Set<String> loadedClassNames) {
         if (fieldKey == null || event == null) {
             return;
         }
         try {
             String ownerName = fieldKey.owner().internalName().replace('/', '.');
+            if (loadedClassNames != null && !loadedClassNames.contains(ownerName)) {
+                return;
+            }
             ClassLoader effectiveLoader = loader != null ? loader : Thread.currentThread().getContextClassLoader();
             if (effectiveLoader == null) {
                 effectiveLoader = ClassLoader.getSystemClassLoader();
             }
-            Class<?> ownerClass = Class.forName(ownerName, true, effectiveLoader);
+            Class<?> ownerClass = Class.forName(ownerName, false, effectiveLoader);
             Field field = ownerClass.getDeclaredField(fieldKey.name());
             field.setAccessible(true);
             Object value = field.get(null);
@@ -1182,6 +1414,7 @@ public class ReplayCoordinator {
                 return;
             }
             SemanticIdentity.bindValueIdentity((int) event[5], (int) event[6], value, semanticShapeKey(event, fieldKey));
+            IdentityMapper.registerByBirthId((int) event[5], (int) event[6], value);
         } catch (Throwable ignored) {
             // Pre-binding is best-effort. Replay can still fall back to runtime binding.
         }
@@ -1344,6 +1577,8 @@ public class ReplayCoordinator {
     }
 
     private static void debug(String message) {
-        System.out.println(message);
+        if (Boolean.getBoolean("tool.trace.debug")) {
+            System.err.println(message);
+        }
     }
 }

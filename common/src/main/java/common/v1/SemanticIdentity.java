@@ -103,8 +103,7 @@ public final class SemanticIdentity {
             if (existingTraceKey != null && existingTraceKey.longValue() != traceKey) {
                 return false;
             }
-            return isSemanticShapeCompatible(runtimeObject, semanticShapeKey)
-                    && isRuntimeCompatible(runtimeObject, expectedEvent);
+            return isRuntimeCompatible(runtimeObject, expectedEvent);
         }
     }
 
@@ -130,8 +129,7 @@ public final class SemanticIdentity {
             if (existingTraceKey != null && existingTraceKey.longValue() != traceKey) {
                 return false;
             }
-            if (!isSemanticShapeCompatible(runtimeObject, semanticShapeKey)
-                    || !isRuntimeCompatible(runtimeObject, expectedEvent)) {
+            if (!isRuntimeCompatible(runtimeObject, expectedEvent)) {
                 return false;
             }
 
@@ -230,19 +228,13 @@ public final class SemanticIdentity {
         }
 
         private boolean accepts(SemanticObjectEvent expectedEvent, String shapeKey, long lifecyclePosition) {
-            if (expectedEvent != null && kind != null && expectedEvent.kind() != kind) {
-                return false;
-            }
             if (shapeKey != null && !shapeKey.isEmpty()) {
-                if (!semanticShapeKey.isEmpty() && !semanticShapeKey.equals(shapeKey)) {
-                    return false;
-                }
                 if (!shapeKey.contains(runtimeClassName.replace('.', '/'))
                         && !shapeKey.contains(runtimeClassName)) {
                     return false;
                 }
             }
-            return lifecyclePosition >= firstLifecyclePosition && lifecyclePosition >= lastLifecyclePosition;
+            return true;
         }
 
         private void observe(SemanticObjectEvent expectedEvent, String shapeKey, long lifecyclePosition,

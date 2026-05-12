@@ -15,16 +15,12 @@ public class BinarySchema {
     private static MappedByteBuffer buffer;
     private static long maxAllowedEvents;
 
-    // ---- Batched write position allocation ----
-    // Instead of every event doing a CAS on a shared atomic, each thread reserves
-    // BATCH_SIZE slots at once. It then fills those slots locally with zero
-    // contention.
-    // CAS only happens once per BATCH_SIZE events (64x reduction in atomic ops).
+    // ---- Global write position allocation ----
+    // The file slot order is the only trustworthy cross-thread append order we
+    // persist. It must reflect actual event arrival order, so each event claims
+    // one slot directly from the shared atomic. The packed seq stored inside the
+    // record still carries (epoch << 32) | localSeq for thread-local structure.
     private static final AtomicLong writePos = new AtomicLong(0);
-    private static final int BATCH_SIZE = 64;
-
-    // Per-thread batch state: [0] = batchStart, [1] = remainingSlots
-    private static final ThreadLocal<long[]> batchState = ThreadLocal.withInitial(() -> new long[] { -1, 0 });
 
     public static class Event {
         public static final int MONITOR_ENTER = 1;
@@ -88,21 +84,8 @@ public class BinarySchema {
         return (eventId & 0xFF) | (flags << 8);
     }
 
-    /**
-     * Allocates the next write slot from the per-thread batch.
-     * When a batch is exhausted, reserves a new batch via a single atomic CAS.
-     * This amortizes the atomic contention by BATCH_SIZE (64x reduction).
-     */
     private static long allocateSlot() {
-        long[] state = batchState.get();
-        if (state[1] <= 0) {
-            // Reserve a new batch — single CAS, amortized over BATCH_SIZE events
-            state[0] = writePos.getAndAdd(BATCH_SIZE);
-            state[1] = BATCH_SIZE;
-        }
-        long slot = state[0] + (BATCH_SIZE - state[1]);
-        state[1]--;
-        return slot;
+        return writePos.getAndIncrement();
     }
 
     public static void write(long seq, long roleId, int packedType, int objSite, int objCount, int data1, int data2) {

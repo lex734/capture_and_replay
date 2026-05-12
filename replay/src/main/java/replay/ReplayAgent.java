@@ -9,6 +9,8 @@ import instr.SyncTransformer;
 import instr.StaticPrePassRegistry;
 
 import java.lang.instrument.Instrumentation;
+import java.util.HashSet;
+import java.util.Set;
 
 public class ReplayAgent {
     public static void premain(String agentArgs, Instrumentation inst) {
@@ -36,7 +38,13 @@ public class ReplayAgent {
             ReplayCoordinator.fidelityEnabled    = (fidelityOutput != null);
             ReplayCoordinator.fidelityOutputPath = fidelityOutput;
             ReplayCoordinator.init(ReducedTraceRegistry.snapshotReducedEvents());
-            ReplayCoordinator.prebindStableRoots(Thread.currentThread().getContextClassLoader());
+            Set<String> loadedClassNames = new HashSet<>();
+            for (Class<?> loadedClass : inst.getAllLoadedClasses()) {
+                if (loadedClass != null) {
+                    loadedClassNames.add(loadedClass.getName());
+                }
+            }
+            ReplayCoordinator.prebindStableRoots(Thread.currentThread().getContextClassLoader(), loadedClassNames);
 
             // 3a. Install a global handler so threads that die from uncaught exceptions
             // are removed from the active-role set, preventing coordinator deadlock.

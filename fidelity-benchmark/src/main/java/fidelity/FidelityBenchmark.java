@@ -2,6 +2,7 @@ package fidelity;
 
 import java.io.*;
 import java.nio.file.*;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -67,10 +68,12 @@ public class FidelityBenchmark {
             "=== Fidelity Benchmark: SCTBench (%d capture trials x %d replays per capture) ===%n%n",
             captureTrials, replayRunsPerCapture);
 
-        // All subprocesses share the harness working directory. Sequential execution
-        // means there is no race on trace.bin between different classes.
-        Path workDir  = Paths.get("").toAbsolutePath();
-        Path traceFile = workDir.resolve("trace.bin");
+        Path rootWorkDir = Paths.get("").toAbsolutePath();
+        String captureJarAbs = Paths.get(captureJar).toAbsolutePath().toString();
+        String replayJarAbs = Paths.get(replayJar).toAbsolutePath().toString();
+        String sctbenchJarAbs = Paths.get(sctbenchJar).toAbsolutePath().toString();
+        Path runsRoot = rootWorkDir.resolve("fidelity-benchmark").resolve("work");
+        Files.createDirectories(runsRoot);
 
         // Summary accumulators
         int classesReplayed = 0;
@@ -80,11 +83,17 @@ public class FidelityBenchmark {
             System.out.printf("--- %s ---%n", cls);
 
             ClassSummary classSummary = new ClassSummary(captureTrials);
+            String classDirName = sanitizeForPath(cls);
+            Path classWorkRoot = runsRoot.resolve(classDirName);
+            deleteRecursivelyIfExists(classWorkRoot);
+            Files.createDirectories(classWorkRoot);
 
             for (int captureTrial = 0; captureTrial < captureTrials; captureTrial++) {
-                Files.deleteIfExists(traceFile);
+                Path workDir = classWorkRoot.resolve("capture_" + captureTrial);
+                deleteRecursivelyIfExists(workDir);
+                Files.createDirectories(workDir);
 
-                CaptureResult cr = runCapture(captureJar, sctbenchJar, cls, workDir);
+                CaptureResult cr = runCapture(captureJarAbs, sctbenchJarAbs, cls, workDir);
                 classSummary.captureAttempts++;
                 System.out.printf("  Capture %2d/%d       : %s%n",
                     captureTrial + 1, captureTrials, cr.summary);
@@ -100,7 +109,7 @@ public class FidelityBenchmark {
                 for (int replayRun = 0; replayRun < replayRunsPerCapture; replayRun++) {
                     Path propsFile = workDir.resolve(
                         "fidelity_capture_" + captureTrial + "_replay_" + replayRun + ".properties");
-                    ReplayResult rr = runReplay(replayJar, sctbenchJar, cls, workDir, propsFile);
+                    ReplayResult rr = runReplay(replayJarAbs, sctbenchJarAbs, cls, workDir, propsFile);
                     bucket.recordReplay(rr, cr.hadBug);
                 }
             }
@@ -143,6 +152,10 @@ public class FidelityBenchmark {
             String status = r.timedOut ? "timed out" : "exit " + r.exitCode;
             return new CaptureResult(false, "no trace.bin produced (" + status + ")", false);
         }
+        if (!Files.exists(workDir.resolve("trace-reduced.tsv"))) {
+            String status = r.timedOut ? "timed out" : "exit " + r.exitCode;
+            return new CaptureResult(false, "no trace-reduced.tsv produced (" + status + ")", false);
+        }
 
         boolean hadBug = hasBugSignal(r.stdout, r.stderr)
             || (r.timedOut && DEADLOCK_BENCHMARKS.contains(cls));
@@ -168,6 +181,9 @@ public class FidelityBenchmark {
         boolean hadBug  = hasBugSignal(r.stdout, r.stderr)
             || (r.timedOut && DEADLOCK_BENCHMARKS.contains(cls));
         boolean diverged = false;
+        boolean incomplete = !r.timedOut;
+        String incompleteReason = "";
+        String incompleteDetails = "";
         long eventsMatched = 0, eventsTotal = 0;
         long valuedEvents = 0, naturalAgreements = 0, injections = 0, noInjectDisagreements = 0;
 
@@ -177,6 +193,9 @@ public class FidelityBenchmark {
             catch (IOException ignored) {}
             Files.deleteIfExists(propsFile);
             diverged          = Boolean.parseBoolean(p.getProperty("structural_divergence", "false"));
+            incomplete        = Boolean.parseBoolean(p.getProperty("incomplete", "false"));
+            incompleteReason  = p.getProperty("incomplete_reason", "");
+            incompleteDetails = p.getProperty("incomplete_details", "");
             eventsMatched     = Long.parseLong(p.getProperty("events_matched",      "0"));
             eventsTotal       = Long.parseLong(p.getProperty("events_total",        "0"));
             valuedEvents      = Long.parseLong(p.getProperty("valued_events",       "0"));
@@ -185,10 +204,15 @@ public class FidelityBenchmark {
             noInjectDisagreements = Long.parseLong(p.getProperty("no_inject_disagreements", "0"));
         } else {
             diverged = hasDivergenceSignal(r.stdout, r.stderr);
+            incomplete = true;
+            incompleteReason = r.timedOut ? "timeout" : "missing_fidelity_output";
+            incompleteDetails = r.timedOut
+                ? "replay process timed out before writing fidelity properties"
+                : "replay process exited without fidelity properties";
         }
 
-        return new ReplayResult(hadBug, diverged, eventsMatched, eventsTotal,
-            valuedEvents, naturalAgreements, injections, noInjectDisagreements);
+        return new ReplayResult(hadBug, diverged, incomplete, incompleteReason, incompleteDetails,
+            eventsMatched, eventsTotal, valuedEvents, naturalAgreements, injections, noInjectDisagreements);
     }
 
     // ---------- process execution ----------
@@ -240,7 +264,37 @@ public class FidelityBenchmark {
     }
 
     private static String javaExecutable() {
-        return Paths.get(System.getProperty("java.home"), "bin", "java").toString();
+        String javaHome = System.getProperty("java.home");
+        if (javaHome != null && !javaHome.isEmpty()) {
+            Path candidate = Paths.get(javaHome, "bin", "java");
+            if (Files.isRegularFile(candidate) && Files.isExecutable(candidate)) {
+                return candidate.toString();
+            }
+        }
+        return "java";
+    }
+
+    private static String sanitizeForPath(String value) {
+        return value.replaceAll("[^A-Za-z0-9._-]", "_");
+    }
+
+    private static void deleteRecursivelyIfExists(Path root) throws IOException {
+        if (!Files.exists(root)) {
+            return;
+        }
+        Files.walkFileTree(root, new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                Files.deleteIfExists(file);
+                return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
+                Files.deleteIfExists(dir);
+                return FileVisitResult.CONTINUE;
+            }
+        });
     }
 
     // ---------- signal detection ----------
@@ -290,17 +344,25 @@ public class FidelityBenchmark {
     private static final class ReplayResult {
         final boolean hadBug;
         final boolean diverged;
+        final boolean incomplete;
+        final String  incompleteReason;
+        final String  incompleteDetails;
         final long    eventsMatched;
         final long    eventsTotal;
         final long    valuedEvents;
         final long    naturalAgreements;
         final long    injections;
         final long    noInjectDisagreements;
-        ReplayResult(boolean hadBug, boolean diverged, long eventsMatched, long eventsTotal,
+        ReplayResult(boolean hadBug, boolean diverged, boolean incomplete,
+                     String incompleteReason, String incompleteDetails,
+                     long eventsMatched, long eventsTotal,
                      long valuedEvents, long naturalAgreements, long injections,
                      long noInjectDisagreements) {
             this.hadBug            = hadBug;
             this.diverged          = diverged;
+            this.incomplete        = incomplete;
+            this.incompleteReason  = incompleteReason;
+            this.incompleteDetails = incompleteDetails;
             this.eventsMatched     = eventsMatched;
             this.eventsTotal       = eventsTotal;
             this.valuedEvents      = valuedEvents;

@@ -49,6 +49,68 @@ public class CaptureMonitor {
     }
   }
 
+  public static void captureThreadJoin(Thread thread, int joinSiteId, int wakeupSiteId) throws InterruptedException {
+    if (thread == null) return;
+    if (shouldIgnoreCurrentRole(joinSiteId)) {
+      thread.join();
+      return;
+    }
+    if (isInside.get()) {
+      thread.join();
+      return;
+    }
+    isInside.set(true);
+    try {
+      thread.join();
+      TraceLogger.logSync(BinarySchema.Event.THREAD_JOIN, thread, joinSiteId);
+      TraceLogger.logSync(BinarySchema.Event.THREAD_WAKEUP, null, wakeupSiteId);
+    } finally {
+      isInside.set(false);
+    }
+  }
+
+  public static void captureThreadJoinTimed(Thread thread, long millis, int joinSiteId, int wakeupSiteId)
+      throws InterruptedException {
+    if (thread == null) return;
+    if (shouldIgnoreCurrentRole(joinSiteId)) {
+      thread.join(millis);
+      return;
+    }
+    if (isInside.get()) {
+      thread.join(millis);
+      return;
+    }
+    isInside.set(true);
+    try {
+      thread.join(millis);
+      TraceLogger.logSync(BinarySchema.Event.THREAD_JOIN_TIMEOUT, thread, joinSiteId);
+      TraceLogger.logSync(BinarySchema.Event.THREAD_WAKEUP, null, wakeupSiteId);
+    } finally {
+      isInside.set(false);
+    }
+  }
+
+  public static void captureThreadJoinTimedNanos(Thread thread, long millis, int nanos, int joinSiteId, int wakeupSiteId)
+      throws InterruptedException {
+    if (thread == null) return;
+    if (shouldIgnoreCurrentRole(joinSiteId)) {
+      thread.join(millis, nanos);
+      return;
+    }
+    if (isInside.get()) {
+      thread.join(millis, nanos);
+      return;
+    }
+    isInside.set(true);
+    try {
+      thread.join(millis, nanos);
+      TraceLogger.logSync(BinarySchema.Event.THREAD_JOIN_TIMEOUT, thread, joinSiteId);
+      TraceLogger.logSync(BinarySchema.Event.THREAD_WAKEUP, null, wakeupSiteId);
+    } finally {
+      isInside.set(false);
+    }
+  }
+
   public static void captureLock(Lock lock, int siteId) {
     if (lock == null) return;
     if (shouldIgnoreCurrentRole(siteId)) {

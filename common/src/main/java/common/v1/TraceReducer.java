@@ -198,7 +198,7 @@ public final class TraceReducer {
         Map<String, Set<Long>> rolesByOwner = new HashMap<>();
         Set<String> concurrentOwnerKeys = new HashSet<>();
         for (RawEvent event : events) {
-            if (event == null || !event.isOwnerScopedRuntimeEvent()) {
+            if (event == null || !event.isOwnerScopedRuntimeEvent() || !isReplayRole(event.roleId)) {
                 continue;
             }
             String ownerKey = concurrentRetentionKey(event);
@@ -244,10 +244,10 @@ public final class TraceReducer {
             default:
                 break;
         }
-        if (isStaticObjectFieldEvent(event)) {
-            return false;
-        }
         String ownerKey = concurrentRetentionKey(event);
+        if (isStaticObjectFieldEvent(event)) {
+            return ownerKey != null && !ownerKey.isEmpty() && concurrentOwnerKeys.contains(ownerKey);
+        }
         if (ownerKey != null && !ownerKey.isEmpty() && event.isOwnerScopedRuntimeEvent()) {
             return concurrentOwnerKeys.contains(ownerKey);
         }

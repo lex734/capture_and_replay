@@ -26,3 +26,5 @@ target/
 *.ctrl
 tmp/
 trace.bin
+*.tsv
+*.properties

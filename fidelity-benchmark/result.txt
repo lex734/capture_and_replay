@@ -14,17 +14,12 @@
   Successful captures: 10 / 10
   bug   captures       : 0 / 10
   clean captures       : 10 / 10
-    Trace size         : 43 events
+    Trace size         : 0 events
     Replay runs        : 100
     Complete runs      : 100 / 100
     Structural divs    : 0 / 100
-    Outcome reproduced : 100 / 100  (100.00%)
-    ...complete runs   : 100 / 100
-    Matched (complete) : 43.00 avg / run  (100.00%)
-    Valued events      : 40.00 avg / run
-    Natural agreement  : 3989 / 4000  (99.73%)
-    Injections         : 11 / 4000  (0.28%)
-    No-inject disagree : 0 / 4000  (0.00%)
+    Outcome reproduced : 99 / 100  (99.00%)
+    ...complete runs   : 99 / 100
 
 --- cmu.pasta.fray.benchmark.sctbench.chess.WorkStealQueue ---
   Capture  1/10       : clean (exit 0)
@@ -40,17 +35,12 @@
   Successful captures: 10 / 10
   bug   captures       : 0 / 10
   clean captures       : 10 / 10
-    Trace size         : 225 events
+    Trace size         : 0 events
     Replay runs        : 100
-    Complete runs      : 90 / 100
-    Structural divs    : 0 / 100
-    Outcome reproduced : 100 / 100  (100.00%)
-    ...complete runs   : 90 / 90
-    Matched (complete) : 186.89 avg / run  (100.00%)
-    Valued events      : 162.90 avg / run
-    Natural agreement  : 16221 / 16290  (99.58%)
-    Injections         : 69 / 16290  (0.42%)
-    No-inject disagree : 0 / 16290  (0.00%)
+    Complete runs      : 100 / 100
+    Structural divs    : 48 / 100
+    Outcome reproduced : 96 / 100  (96.00%)
+    ...complete runs   : 96 / 100
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.hard.Reorder100Bad ---
   Capture  1/10       : clean (exit 0)
@@ -66,17 +56,12 @@
   Successful captures: 10 / 10
   bug   captures       : 0 / 10
   clean captures       : 10 / 10
-    Trace size         : 1016 events
+    Trace size         : 0 events
     Replay runs        : 100
     Complete runs      : 100 / 100
     Structural divs    : 0 / 100
     Outcome reproduced : 100 / 100  (100.00%)
     ...complete runs   : 100 / 100
-    Matched (complete) : 1016.00 avg / run  (100.00%)
-    Valued events      : 714.00 avg / run
-    Natural agreement  : 71400 / 71400  (100.00%)
-    Injections         : 0 / 71400  (0.00%)
-    No-inject disagree : 0 / 71400  (0.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.hard.Reorder50Bad ---
   Capture  1/10       : clean (exit 0)
@@ -92,17 +77,12 @@
   Successful captures: 10 / 10
   bug   captures       : 0 / 10
   clean captures       : 10 / 10
-    Trace size         : 516 events
+    Trace size         : 0 events
     Replay runs        : 100
     Complete runs      : 100 / 100
     Structural divs    : 0 / 100
     Outcome reproduced : 100 / 100  (100.00%)
     ...complete runs   : 100 / 100
-    Matched (complete) : 516.00 avg / run  (100.00%)
-    Valued events      : 364.00 avg / run
-    Natural agreement  : 36400 / 36400  (100.00%)
-    Injections         : 0 / 36400  (0.00%)
-    No-inject disagree : 0 / 36400  (0.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.AccountBad ---
   Capture  1/10       : clean (exit 0)
@@ -118,17 +98,12 @@
   Successful captures: 10 / 10
   bug   captures       : 0 / 10
   clean captures       : 10 / 10
-    Trace size         : 35 events
+    Trace size         : 0 events
     Replay runs        : 100
     Complete runs      : 100 / 100
     Structural divs    : 0 / 100
     Outcome reproduced : 100 / 100  (100.00%)
     ...complete runs   : 100 / 100
-    Matched (complete) : 35.00 avg / run  (100.00%)
-    Valued events      : 24.00 avg / run
-    Natural agreement  : 2400 / 2400  (100.00%)
-    Injections         : 0 / 2400  (0.00%)
-    No-inject disagree : 0 / 2400  (0.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.ArithmeticProgBad ---
   Capture  1/10       : bug (exit 1)
@@ -143,17 +118,12 @@
   Capture 10/10       : bug (exit 1)
   Successful captures: 10 / 10
   bug   captures       : 10 / 10
-    Trace size         : 193 events
+    Trace size         : 0 events
     Replay runs        : 100
-    Complete runs      : 32 / 100
+    Complete runs      : 100 / 100
     Structural divs    : 0 / 100
-    Outcome reproduced : 32 / 100  (32.00%)
-    ...complete runs   : 32 / 32
-    Matched (complete) : 95.09 avg / run  (100.00%)
-    Valued events      : 39.86 avg / run
-    Natural agreement  : 3986 / 3986  (100.00%)
-    Injections         : 0 / 3986  (0.00%)
-    No-inject disagree : 0 / 3986  (0.00%)
+    Outcome reproduced : 0 / 100  (0.00%)
+    ...complete runs   : 0 / 100
   clean captures       : 0 / 10
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.BluetoothDriverBad ---
@@ -170,126 +140,93 @@
   Successful captures: 10 / 10
   bug   captures       : 0 / 10
   clean captures       : 10 / 10
-    Trace size         : 25 events
+    Trace size         : 0 events
     Replay runs        : 100
-    Complete runs      : 73 / 100
+    Complete runs      : 100 / 100
     Structural divs    : 0 / 100
     Outcome reproduced : 100 / 100  (100.00%)
-    ...complete runs   : 73 / 73
-    Matched (complete) : 25.00 avg / run  (100.00%)
-    Valued events      : 13.57 avg / run
-    Natural agreement  : 1257 / 1357  (92.63%)
-    Injections         : 100 / 1357  (7.37%)
-    No-inject disagree : 0 / 1357  (0.00%)
+    ...complete runs   : 100 / 100
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.Carter01Bad ---
+  Capture  1/10       : clean (exit 0)
+  Capture  2/10       : bug (exit 0)
+  Capture  3/10       : bug (exit 0)
+  Capture  4/10       : bug (exit 0)
+  Capture  5/10       : bug (exit 0)
+  Capture  6/10       : bug (exit 0)
+  Capture  7/10       : bug (exit 0)
+  Capture  8/10       : bug (exit 0)
+  Capture  9/10       : bug (exit 0)
+  Capture 10/10       : bug (exit 0)
+  Successful captures: 10 / 10
+  bug   captures       : 9 / 10
+    Trace size         : 0 events
+    Replay runs        : 90
+    Complete runs      : 90 / 90
+    Structural divs    : 0 / 90
+    Outcome reproduced : 73 / 90  (81.11%)
+    ...complete runs   : 73 / 90
+  clean captures       : 1 / 10
+    Trace size         : 0 events
+    Replay runs        : 10
+    Complete runs      : 10 / 10
+    Structural divs    : 0 / 10
+    Outcome reproduced : 10 / 10  (100.00%)
+    ...complete runs   : 10 / 10
+
+--- cmu.pasta.fray.benchmark.sctbench.cs.origin.CircularBufferBad ---
   Capture  1/10       : bug (exit 0)
-  Capture  2/10       : clean (exit 0)
+  Capture  2/10       : bug (exit 0)
   Capture  3/10       : bug (exit 0)
   Capture  4/10       : clean (exit 0)
   Capture  5/10       : bug (exit 0)
   Capture  6/10       : bug (exit 0)
   Capture  7/10       : clean (exit 0)
   Capture  8/10       : clean (exit 0)
-  Capture  9/10       : bug (exit 0)
-  Capture 10/10       : clean (exit 0)
-  Successful captures: 10 / 10
-  bug   captures       : 5 / 10
-    Trace size         : 80 events
-    Replay runs        : 50
-    Complete runs      : 48 / 50
-    Structural divs    : 2 / 50
-    Outcome reproduced : 48 / 50  (96.00%)
-    ...complete runs   : 48 / 48
-    Matched (complete) : 78.42 avg / run  (100.00%)
-    Valued events      : 52.44 avg / run
-    Natural agreement  : 2596 / 2622  (99.01%)
-    Injections         : 26 / 2622  (0.99%)
-    No-inject disagree : 0 / 2622  (0.00%)
-  clean captures       : 5 / 10
-    Trace size         : 78 events
-    Replay runs        : 50
-    Complete runs      : 3 / 50
-    Structural divs    : 47 / 50
-    Outcome reproduced : 3 / 50  (6.00%)
-    ...complete runs   : 3 / 3
-    Matched (complete) : 78.00 avg / run  (100.00%)
-    Valued events      : 30.50 avg / run
-    Natural agreement  : 1478 / 1525  (96.92%)
-    Injections         : 47 / 1525  (3.08%)
-    No-inject disagree : 0 / 1525  (0.00%)
-
---- cmu.pasta.fray.benchmark.sctbench.cs.origin.CircularBufferBad ---
-  Capture  1/10       : bug (exit 0)
-  Capture  2/10       : bug (exit 0)
-  Capture  3/10       : bug (exit 0)
-  Capture  4/10       : bug (exit 0)
-  Capture  5/10       : bug (exit 0)
-  Capture  6/10       : bug (exit 0)
-  Capture  7/10       : clean (exit 0)
-  Capture  8/10       : bug (exit 0)
   Capture  9/10       : clean (exit 0)
   Capture 10/10       : bug (exit 0)
   Successful captures: 10 / 10
-  bug   captures       : 8 / 10
-    Trace size         : 243 events
-    Replay runs        : 80
-    Complete runs      : 2 / 80
-    Structural divs    : 0 / 80
-    Outcome reproduced : 2 / 80  (2.50%)
-    ...complete runs   : 2 / 2
-    Matched (complete) : 115.00 avg / run  (100.00%)
-    Valued events      : 61.91 avg / run
-    Natural agreement  : 4953 / 4953  (100.00%)
-    Injections         : 0 / 4953  (0.00%)
-    No-inject disagree : 0 / 4953  (0.00%)
-  clean captures       : 2 / 10
-    Trace size         : 275 events
-    Replay runs        : 20
-    Complete runs      : 12 / 20
-    Structural divs    : 0 / 20
-    Outcome reproduced : 20 / 20  (100.00%)
-    ...complete runs   : 12 / 12
-    Matched (complete) : 140.00 avg / run  (100.00%)
-    Valued events      : 105.30 avg / run
-    Natural agreement  : 2106 / 2106  (100.00%)
-    Injections         : 0 / 2106  (0.00%)
-    No-inject disagree : 0 / 2106  (0.00%)
+  bug   captures       : 6 / 10
+    Trace size         : 0 events
+    Replay runs        : 60
+    Complete runs      : 60 / 60
+    Structural divs    : 0 / 60
+    Outcome reproduced : 4 / 60  (6.67%)
+    ...complete runs   : 4 / 60
+  clean captures       : 4 / 10
+    Trace size         : 0 events
+    Replay runs        : 40
+    Complete runs      : 40 / 40
+    Structural divs    : 0 / 40
+    Outcome reproduced : 40 / 40  (100.00%)
+    ...complete runs   : 40 / 40
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.Deadlock01Bad ---
-  Capture  1/10       : clean (exit 0)
+  Capture  1/10       : bug (exit 0)
   Capture  2/10       : clean (exit 0)
-  Capture  3/10       : clean (exit 0)
+  Capture  3/10       : bug (exit 0)
   Capture  4/10       : clean (exit 0)
   Capture  5/10       : clean (exit 0)
-  Capture  6/10       : clean (exit 0)
-  Capture  7/10       : clean (exit 0)
+  Capture  6/10       : bug (exit 0)
+  Capture  7/10       : bug (exit 0)
   Capture  8/10       : bug (exit 0)
   Capture  9/10       : clean (exit 0)
   Capture 10/10       : clean (exit 0)
   Successful captures: 10 / 10
-  bug   captures       : 1 / 10
-    Trace size         : 30 events
-    Replay runs        : 10
-    Complete runs      : 0 / 10
-    Structural divs    : 7 / 10
-    Outcome reproduced : 0 / 10  (0.00%)
-    Valued events      : 13.20 avg / run
-    Natural agreement  : 125 / 132  (94.70%)
-    Injections         : 7 / 132  (5.30%)
-    No-inject disagree : 0 / 132  (0.00%)
-  clean captures       : 9 / 10
-    Trace size         : 35 events
-    Replay runs        : 90
-    Complete runs      : 83 / 90
-    Structural divs    : 3 / 90
-    Outcome reproduced : 87 / 90  (96.67%)
-    ...complete runs   : 83 / 83
-    Matched (complete) : 35.00 avg / run  (100.00%)
-    Valued events      : 18.22 avg / run
-    Natural agreement  : 1637 / 1640  (99.82%)
-    Injections         : 3 / 1640  (0.18%)
-    No-inject disagree : 0 / 1640  (0.00%)
+  bug   captures       : 5 / 10
+    Trace size         : 0 events
+    Replay runs        : 50
+    Complete runs      : 50 / 50
+    Structural divs    : 2 / 50
+    Outcome reproduced : 5 / 50  (10.00%)
+    ...complete runs   : 5 / 50
+  clean captures       : 5 / 10
+    Trace size         : 0 events
+    Replay runs        : 50
+    Complete runs      : 50 / 50
+    Structural divs    : 5 / 50
+    Outcome reproduced : 45 / 50  (90.00%)
+    ...complete runs   : 45 / 50
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.FsbenchBad ---
   Capture  1/10       : bug (exit 0)
@@ -304,17 +241,12 @@
   Capture 10/10       : bug (exit 0)
   Successful captures: 10 / 10
   bug   captures       : 10 / 10
-    Trace size         : 1138 events
+    Trace size         : 0 events
     Replay runs        : 100
     Complete runs      : 100 / 100
     Structural divs    : 0 / 100
     Outcome reproduced : 100 / 100  (100.00%)
     ...complete runs   : 100 / 100
-    Matched (complete) : 1138.00 avg / run  (100.00%)
-    Valued events      : 924.00 avg / run
-    Natural agreement  : 92400 / 92400  (100.00%)
-    Injections         : 0 / 92400  (0.00%)
-    No-inject disagree : 0 / 92400  (0.00%)
   clean captures       : 0 / 10
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.Lazy01Bad ---
@@ -330,55 +262,40 @@
   Capture 10/10       : bug (exit 0)
   Successful captures: 10 / 10
   bug   captures       : 10 / 10
-    Trace size         : 34 events
+    Trace size         : 0 events
     Replay runs        : 100
     Complete runs      : 100 / 100
     Structural divs    : 0 / 100
-    Outcome reproduced : 100 / 100  (100.00%)
-    ...complete runs   : 100 / 100
-    Matched (complete) : 34.00 avg / run  (100.00%)
-    Valued events      : 15.00 avg / run
-    Natural agreement  : 1500 / 1500  (100.00%)
-    Injections         : 0 / 1500  (0.00%)
-    No-inject disagree : 0 / 1500  (0.00%)
+    Outcome reproduced : 96 / 100  (96.00%)
+    ...complete runs   : 96 / 100
   clean captures       : 0 / 10
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.Phase01Bad ---
-  Capture  1/10       : bug (exit 0)
-  Capture  2/10       : clean (exit 143)
-  Capture  3/10       : bug (exit 0)
-  Capture  4/10       : bug (exit 0)
-  Capture  5/10       : bug (exit 0)
-  Capture  6/10       : bug (exit 0)
+  Capture  1/10       : clean (exit 143)
+  Capture  2/10       : bug (exit 0)
+  Capture  3/10       : clean (exit 143)
+  Capture  4/10       : clean (exit 143)
+  Capture  5/10       : clean (exit 143)
+  Capture  6/10       : clean (exit 143)
   Capture  7/10       : bug (exit 0)
-  Capture  8/10       : bug (exit 0)
-  Capture  9/10       : bug (exit 0)
+  Capture  8/10       : clean (exit 143)
+  Capture  9/10       : clean (exit 143)
   Capture 10/10       : clean (exit 143)
   Successful captures: 10 / 10
-  bug   captures       : 8 / 10
-    Trace size         : 36 events
-    Replay runs        : 80
-    Complete runs      : 80 / 80
-    Structural divs    : 0 / 80
-    Outcome reproduced : 80 / 80  (100.00%)
-    ...complete runs   : 80 / 80
-    Matched (complete) : 31.63 avg / run  (100.00%)
-    Valued events      : 15.38 avg / run
-    Natural agreement  : 1151 / 1230  (93.58%)
-    Injections         : 79 / 1230  (6.42%)
-    No-inject disagree : 0 / 1230  (0.00%)
-  clean captures       : 2 / 10
-    Trace size         : 29 events
+  bug   captures       : 2 / 10
+    Trace size         : 0 events
     Replay runs        : 20
     Complete runs      : 20 / 20
     Structural divs    : 0 / 20
-    Outcome reproduced : 20 / 20  (100.00%)
-    ...complete runs   : 20 / 20
-    Matched (complete) : 29.00 avg / run  (100.00%)
-    Valued events      : 15.00 avg / run
-    Natural agreement  : 299 / 300  (99.67%)
-    Injections         : 1 / 300  (0.33%)
-    No-inject disagree : 0 / 300  (0.00%)
+    Outcome reproduced : 11 / 20  (55.00%)
+    ...complete runs   : 11 / 20
+  clean captures       : 8 / 10
+    Trace size         : 0 events
+    Replay runs        : 80
+    Complete runs      : 80 / 80
+    Structural divs    : 0 / 80
+    Outcome reproduced : 63 / 80  (78.75%)
+    ...complete runs   : 63 / 80
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.QueueBad ---
   Capture  1/10       : bug (exit 143)
@@ -393,17 +310,12 @@
   Capture 10/10       : bug (exit 143)
   Successful captures: 10 / 10
   bug   captures       : 10 / 10
-    Trace size         : 272 events
+    Trace size         : 0 events
     Replay runs        : 100
-    Complete runs      : 11 / 100
+    Complete runs      : 100 / 100
     Structural divs    : 0 / 100
-    Outcome reproduced : 11 / 100  (11.00%)
-    ...complete runs   : 11 / 11
-    Matched (complete) : 82.00 avg / run  (100.00%)
-    Valued events      : 48.65 avg / run
-    Natural agreement  : 4865 / 4865  (100.00%)
-    Injections         : 0 / 4865  (0.00%)
-    No-inject disagree : 0 / 4865  (0.00%)
+    Outcome reproduced : 21 / 100  (21.00%)
+    ...complete runs   : 21 / 100
   clean captures       : 0 / 10
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.Reorder10Bad ---
@@ -420,17 +332,12 @@
   Successful captures: 10 / 10
   bug   captures       : 0 / 10
   clean captures       : 10 / 10
-    Trace size         : 116 events
+    Trace size         : 0 events
     Replay runs        : 100
     Complete runs      : 100 / 100
     Structural divs    : 0 / 100
     Outcome reproduced : 100 / 100  (100.00%)
     ...complete runs   : 100 / 100
-    Matched (complete) : 116.00 avg / run  (100.00%)
-    Valued events      : 84.00 avg / run
-    Natural agreement  : 8400 / 8400  (100.00%)
-    Injections         : 0 / 8400  (0.00%)
-    No-inject disagree : 0 / 8400  (0.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.Reorder20Bad ---
   Capture  1/10       : clean (exit 0)
@@ -446,17 +353,12 @@
   Successful captures: 10 / 10
   bug   captures       : 0 / 10
   clean captures       : 10 / 10
-    Trace size         : 225 events
+    Trace size         : 0 events
     Replay runs        : 100
     Complete runs      : 100 / 100
     Structural divs    : 0 / 100
     Outcome reproduced : 100 / 100  (100.00%)
     ...complete runs   : 100 / 100
-    Matched (complete) : 225.00 avg / run  (100.00%)
-    Valued events      : 163.00 avg / run
-    Natural agreement  : 16300 / 16300  (100.00%)
-    Injections         : 0 / 16300  (0.00%)
-    No-inject disagree : 0 / 16300  (0.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.Reorder3Bad ---
   Capture  1/10       : clean (exit 0)
@@ -472,17 +374,12 @@
   Successful captures: 10 / 10
   bug   captures       : 0 / 10
   clean captures       : 10 / 10
-    Trace size         : 46 events
+    Trace size         : 0 events
     Replay runs        : 100
     Complete runs      : 100 / 100
     Structural divs    : 0 / 100
     Outcome reproduced : 100 / 100  (100.00%)
     ...complete runs   : 100 / 100
-    Matched (complete) : 46.00 avg / run  (100.00%)
-    Valued events      : 35.00 avg / run
-    Natural agreement  : 3500 / 3500  (100.00%)
-    Injections         : 0 / 3500  (0.00%)
-    No-inject disagree : 0 / 3500  (0.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.Reorder4Bad ---
   Capture  1/10       : clean (exit 0)
@@ -498,17 +395,12 @@
   Successful captures: 10 / 10
   bug   captures       : 0 / 10
   clean captures       : 10 / 10
-    Trace size         : 56 events
+    Trace size         : 0 events
     Replay runs        : 100
     Complete runs      : 100 / 100
     Structural divs    : 0 / 100
     Outcome reproduced : 100 / 100  (100.00%)
     ...complete runs   : 100 / 100
-    Matched (complete) : 56.00 avg / run  (100.00%)
-    Valued events      : 42.00 avg / run
-    Natural agreement  : 4200 / 4200  (100.00%)
-    Injections         : 0 / 4200  (0.00%)
-    No-inject disagree : 0 / 4200  (0.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.Reorder5Bad ---
   Capture  1/10       : clean (exit 0)
@@ -524,52 +416,39 @@
   Successful captures: 10 / 10
   bug   captures       : 0 / 10
   clean captures       : 10 / 10
-    Trace size         : 66 events
+    Trace size         : 0 events
     Replay runs        : 100
     Complete runs      : 100 / 100
     Structural divs    : 0 / 100
     Outcome reproduced : 100 / 100  (100.00%)
     ...complete runs   : 100 / 100
-    Matched (complete) : 66.00 avg / run  (100.00%)
-    Valued events      : 49.00 avg / run
-    Natural agreement  : 4900 / 4900  (100.00%)
-    Injections         : 0 / 4900  (0.00%)
-    No-inject disagree : 0 / 4900  (0.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.StackBad ---
   Capture  1/10       : bug (exit 0)
-  Capture  2/10       : bug (exit 0)
+  Capture  2/10       : clean (exit 0)
   Capture  3/10       : clean (exit 0)
-  Capture  4/10       : bug (exit 0)
-  Capture  5/10       : bug (exit 0)
+  Capture  4/10       : clean (exit 0)
+  Capture  5/10       : clean (exit 0)
   Capture  6/10       : clean (exit 0)
-  Capture  7/10       : bug (exit 0)
-  Capture  8/10       : clean (exit 0)
-  Capture  9/10       : bug (exit 0)
-  Capture 10/10       : bug (exit 0)
+  Capture  7/10       : clean (exit 0)
+  Capture  8/10       : bug (exit 0)
+  Capture  9/10       : clean (exit 0)
+  Capture 10/10       : clean (exit 0)
   Successful captures: 10 / 10
-  bug   captures       : 7 / 10
-    Trace size         : 204 events
-    Replay runs        : 70
-    Complete runs      : 9 / 70
-    Structural divs    : 0 / 70
-    Outcome reproduced : 9 / 70  (12.86%)
-    ...complete runs   : 9 / 9
-    Matched (complete) : 156.00 avg / run  (100.00%)
-    Valued events      : 39.50 avg / run
-    Natural agreement  : 2765 / 2765  (100.00%)
-    Injections         : 0 / 2765  (0.00%)
-    No-inject disagree : 0 / 2765  (0.00%)
-  clean captures       : 3 / 10
-    Trace size         : 253 events
-    Replay runs        : 30
-    Complete runs      : 0 / 30
-    Structural divs    : 0 / 30
-    Outcome reproduced : 30 / 30  (100.00%)
-    Valued events      : 33.67 avg / run
-    Natural agreement  : 1010 / 1010  (100.00%)
-    Injections         : 0 / 1010  (0.00%)
-    No-inject disagree : 0 / 1010  (0.00%)
+  bug   captures       : 2 / 10
+    Trace size         : 0 events
+    Replay runs        : 20
+    Complete runs      : 20 / 20
+    Structural divs    : 0 / 20
+    Outcome reproduced : 0 / 20  (0.00%)
+    ...complete runs   : 0 / 20
+  clean captures       : 8 / 10
+    Trace size         : 0 events
+    Replay runs        : 80
+    Complete runs      : 80 / 80
+    Structural divs    : 0 / 80
+    Outcome reproduced : 80 / 80  (100.00%)
+    ...complete runs   : 80 / 80
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.Sync01Bad ---
   Capture  1/10       : bug (exit 0)
@@ -584,43 +463,33 @@
   Capture 10/10       : bug (exit 0)
   Successful captures: 10 / 10
   bug   captures       : 10 / 10
-    Trace size         : 44 events
+    Trace size         : 0 events
     Replay runs        : 100
-    Complete runs      : 71 / 100
-    Structural divs    : 29 / 100
-    Outcome reproduced : 100 / 100  (100.00%)
-    ...complete runs   : 71 / 71
-    Matched (complete) : 40.17 avg / run  (100.00%)
-    Valued events      : 21.27 avg / run
-    Natural agreement  : 2127 / 2127  (100.00%)
-    Injections         : 0 / 2127  (0.00%)
-    No-inject disagree : 0 / 2127  (0.00%)
+    Complete runs      : 100 / 100
+    Structural divs    : 18 / 100
+    Outcome reproduced : 78 / 100  (78.00%)
+    ...complete runs   : 78 / 100
   clean captures       : 0 / 10
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.Sync02Bad ---
-  Capture  1/10       : bug (exit 0)
+  Capture  1/10       : bug (exit 143)
   Capture  2/10       : bug (exit 0)
-  Capture  3/10       : bug (exit 0)
-  Capture  4/10       : bug (exit 0)
-  Capture  5/10       : bug (exit 0)
+  Capture  3/10       : bug (exit 143)
+  Capture  4/10       : bug (exit 143)
+  Capture  5/10       : bug (exit 143)
   Capture  6/10       : bug (exit 0)
-  Capture  7/10       : bug (exit 0)
+  Capture  7/10       : bug (exit 143)
   Capture  8/10       : bug (exit 143)
-  Capture  9/10       : bug (exit 0)
+  Capture  9/10       : bug (exit 143)
   Capture 10/10       : bug (exit 0)
   Successful captures: 10 / 10
   bug   captures       : 10 / 10
-    Trace size         : 63 events
+    Trace size         : 0 events
     Replay runs        : 100
-    Complete runs      : 49 / 100
-    Structural divs    : 51 / 100
-    Outcome reproduced : 89 / 100  (89.00%)
-    ...complete runs   : 49 / 49
-    Matched (complete) : 54.92 avg / run  (100.00%)
-    Valued events      : 28.52 avg / run
-    Natural agreement  : 2805 / 2852  (98.35%)
-    Injections         : 47 / 2852  (1.65%)
-    No-inject disagree : 0 / 2852  (0.00%)
+    Complete runs      : 100 / 100
+    Structural divs    : 23 / 100
+    Outcome reproduced : 86 / 100  (86.00%)
+    ...complete runs   : 86 / 100
   clean captures       : 0 / 10
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.TokenRingBad ---
@@ -637,17 +506,12 @@
   Successful captures: 10 / 10
   bug   captures       : 0 / 10
   clean captures       : 10 / 10
-    Trace size         : 44 events
+    Trace size         : 0 events
     Replay runs        : 100
-    Complete runs      : 25 / 100
+    Complete runs      : 100 / 100
     Structural divs    : 0 / 100
     Outcome reproduced : 100 / 100  (100.00%)
-    ...complete runs   : 25 / 25
-    Matched (complete) : 41.20 avg / run  (100.00%)
-    Valued events      : 15.01 avg / run
-    Natural agreement  : 1501 / 1501  (100.00%)
-    Injections         : 0 / 1501  (0.00%)
-    No-inject disagree : 0 / 1501  (0.00%)
+    ...complete runs   : 100 / 100
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.Twostage100Bad ---
   Capture  1/10       : clean (exit 0)
@@ -663,17 +527,12 @@
   Successful captures: 10 / 10
   bug   captures       : 0 / 10
   clean captures       : 10 / 10
-    Trace size         : 1817 events
+    Trace size         : 0 events
     Replay runs        : 100
-    Complete runs      : 8 / 100
+    Complete runs      : 100 / 100
     Structural divs    : 0 / 100
     Outcome reproduced : 100 / 100  (100.00%)
-    ...complete runs   : 8 / 8
-    Matched (complete) : 1817.00 avg / run  (100.00%)
-    Valued events      : 408.95 avg / run
-    Natural agreement  : 40895 / 40895  (100.00%)
-    Injections         : 0 / 40895  (0.00%)
-    No-inject disagree : 0 / 40895  (0.00%)
+    ...complete runs   : 100 / 100
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.TwostageBad ---
   Capture  1/10       : clean (exit 0)
@@ -689,17 +548,12 @@
   Successful captures: 10 / 10
   bug   captures       : 0 / 10
   clean captures       : 10 / 10
-    Trace size         : 57 events
+    Trace size         : 0 events
     Replay runs        : 100
     Complete runs      : 100 / 100
     Structural divs    : 0 / 100
     Outcome reproduced : 100 / 100  (100.00%)
     ...complete runs   : 100 / 100
-    Matched (complete) : 57.00 avg / run  (100.00%)
-    Valued events      : 41.00 avg / run
-    Natural agreement  : 4100 / 4100  (100.00%)
-    Injections         : 0 / 4100  (0.00%)
-    No-inject disagree : 0 / 4100  (0.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.Wronglock1Bad ---
   Capture  1/10       : clean (exit 0)
@@ -715,17 +569,12 @@
   Successful captures: 10 / 10
   bug   captures       : 0 / 10
   clean captures       : 10 / 10
-    Trace size         : 45 events
+    Trace size         : 0 events
     Replay runs        : 100
     Complete runs      : 100 / 100
     Structural divs    : 0 / 100
     Outcome reproduced : 100 / 100  (100.00%)
     ...complete runs   : 100 / 100
-    Matched (complete) : 45.00 avg / run  (100.00%)
-    Valued events      : 33.00 avg / run
-    Natural agreement  : 3295 / 3300  (99.85%)
-    Injections         : 5 / 3300  (0.15%)
-    No-inject disagree : 0 / 3300  (0.00%)
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.Wronglock3Bad ---
   Capture  1/10       : clean (exit 0)
@@ -741,17 +590,12 @@
   Successful captures: 10 / 10
   bug   captures       : 0 / 10
   clean captures       : 10 / 10
-    Trace size         : 73 events
+    Trace size         : 0 events
     Replay runs        : 100
-    Complete runs      : 94 / 100
+    Complete runs      : 100 / 100
     Structural divs    : 0 / 100
     Outcome reproduced : 100 / 100  (100.00%)
-    ...complete runs   : 94 / 94
-    Matched (complete) : 73.00 avg / run  (100.00%)
-    Valued events      : 49.74 avg / run
-    Natural agreement  : 4965 / 4974  (99.82%)
-    Injections         : 9 / 4974  (0.18%)
-    No-inject disagree : 0 / 4974  (0.00%)
+    ...complete runs   : 100 / 100
 
 --- cmu.pasta.fray.benchmark.sctbench.cs.origin.WronglockBad ---
   Capture  1/10       : clean (exit 0)
@@ -767,39 +611,26 @@
   Successful captures: 10 / 10
   bug   captures       : 0 / 10
   clean captures       : 10 / 10
-    Trace size         : 129 events
+    Trace size         : 0 events
     Replay runs        : 100
-    Complete runs      : 87 / 100
+    Complete runs      : 100 / 100
     Structural divs    : 0 / 100
     Outcome reproduced : 100 / 100  (100.00%)
-    ...complete runs   : 87 / 87
-    Matched (complete) : 129.00 avg / run  (100.00%)
-    Valued events      : 83.27 avg / run
-    Natural agreement  : 8327 / 8327  (100.00%)
-    Injections         : 0 / 8327  (0.00%)
-    No-inject disagree : 0 / 8327  (0.00%)
+    ...complete runs   : 100 / 100
 
 ===== SUMMARY =====
 Classes tested        : 28
 Classes replayed      : 28 / 28
-Bug captures         : 89
-Bug replay runs      : 890
-Bug complete runs    : 502 / 890 runs  (56.4%)
-Bug structural divs  : 89 / 890 runs  (10.0%)
-Bug outcome repr.    : 571 / 890 runs  (64.2%)
-Bug ...complete runs : 502 / 502 runs  (100.0%)
-Bug matched complete : 100.0%
-Bug natural agr.    : 119273 / 119432  (99.9%)
-Bug injections      : 159 / 119432  (0.1%)
-Bug no-inject dis.  : 0 / 119432  (0.0%)
-Clean captures         : 191
-Clean replay runs      : 1910
-Clean complete runs    : 1595 / 1910 runs  (83.5%)
-Clean structural divs  : 50 / 1910 runs  (2.6%)
-Clean outcome repr.    : 1860 / 1910 runs  (97.4%)
-Clean ...complete runs : 1595 / 1595 runs  (100.0%)
-Clean matched complete : 100.0%
-Clean natural agr.    : 238580 / 238825  (99.9%)
-Clean injections      : 245 / 238825  (0.1%)
-Clean no-inject dis.  : 0 / 238825  (0.0%)
+Bug captures         : 84
+Bug replay runs      : 840
+Bug complete runs    : 840 / 840 runs  (100.0%)
+Bug structural divs  : 43 / 840 runs  (5.1%)
+Bug outcome repr.    : 474 / 840 runs  (56.4%)
+Bug ...complete runs : 474 / 840 runs  (56.4%)
+Clean captures         : 196
+Clean replay runs      : 1960
+Clean complete runs    : 1960 / 1960 runs  (100.0%)
+Clean structural divs  : 53 / 1960 runs  (2.7%)
+Clean outcome repr.    : 1933 / 1960 runs  (98.6%)
+Clean ...complete runs : 1933 / 1960 runs  (98.6%)
 ===================

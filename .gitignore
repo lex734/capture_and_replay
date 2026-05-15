@@ -25,3 +25,5 @@ target/
 *.pyc
 *.ctrl
 tmp/
+*.tsv
+*.properties

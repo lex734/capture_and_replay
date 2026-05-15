@@ -3,6 +3,7 @@ package replay;
 import common.BinarySchema;
 import common.ReplayBoundaryRegistry;
 import common.ReplayBoundaryRegistry.BoundaryMeta;
+import common.TraceSemantics;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -14,6 +15,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -41,8 +43,10 @@ public final class ScheduleDistiller {
         public final int rawSiteId;
         public final String className;
         public final String methodName;
+        public final int occurrence;
 
-        ScheduleEntry(long seq, int roleId, int eventType, int rawSiteId, String className, String methodName) {
+        ScheduleEntry(long seq, int roleId, int eventType, int rawSiteId,
+                String className, String methodName, int occurrence) {
             this.seq = seq;
             this.epoch = seq >>> 32;
             this.roleId = roleId;
@@ -50,11 +54,42 @@ public final class ScheduleDistiller {
             this.rawSiteId = rawSiteId;
             this.className = className;
             this.methodName = methodName;
+            this.occurrence = occurrence;
         }
 
         public String toTsv() {
             return seq + "\t" + epoch + "\t" + roleId + "\t" + eventType + "\t"
-                    + rawSiteId + "\t" + className + "\t" + methodName;
+                    + rawSiteId + "\t" + className + "\t" + methodName + "\t"
+                    + (occurrence > 0 ? occurrence : "");
+        }
+    }
+
+    private static final class OccurrenceKey {
+        private final int roleId;
+        private final int eventType;
+        private final String className;
+        private final String methodName;
+
+        private OccurrenceKey(int roleId, int eventType, String className, String methodName) {
+            this.roleId = roleId;
+            this.eventType = eventType;
+            this.className = className;
+            this.methodName = methodName;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (!(obj instanceof OccurrenceKey)) return false;
+            OccurrenceKey other = (OccurrenceKey) obj;
+            return roleId == other.roleId
+                    && eventType == other.eventType
+                    && Objects.equals(className, other.className)
+                    && Objects.equals(methodName, other.methodName);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(roleId, eventType, className, methodName);
         }
     }
 
@@ -73,12 +108,15 @@ public final class ScheduleDistiller {
 
                 int packedType = buffer.getInt(pos + 16);
                 int eventType = packedType & 0xFF;
+                if (!TraceSemantics.isReplayBoundary(packedType)) continue;
+
                 int rawSiteId = extractBoundarySiteId(buffer, pos);
                 BoundaryMeta meta = resolveBoundaryMeta(metadata.get(rawSiteId), rawSiteId, eventType);
                 if (meta == null) continue;
 
                 int roleId = (int) buffer.getLong(pos + 8);
-                entries.add(new ScheduleEntry(seq, roleId, eventType, rawSiteId, meta.className, meta.methodName));
+                entries.add(new ScheduleEntry(seq, roleId, eventType, rawSiteId,
+                        meta.className, meta.methodName, 0));
             }
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to distill schedule from " + tracePath, e);
@@ -120,7 +158,7 @@ public final class ScheduleDistiller {
 
     public static void write(Path outputPath, List<ScheduleEntry> entries) {
         List<String> lines = new ArrayList<>(entries.size() + 1);
-        lines.add("seq\tepoch\troleId\teventType\trawSiteId\tclassName\tmethodName");
+        lines.add("seq\tepoch\troleId\teventType\trawSiteId\tclassName\tmethodName\toccurrence");
         for (ScheduleEntry entry : entries) {
             lines.add(entry.toTsv());
         }

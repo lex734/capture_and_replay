@@ -149,6 +149,7 @@ public class SyncTransformer implements ClassFileTransformer {
         private final boolean isReplay;
         private final String monitorClass;
         private final String monitorMethod;
+        private final Set<String> currentClassVolatileFields = ConcurrentHashMap.newKeySet();
 
         public SyncClassVisitor(ClassVisitor cv, String className, ClassLoader loader) {
             super(Opcodes.ASM9, cv);
@@ -163,6 +164,7 @@ public class SyncTransformer implements ClassFileTransformer {
         public FieldVisitor visitField(int access, String name, String descriptor, String signature, Object value) {
             // Register volatile fields in the global cache as we visit them
             if ((access & Opcodes.ACC_VOLATILE) != 0) {
+                currentClassVolatileFields.add(name);
                 volatileFieldCache
                         .computeIfAbsent(className, k -> ConcurrentHashMap.newKeySet())
                         .add(name);
@@ -176,11 +178,13 @@ public class SyncTransformer implements ClassFileTransformer {
             MethodVisitor mv = super.visitMethod(access, name, descriptor, signature, exceptions);
 
             if (name.equals("<clinit>")) {
-                MethodVisitor synced = new SyncMethodVisitor(access, descriptor, mv, name, name, loader);
+                MethodVisitor synced = new SyncMethodVisitor(access, descriptor, mv, name, name, loader,
+                        currentClassVolatileFields);
                 return new ClinitMethodVisitor(synced, className, monitorClass, monitorMethod, isReplay);
             }
 
-            return new SyncMethodVisitor(access, descriptor, mv, className, name, loader);
+            return new SyncMethodVisitor(access, descriptor, mv, className, name, loader,
+                    currentClassVolatileFields);
         }
     }
 
@@ -188,6 +192,7 @@ public class SyncTransformer implements ClassFileTransformer {
         private final String className;
         private final String methodName;
         private final ClassLoader loader;
+        private final Set<String> currentClassVolatileFields;
         private int instructionId = 0;
 
         // Tracks pending NEW instructions (type name → allocation site string) so we
@@ -222,10 +227,11 @@ public class SyncTransformer implements ClassFileTransformer {
             mv.visitLdcInsn(methodName);
         }
 
-        private void recordReplayBoundary(int rawSiteId, int eventType) {
+        private void recordReplayBoundary(int rawSiteId, int packedType) {
             if (isReplay) return;
-            if (!TraceSemantics.isReplayBoundaryForEventType(eventType)) return;
-            ReplayBoundaryRegistry.register(rawSiteId, eventType, className.replace('/', '.'), methodName);
+            if (!TraceSemantics.advancesEpoch(packedType)
+                    && !TraceSemantics.isReplayBoundary(packedType)) return;
+            ReplayBoundaryRegistry.register(rawSiteId, packedType & 0xFF, className.replace('/', '.'), methodName);
         }
 
         // ---- Allocation tracking ----
@@ -327,11 +333,12 @@ public class SyncTransformer implements ClassFileTransformer {
         }
 
         public SyncMethodVisitor(int access, String descriptor, MethodVisitor mv, String className, String methodName,
-                ClassLoader loader) {
+                ClassLoader loader, Set<String> currentClassVolatileFields) {
             super(Opcodes.ASM9, access, descriptor, mv);
             this.className = className;
             this.methodName = methodName;
             this.loader = loader;
+            this.currentClassVolatileFields = currentClassVolatileFields;
             this.isConstructor = "<init>".equals(methodName);
             this.superInitCalled = !isConstructor; // non-constructors are always "ready"
         }
@@ -1165,10 +1172,12 @@ public class SyncTransformer implements ClassFileTransformer {
 
             int eventType = (opcode == Opcodes.GETFIELD || opcode == Opcodes.GETSTATIC) ? 5 : 6;
             boolean isStatic = (opcode == Opcodes.GETSTATIC || opcode == Opcodes.PUTSTATIC);
-            boolean isVolatile = SyncTransformer.isFieldVolatile(loader, owner, name);
+            boolean isVolatile = owner.equals(className)
+                    ? currentClassVolatileFields.contains(name)
+                    : SyncTransformer.isFieldVolatile(loader, owner, name);
             int siteId = SyncTransformer.registerSiteId(className + "." + methodName + "#" + instructionId++);
             if (isVolatile && eventType == BinarySchema.Event.FIELD_WRITE) {
-                recordReplayBoundary(siteId, eventType);
+                recordReplayBoundary(siteId, TraceSemantics.packFieldType(eventType, true, isStatic));
             }
 
             if (isReplay) {
@@ -1284,12 +1293,14 @@ public class SyncTransformer implements ClassFileTransformer {
                     mv.visitLdcInsn(eventType);
                     mv.visitVarInsn(Opcodes.ALOAD, ownerLocal);
                     mv.visitLdcInsn(siteId);
-                    mv.visitInsn(isVolatile ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
-                    mv.visitInsn(isStatic ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
-                    mv.visitLdcInsn(name);
-                    mv.visitLdcInsn(owner);
-                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logField" + typeSuffix,
-                            "(" + retDesc + "ILjava/lang/Object;IZZLjava/lang/String;Ljava/lang/String;)V", false);
+                        mv.visitInsn(isVolatile ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
+                        mv.visitInsn(isStatic ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
+                        mv.visitLdcInsn(name);
+                        mv.visitLdcInsn(owner);
+                        mv.visitLdcInsn(className.replace('/', '.'));
+                        mv.visitLdcInsn(methodName);
+                        mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logField" + typeSuffix,
+                            "(" + retDesc + "ILjava/lang/Object;IZZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V", false);
 
                     mv.visitVarInsn(Opcodes.ALOAD, ownerLocal);
                     mv.visitVarInsn(valLoadOp, valLocal);
@@ -1306,8 +1317,10 @@ public class SyncTransformer implements ClassFileTransformer {
                     mv.visitInsn(isStatic ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
                     mv.visitLdcInsn(name);
                     mv.visitLdcInsn(owner);
+                    mv.visitLdcInsn(className.replace('/', '.'));
+                    mv.visitLdcInsn(methodName);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logField" + typeSuffix,
-                            "(" + retDesc + "ILjava/lang/Object;IZZLjava/lang/String;Ljava/lang/String;)V", false);
+                            "(" + retDesc + "ILjava/lang/Object;IZZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V", false);
 
                     mv.visitVarInsn(valLoadOp, valLocal);
                     super.visitFieldInsn(opcode, owner, name, descriptor);
@@ -1327,8 +1340,10 @@ public class SyncTransformer implements ClassFileTransformer {
                     mv.visitInsn(isStatic ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
                     mv.visitLdcInsn(name);
                     mv.visitLdcInsn(owner);
+                    mv.visitLdcInsn(className.replace('/', '.'));
+                    mv.visitLdcInsn(methodName);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logField" + typeSuffix,
-                            "(" + retDesc + "ILjava/lang/Object;IZZLjava/lang/String;Ljava/lang/String;)V", false);
+                            "(" + retDesc + "ILjava/lang/Object;IZZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V", false);
 
                     mv.visitVarInsn(valLoadOp, valLocal);
 
@@ -1344,8 +1359,10 @@ public class SyncTransformer implements ClassFileTransformer {
                     mv.visitInsn(isStatic ? Opcodes.ICONST_1 : Opcodes.ICONST_0);
                     mv.visitLdcInsn(name);
                     mv.visitLdcInsn(owner);
+                    mv.visitLdcInsn(className.replace('/', '.'));
+                    mv.visitLdcInsn(methodName);
                     mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logField" + typeSuffix,
-                            "(" + retDesc + "ILjava/lang/Object;IZZLjava/lang/String;Ljava/lang/String;)V", false);
+                            "(" + retDesc + "ILjava/lang/Object;IZZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V", false);
 
                     mv.visitVarInsn(valLoadOp, valLocal);
                 }

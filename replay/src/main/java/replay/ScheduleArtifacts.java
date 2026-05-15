@@ -24,15 +24,19 @@ final class ScheduleArtifacts {
                     if (line.startsWith("seq\t")) continue;
                 }
                 String[] parts = line.split("\t", -1);
-                if (parts.length != 7) {
+                if (parts.length != 7 && parts.length != 8) {
                     throw new IllegalArgumentException("Invalid schedule artifact line: " + line);
                 }
                 long seq = Long.parseLong(parts[0]);
                 int roleId = Integer.parseInt(parts[2]);
                 int eventType = Integer.parseInt(parts[3]);
                 int rawSiteId = Integer.parseInt(parts[4]);
+                int occurrence = 0;
+                if (parts.length == 8 && !parts[7].isEmpty()) {
+                    occurrence = Integer.parseInt(parts[7]);
+                }
                 entries.add(new ScheduleDistiller.ScheduleEntry(
-                        seq, roleId, eventType, rawSiteId, parts[5], parts[6]));
+                        seq, roleId, eventType, rawSiteId, parts[5], parts[6], occurrence));
             }
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to load schedule artifact from " + path, e);

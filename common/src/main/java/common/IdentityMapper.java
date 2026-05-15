@@ -120,10 +120,27 @@ public class IdentityMapper {
 
         Set<Integer> replayRoles = allowedReplayRoles;
         if (replayRoles != null) {
-            return IGNORED_ROLE_ID;
+            return tidToRoleId.computeIfAbsent(tid, k -> reserveAllowedReplayRole(replayRoles));
         }
 
         return tidToRoleId.computeIfAbsent(tid, k -> roleCounter.getAndIncrement());
+    }
+
+    private static int reserveAllowedReplayRole(Set<Integer> replayRoles) {
+        if (replayRoles == null || replayRoles.isEmpty()) {
+            return IGNORED_ROLE_ID;
+        }
+
+        int maxAllowedRole = Collections.max(replayRoles);
+        while (true) {
+            int candidate = roleCounter.getAndIncrement();
+            if (replayRoles.contains(candidate)) {
+                return candidate;
+            }
+            if (candidate >= maxAllowedRole) {
+                return IGNORED_ROLE_ID;
+            }
+        }
     }
 
     public static boolean isIgnoredRole(int roleId) {
@@ -315,6 +332,7 @@ public class IdentityMapper {
 
     public static void preAssignRole(long tid, int roleId) {
         preAssignedRoles.put(tid, roleId);
+        roleCounter.updateAndGet(current -> Math.max(current, roleId + 1));
     }
 
     public static void setAllowedReplayRoles(Set<Integer> roleIds) {

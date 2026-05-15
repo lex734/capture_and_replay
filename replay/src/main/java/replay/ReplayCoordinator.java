@@ -6,9 +6,11 @@ import common.TraceSemantics;
 import java.nio.MappedByteBuffer;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -58,6 +60,36 @@ public class ReplayCoordinator {
     private static volatile String incompleteDetails = "";
     private static final ArrayList<ScheduleDistiller.ScheduleEntry> scheduleEntries = new ArrayList<>();
     private static final AtomicLong currentScheduleIdx = new AtomicLong(0);
+    private static final HashMap<BoundaryKey, Integer> matchedScheduleBoundaryCounts = new HashMap<>();
+
+    private static final class BoundaryKey {
+        private final int roleId;
+        private final int eventType;
+        private final String className;
+        private final String methodName;
+
+        private BoundaryKey(int roleId, int eventType, String className, String methodName) {
+            this.roleId = roleId;
+            this.eventType = eventType;
+            this.className = className;
+            this.methodName = methodName;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (!(obj instanceof BoundaryKey)) return false;
+            BoundaryKey other = (BoundaryKey) obj;
+            return roleId == other.roleId
+                    && eventType == other.eventType
+                    && Objects.equals(className, other.className)
+                    && Objects.equals(methodName, other.methodName);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(roleId, eventType, className, methodName);
+        }
+    }
 
     public static boolean hasDiverged() { return hasDiverged; }
 
@@ -79,6 +111,7 @@ public class ReplayCoordinator {
         incompleteReason = "";
         incompleteDetails = "";
         currentScheduleIdx.set(0);
+        matchedScheduleBoundaryCounts.clear();
         eventsMatched.set(0);
         ArrayList<long[]> allEvents = new ArrayList<>();
         ArrayList<long[]> boundaryEvents = new ArrayList<>();
@@ -132,6 +165,7 @@ public class ReplayCoordinator {
                 scheduleRoles.add(entry.roleId);
             }
             currentScheduleIdx.set(0);
+            matchedScheduleBoundaryCounts.clear();
         }
     }
     /**
@@ -403,6 +437,7 @@ public class ReplayCoordinator {
         }
         activateRole(roleId);
         int eventType = packedType & 0xFF;
+        BoundaryKey actualKey = new BoundaryKey(roleId, eventType, className, methodName);
 
         synchronized (controlLock) {
             while (true) {

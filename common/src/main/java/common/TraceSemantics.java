@@ -31,6 +31,7 @@ public final class TraceSemantics {
 
     public static boolean isReplayBoundary(int packedType) {
         int eventType = packedType & 0xFF;
+        if (usesOccurrenceCounterForEventType(eventType)) return false;
         if (advancesEpoch(packedType)) return true;
 
         return eventType == BinarySchema.Event.MONITOR_ENTER
@@ -46,6 +47,13 @@ public final class TraceSemantics {
 
     public static boolean isReplayBoundaryForEventType(int eventType) {
         return isReplayBoundary(BinarySchema.packType(eventType, BinarySchema.Flags.NONE));
+    }
+
+    public static boolean usesOccurrenceCounterForEventType(int eventType) {
+        return eventType == BinarySchema.Event.FIELD_WRITE
+                || eventType == BinarySchema.Event.ATOMIC_WRITE
+                || eventType == BinarySchema.Event.ATOMIC_RMW
+                || eventType == BinarySchema.Event.ATOMIC_CAS;
     }
 
     public static int packFieldType(int eventType, boolean isVolatile, boolean isStatic) {

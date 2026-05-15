@@ -200,11 +200,15 @@ public class CaptureMonitor {
   }
 
   public static void logFieldInt(int value, int eventType, Object owner, int siteId,
-      boolean isVolatile, boolean isStatic, String fieldName, String ownerName) {
+      boolean isVolatile, boolean isStatic, String fieldName, String ownerName,
+      String className, String methodName) {
     if (isInside.get()) return;
     if (shouldIgnoreCurrentRole(siteId)) return;
     isInside.set(true);
     try {
+      if (isVolatile && eventType == BinarySchema.Event.FIELD_WRITE) {
+        common.ReplayBoundaryRegistry.register(siteId, eventType, className, methodName);
+      }
       TraceLogger.logFieldInt(value, eventType, owner, siteId, isVolatile, isStatic, fieldName, ownerName);
     } finally {
       isInside.set(false);
@@ -212,11 +216,15 @@ public class CaptureMonitor {
   }
 
   public static void logFieldLong(long value, int eventType, Object owner, int siteId,
-      boolean isVolatile, boolean isStatic, String fieldName, String ownerName) {
+      boolean isVolatile, boolean isStatic, String fieldName, String ownerName,
+      String className, String methodName) {
     if (isInside.get()) return;
     if (shouldIgnoreCurrentRole(siteId)) return;
     isInside.set(true);
     try {
+      if (isVolatile && eventType == BinarySchema.Event.FIELD_WRITE) {
+        common.ReplayBoundaryRegistry.register(siteId, eventType, className, methodName);
+      }
       TraceLogger.logFieldLong(value, eventType, owner, siteId, isVolatile, isStatic, fieldName, ownerName);
     } finally {
       isInside.set(false);
@@ -224,11 +232,15 @@ public class CaptureMonitor {
   }
 
   public static void logFieldObj(Object value, int eventType, Object owner, int siteId,
-      boolean isVolatile, boolean isStatic, String fieldName, String ownerName) {
+      boolean isVolatile, boolean isStatic, String fieldName, String ownerName,
+      String className, String methodName) {
     if (isInside.get()) return;
     if (shouldIgnoreCurrentRole(siteId)) return;
     isInside.set(true);
     try {
+      if (isVolatile && eventType == BinarySchema.Event.FIELD_WRITE) {
+        common.ReplayBoundaryRegistry.register(siteId, eventType, className, methodName);
+      }
       TraceLogger.logFieldObj(value, eventType, owner, siteId, isVolatile, isStatic, fieldName, ownerName);
     } finally {
       isInside.set(false);

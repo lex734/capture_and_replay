@@ -1,7 +1,134 @@
-# Capture and Replay Agent
+# Capture And Replay
 
-A Java agent that captures a synchronization trace from a multithreaded Java
-program and replays a distilled boundary schedule on a later run.
+This branch is a Java capture/replay tool that records a rich execution trace
+and replays a distilled boundary schedule.
+
+The important design point for this branch is:
+
+- replay is schedule-based, not value-injecting
+- replay coordinates only selected replay boundaries
+- replay does not try to force ordinary field, array, or atomic values back to
+  what capture observed
+
+## What This Branch Does
+
+Capture records a rich binary trace in `trace.bin`. That trace includes:
+
+- thread/monitor behavior
+- field accesses
+- array accesses
+- atomic operations
+- allocation identity
+- exception throws
+
+Capture also writes `trace-boundaries.tsv`, which is a sidecar that maps raw
+boundary sites to `(eventType, className, methodName)`.
+
+Replay does not directly replay the entire trace. Instead it:
+
+1. Loads `trace.bin`
+2. Distills a smaller `schedule-boundaries.tsv`
+3. Runs a mandatory static applicability check against the target app
+4. If applicable, coordinates only the distilled replay boundaries
+
+The replay entrypoint is [ReplayAgent.java](/home/enxing/capture_and_replay/replay/src/main/java/replay/ReplayAgent.java).
+
+## Replay Boundary Policy
+
+The single boundary predicate lives in
+[TraceSemantics.java](/home/enxing/capture_and_replay/common/src/main/java/common/TraceSemantics.java).
+
+In this branch, `isReplayBoundary(...)` means:
+
+- include thread behavior
+- include non-object-related epoch releases
+- exclude object-tied releases such as volatile field writes and atomic writes
+
+So schedule replay currently coordinates things like:
+
+- `MONITOR_ENTER`
+- `MONITOR_EXIT`
+- `THREAD_START`
+- `THREAD_JOIN`
+- `THREAD_WAIT`
+- `THREAD_NOTIFY`
+- `THREAD_NOTIFY_ALL`
+- `THREAD_PARK`
+- `THREAD_UNPARK`
+- `THREAD_SLEEP`
+- `THREAD_YIELD`
+- `THREAD_INTERRUPT`
+- `THREAD_INTERRUPT_CHECK`
+- `CLASS_INIT_BEGIN`
+- `CLASS_INIT_END`
+
+And it intentionally does not schedule object-tied release events like:
+
+- volatile `FIELD_WRITE`
+- `ATOMIC_WRITE`
+- `ATOMIC_RMW`
+- `ATOMIC_CAS`
+
+That invariant is what keeps tests like
+[LinkedListProducerConsumerTest.java](/home/enxing/capture_and_replay/test-app/src/main/java/correctness/LinkedListProducerConsumerTest.java)
+from hanging in schedule replay when progress depends on natural read outcomes.
+
+## Is Value Injection Used Here?
+
+No, not in the active replay path on this branch.
+
+The current replay monitor executes operations naturally and only blocks on
+replay boundaries. For example:
+
+- field replay methods return `naturalValue`
+- array replay methods return `naturalValue`
+- atomic replay methods return `naturalValue`
+
+You can see that directly in
+[ReplayMonitor.java](/home/enxing/capture_and_replay/replay/src/main/java/replay/ReplayMonitor.java).
+
+Examples:
+
+- `checkFieldInt(...)` returns `naturalValue`
+- `checkArrayInt(...)` returns `naturalValue`
+- `replayAtomicInt(...)` returns `naturalValue`
+
+So the current branch uses replay as schedule coordination, not as state repair.
+
+## Difference From `divergence-finder`
+
+`divergence-finder` is a different replay model.
+
+### This branch
+
+- replays a distilled boundary schedule
+- runs a mandatory static applicability check first
+- coordinates only replay boundaries
+- preserves natural program values
+- does not inject captured field/array/atomic values back into the run
+- is closer to “boundary-guided re-execution”
+
+### `divergence-finder`
+
+- replays against the raw trace much more directly
+- includes value-aware replay paths in `ReplayCoordinator`
+- can return captured `traceValue` instead of the natural runtime value
+- tracks fidelity/injection statistics
+- is closer to “find where natural execution diverges from the captured run”
+
+On `divergence-finder`, methods such as:
+
+- `awaitTurnFieldInt(...)`
+- `awaitTurnFieldLong(...)`
+- `awaitTurnFieldObj(...)`
+- `awaitTurnArrayInt(...)`
+- `awaitTurnArrayLong(...)`
+- `awaitTurnArrayObj(...)`
+
+can return the captured trace value when it differs from the natural value.
+That is value injection.
+
+This branch does not do that.
 
 ## Build
 
@@ -11,65 +138,35 @@ Requires Maven and JDK 11+.
 mvn package
 ```
 
-Artifacts produced:
-- `capture/target/trace-capture-agent.jar` — capture agent (fat jar)
-- `replay/target/trace-replay-agent.jar` — replay agent (fat jar)
-- `test-app/target/test-app.jar` — bundled test application
-
-To skip rebuilding unchanged modules:
-```bash
-mvn package -pl capture,replay --am
-```
-
-To compile a single Java source file directly with `javac`:
+Useful faster rebuild:
 
 ```bash
-javac -cp test-app/target/test-app.jar -d /tmp/classes path/to/YourClass.java
+mvn package -pl common,instr,capture,replay,test-app -am
 ```
 
-For example, to compile one test class from `test-app` into a throwaway output directory:
+Artifacts:
 
-```bash
-mkdir -p /tmp/classes
-javac -cp test-app/target/test-app.jar \
-      -d /tmp/classes \
-      test-app/src/main/java/correctness/AtomicCounterTest.java
-```
+- `capture/target/trace-capture-agent.jar`
+- `replay/target/trace-replay-agent.jar`
+- `test-app/target/test-app.jar`
 
-You can then run that class with:
+## Running
 
-```bash
-java -cp /tmp/classes:test-app/target/test-app.jar correctness.AtomicCounterTest
-```
-
-## Running the Test App
-
-**Capture** — run the program and record:
-- `trace.bin` — raw captured trace
-- `trace-boundaries.tsv` — replay-boundary metadata sidecar
+Capture:
 
 ```bash
 java -javaagent:capture/target/trace-capture-agent.jar \
      -cp test-app/target/test-app.jar Main
 ```
 
-**Replay** — replay now does four things automatically before the target
-program starts:
-- distills `trace.bin` + `trace-boundaries.tsv` into `schedule-boundaries.tsv`
-- runs mandatory static applicability analysis against the target program
-- aborts early if the run is statically inapplicable
-- otherwise enables boundary-coordinated schedule replay
+Replay:
 
 ```bash
 java -javaagent:replay/target/trace-replay-agent.jar \
      -cp test-app/target/test-app.jar Main
 ```
 
-The replay agent expects either:
-- a single application jar on the classpath, or
-- a single classes directory on the classpath
-
-If the target cannot be inferred from `java.class.path`, set it explicitly:
+If replay cannot infer the target jar or classes root from the classpath, set:
 
 ```bash
 java -Dtool.static.analysis.path=/path/to/app.jar \
@@ -77,48 +174,15 @@ java -Dtool.static.analysis.path=/path/to/app.jar \
      -cp test-app/target/test-app.jar Main
 ```
 
-## Attaching the Agents to Your Own Program
-
-The agents work with any Java program — just substitute your classpath and main class.
-
-**Capture:**
-```bash
-java -javaagent:capture/target/trace-capture-agent.jar \
-     -cp <your-classpath> <YourMainClass> [args...]
-```
-
-**Replay** (run after capture has produced `trace.bin` and `trace-boundaries.tsv`):
-```bash
-java -javaagent:replay/target/trace-replay-agent.jar \
-     -cp <your-classpath> <YourMainClass> [args...]
-```
-
-If replay cannot determine the target jar/classes root from the application
-classpath, pass it explicitly:
-
-```bash
-java -Dtool.static.analysis.path=<path-to-app-jar-or-classes-dir> \
-     -javaagent:replay/target/trace-replay-agent.jar \
-     -cp <your-classpath> <YourMainClass> [args...]
-```
-
-**Example — attaching to an existing fat jar:**
-```bash
-# Capture
-java -javaagent:capture/target/trace-capture-agent.jar -jar your-app.jar
-
-# Replay
-java -javaagent:replay/target/trace-replay-agent.jar -jar your-app.jar
-```
-
 ## Generated Files
 
-These files are written in the working directory:
-- `trace.bin` — raw captured trace
-- `trace-boundaries.tsv` — raw boundary metadata emitted during capture
-- `schedule-boundaries.tsv` — distilled replay schedule emitted during replay startup
+Written in the working directory:
 
-## Optional Offline Tools
+- `trace.bin`: raw captured trace
+- `trace-boundaries.tsv`: raw capture-time boundary metadata
+- `schedule-boundaries.tsv`: distilled replay schedule
+
+## Offline Tools
 
 Distill the schedule manually:
 
@@ -126,7 +190,7 @@ Distill the schedule manually:
 java -cp replay/target/trace-replay-agent.jar replay.ScheduleDistiller
 ```
 
-Run the mandatory static analyzer manually:
+Run the static analyzer manually:
 
 ```bash
 java -cp replay/target/trace-replay-agent.jar replay.ScheduleStaticAnalyzer \

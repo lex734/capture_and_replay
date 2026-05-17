@@ -93,6 +93,18 @@ public class ReplayCoordinator {
 
     public static boolean hasDiverged() { return hasDiverged; }
 
+    public static long getEventsMatched() {
+        return eventsMatched.get();
+    }
+
+    public static long getTotalBoundaryEvents() {
+        return totalEvents;
+    }
+
+    public static String getFirstDivergenceInfo() {
+        return firstDivergenceInfo;
+    }
+
     public static void init(MappedByteBuffer traceBuffer, long count) {
         // Clear all state so init() is safe to call more than once (e.g. in tests).
         sortedBoundaryEvents = null;

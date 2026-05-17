@@ -25,6 +25,9 @@ public class ReplayAgent {
         // System.out.println("[ReplayAgent] Initializing Enforcer...");
 
         try {
+            ReplayFidelityReporter.installShutdownHookIfRequested();
+            ReplayFidelityReporter.installOutcomeHooksIfRequested();
+
             // 1. Reset the "Brain" to ensure discovery order matches Capture
             IdentityMapper.reset();
             ReplayBoundaryRegistry.reset();
@@ -82,6 +85,7 @@ public class ReplayAgent {
                 if (roleId != -1) {
                     ReplayCoordinator.reportThreadDead(roleId);
                 }
+                ReplayFidelityReporter.recordThrowable(throwable);
                 // Print the full stack trace so it matches what capture produced.
                 throwable.printStackTrace(System.err);
             });

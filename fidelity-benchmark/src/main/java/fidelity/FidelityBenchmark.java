@@ -5,6 +5,8 @@ import java.nio.file.*;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import common.ReplayBoundaryRegistry;
+import replay.ScheduleDistiller;
 
 /**
  * Measures how faithfully the replay agent reproduces captured SCTBench runs.
@@ -71,6 +73,8 @@ public class FidelityBenchmark {
         // means there is no race on trace.bin between different classes.
         Path workDir  = Paths.get("").toAbsolutePath();
         Path traceFile = workDir.resolve("trace.bin");
+        Path boundaryFile = workDir.resolve(ReplayBoundaryRegistry.DEFAULT_FILE);
+        Path scheduleFile = workDir.resolve(ScheduleDistiller.DEFAULT_OUTPUT);
 
         // Summary accumulators
         int classesReplayed = 0;
@@ -83,6 +87,8 @@ public class FidelityBenchmark {
 
             for (int captureTrial = 0; captureTrial < captureTrials; captureTrial++) {
                 Files.deleteIfExists(traceFile);
+                Files.deleteIfExists(boundaryFile);
+                Files.deleteIfExists(scheduleFile);
 
                 CaptureResult cr = runCapture(captureJar, sctbenchJar, cls, workDir);
                 classSummary.captureAttempts++;
@@ -176,6 +182,7 @@ public class FidelityBenchmark {
             try (Reader rd = Files.newBufferedReader(propsFile)) { p.load(rd); }
             catch (IOException ignored) {}
             Files.deleteIfExists(propsFile);
+            hadBug            = Boolean.parseBoolean(p.getProperty("had_bug", Boolean.toString(hadBug))) || hadBug;
             diverged          = Boolean.parseBoolean(p.getProperty("structural_divergence", "false"));
             eventsMatched     = Long.parseLong(p.getProperty("events_matched",      "0"));
             eventsTotal       = Long.parseLong(p.getProperty("events_total",        "0"));
@@ -337,7 +344,9 @@ public class FidelityBenchmark {
             injections += rr.injections;
             noInjectDisagreements += rr.noInjectDisagreements;
 
-            boolean isComplete = (rr.eventsMatched == rr.eventsTotal);
+            boolean isComplete = !rr.diverged
+                && rr.eventsTotal > 0
+                && rr.eventsMatched == rr.eventsTotal;
             if (isComplete) {
                 completeRuns++;
                 completeMatched += rr.eventsMatched;

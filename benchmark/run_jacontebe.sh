@@ -12,6 +12,7 @@ JAVA_CMD=${JAVA_CMD:-java}
 CAPTURE_TIMEOUT=${CAPTURE_TIMEOUT:-20s}
 REPLAY_TIMEOUT=${REPLAY_TIMEOUT:-20s}
 TIMEOUT_KILL_AFTER=${TIMEOUT_KILL_AFTER:-5s}
+KEEP_WORKDIR=${KEEP_WORKDIR:-0}
 TIMEOUT_CMD=$(command -v gtimeout || command -v timeout || true)
 STDBUF_CMD=$(command -v stdbuf || true)
 
@@ -37,6 +38,7 @@ Environment overrides:
   CAPTURE_TIMEOUT=<duration>   default: 20s
   REPLAY_TIMEOUT=<duration>    default: 20s
   TIMEOUT_KILL_AFTER=<duration> default: 5s
+  KEEP_WORKDIR=1               keep per-test temp workdirs instead of deleting them
 
 Runs each selected JaConTeBe test sequentially:
   1. stages sources with scripts/install.sh
@@ -98,28 +100,40 @@ runtime_cp() {
 
 cleanup_test_artifacts() {
   local test_name="$1"
+  local work_dir="$2"
 
   case "$test_name" in
     derby1)
-      rm -rf "$SUBJECT_DIR/DB"
-      rm -f "$SUBJECT_DIR/derby.log"
+      rm -rf "$work_dir/DB"
+      rm -f "$work_dir/derby.log"
       ;;
     groovy2)
-      rm -rf "$SUBJECT_DIR/test"
+      rm -rf "$work_dir/test"
       ;;
     jdk6_10)
-      rm -f "$SUBJECT_DIR/file1" "$SUBJECT_DIR/file2"
+      rm -f "$work_dir/file1" "$work_dir/file2"
       ;;
     jdk6_3|jdk7_3)
-      rm -rf "$SUBJECT_DIR/classes"
+      rm -rf "$work_dir/classes"
       ;;
     jdk7_6)
-      rm -rf "$SUBJECT_DIR/classes" "$SUBJECT_DIR/implcb"
+      rm -rf "$work_dir/classes" "$work_dir/implcb"
       ;;
     lucene2)
-      rm -rf "$SUBJECT_DIR"/TestDoug2*
+      rm -rf "$work_dir"/TestDoug2*
       ;;
   esac
+}
+
+create_workdir() {
+  local out_dir="$1"
+  local test_name="$2"
+  local work_dir
+
+  work_dir=$(mktemp -d "/tmp/jacontebe.${test_name}.XXXXXX")
+  ln -s "$SUBJECT_DIR/source" "$work_dir/source"
+  ln -s "$SUBJECT_DIR/versions.alt" "$work_dir/versions.alt"
+  printf '%s\n' "$work_dir"
 }
 
 main_and_args() {
@@ -202,21 +216,31 @@ special_jvm_opts() {
 prepare_special_test() {
   local test_name="$1"
   local timeout_value="$2"
+  local work_dir="$3"
   local classpath
   classpath=$(runtime_cp "$test_name")
 
   case "$test_name" in
     jdk6_3)
-      run_timed "$timeout_value" "$JAVA_CMD" -cp "$classpath" asm.LoggerModifier
+      (
+        cd "$work_dir" || exit 1
+        run_timed "$timeout_value" "$JAVA_CMD" -cp "$classpath" asm.LoggerModifier
+      )
       ;;
     jdk7_3)
-      run_timed "$timeout_value" "$JAVA_CMD" -cp "$classpath" asm.FutureTaskModifier
+      (
+        cd "$work_dir" || exit 1
+        run_timed "$timeout_value" "$JAVA_CMD" -cp "$classpath" asm.FutureTaskModifier
+      )
       ;;
     jdk7_6)
-      mkdir -p "$SUBJECT_DIR/classes/edu/illinois/jacontebe/globalevent"
+      mkdir -p "$work_dir/classes/edu/illinois/jacontebe/globalevent"
       cp "$SUBJECT_DIR/source/edu/illinois/jacontebe/globalevent/GlobalDriver.class" \
-        "$SUBJECT_DIR/classes/edu/illinois/jacontebe/globalevent/GlobalDriver.class"
-      run_timed "$timeout_value" "$JAVA_CMD" -cp "$classpath" asm.ActivationModifier
+        "$work_dir/classes/edu/illinois/jacontebe/globalevent/GlobalDriver.class"
+      (
+        cd "$work_dir" || exit 1
+        run_timed "$timeout_value" "$JAVA_CMD" -cp "$classpath" asm.ActivationModifier
+      )
       ;;
   esac
 }
@@ -227,6 +251,7 @@ run_one_mode() {
   local out_dir="$3"
   local timeout_value="$4"
   local agent_jar="$5"
+  local work_dir="$6"
 
   local cp
   cp=$(runtime_cp "$test_name")
@@ -236,9 +261,9 @@ run_one_mode() {
   extra_opts=$(special_jvm_opts "$test_name")
   local log_prefix="$out_dir/$mode"
 
-  cleanup_test_artifacts "$test_name"
-  if ! prepare_special_test "$test_name" "$timeout_value" >"$log_prefix.prep.stdout" 2>"$log_prefix.prep.stderr"; then
-    cleanup_test_artifacts "$test_name"
+  cleanup_test_artifacts "$test_name" "$work_dir"
+  if ! prepare_special_test "$test_name" "$timeout_value" "$work_dir" >"$log_prefix.prep.stdout" 2>"$log_prefix.prep.stderr"; then
+    cleanup_test_artifacts "$test_name" "$work_dir"
     return 98
   fi
 
@@ -246,7 +271,7 @@ run_one_mode() {
 
   if [ "$mode" = "capture" ]; then
     (
-      cd "$SUBJECT_DIR" || exit 1
+      cd "$work_dir" || exit 1
       rm -f trace.bin trace-boundaries.tsv schedule-boundaries.tsv trace-reduced.tsv trace-semantic.tsv
       # shellcheck disable=SC2086
       run_timed "$timeout_value" "$JAVA_CMD" $extra_opts \
@@ -255,15 +280,15 @@ run_one_mode() {
         $main
     ) >"$log_prefix.stdout" 2>"$log_prefix.stderr" || rc=$?
 
-    if [ -f "$SUBJECT_DIR/trace.bin" ]; then
-      cp "$SUBJECT_DIR/trace.bin" "$out_dir/trace.bin"
+    if [ -f "$work_dir/trace.bin" ]; then
+      cp "$work_dir/trace.bin" "$out_dir/trace.bin"
     fi
-    if [ -f "$SUBJECT_DIR/trace-boundaries.tsv" ]; then
-      cp "$SUBJECT_DIR/trace-boundaries.tsv" "$out_dir/trace-boundaries.tsv"
+    if [ -f "$work_dir/trace-boundaries.tsv" ]; then
+      cp "$work_dir/trace-boundaries.tsv" "$out_dir/trace-boundaries.tsv"
     fi
   else
     (
-      cd "$SUBJECT_DIR" || exit 1
+      cd "$work_dir" || exit 1
       rm -f schedule-boundaries.tsv trace-reduced.tsv trace-semantic.tsv
       # shellcheck disable=SC2086
       run_timed "$timeout_value" "$JAVA_CMD" $extra_opts \
@@ -273,18 +298,18 @@ run_one_mode() {
         $main
     ) >"$log_prefix.stdout" 2>"$log_prefix.stderr" || rc=$?
 
-    if [ -f "$SUBJECT_DIR/schedule-boundaries.tsv" ]; then
-      cp "$SUBJECT_DIR/schedule-boundaries.tsv" "$out_dir/schedule-boundaries.tsv"
+    if [ -f "$work_dir/schedule-boundaries.tsv" ]; then
+      cp "$work_dir/schedule-boundaries.tsv" "$out_dir/schedule-boundaries.tsv"
     fi
-    if [ -f "$SUBJECT_DIR/trace-reduced.tsv" ]; then
-      cp "$SUBJECT_DIR/trace-reduced.tsv" "$out_dir/trace-reduced.tsv"
+    if [ -f "$work_dir/trace-reduced.tsv" ]; then
+      cp "$work_dir/trace-reduced.tsv" "$out_dir/trace-reduced.tsv"
     fi
-    if [ -f "$SUBJECT_DIR/trace-semantic.tsv" ]; then
-      cp "$SUBJECT_DIR/trace-semantic.tsv" "$out_dir/trace-semantic.tsv"
+    if [ -f "$work_dir/trace-semantic.tsv" ]; then
+      cp "$work_dir/trace-semantic.tsv" "$out_dir/trace-semantic.tsv"
     fi
   fi
 
-  cleanup_test_artifacts "$test_name"
+  cleanup_test_artifacts "$test_name" "$work_dir"
   return "$rc"
 }
 
@@ -324,6 +349,8 @@ for test_name in "${tests_to_run[@]}"; do
   capture_rc=0
   replay_rc=0
   result="ok"
+  work_dir=$(create_workdir "$out_dir" "$test_name")
+  printf '%s\n' "$work_dir" >"$out_dir/workdir.txt"
 
   (
     cd "$SUBJECT_DIR" || exit 1
@@ -336,10 +363,13 @@ for test_name in "${tests_to_run[@]}"; do
     echo "STAGE FAILED (exit $stage_rc)"
     printf '%s\t%s\t-\t-\t%s\t%s\t%s\n' \
       "$test_name" "$stage_rc" "no" "no" "$result" >>"$summary_file"
+    if [ "$KEEP_WORKDIR" != "1" ]; then
+      rm -rf "$work_dir"
+    fi
     continue
   fi
 
-  run_one_mode capture "$test_name" "$out_dir" "$CAPTURE_TIMEOUT" "$CAPTURE_AGENT" || capture_rc=$?
+  run_one_mode capture "$test_name" "$out_dir" "$CAPTURE_TIMEOUT" "$CAPTURE_AGENT" "$work_dir" || capture_rc=$?
   if [ ! -f "$out_dir/trace.bin" ]; then
     capture_failures=$((capture_failures + 1))
     result="capture_missing_trace"
@@ -347,7 +377,7 @@ for test_name in "${tests_to_run[@]}"; do
       capture_rc=99
     fi
   else
-    run_one_mode replay "$test_name" "$out_dir" "$REPLAY_TIMEOUT" "$REPLAY_AGENT" || replay_rc=$?
+    run_one_mode replay "$test_name" "$out_dir" "$REPLAY_TIMEOUT" "$REPLAY_AGENT" "$work_dir" || replay_rc=$?
     if [ "$capture_rc" -ne 0 ]; then
       capture_failures=$((capture_failures + 1))
       if [ "$replay_rc" -ne 0 ]; then
@@ -370,6 +400,9 @@ for test_name in "${tests_to_run[@]}"; do
   echo "stage=$stage_rc capture=$capture_rc replay=$replay_rc trace=$trace_present schedule=$schedule_present result=$result"
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$test_name" "$stage_rc" "$capture_rc" "$replay_rc" "$trace_present" "$schedule_present" "$result" >>"$summary_file"
+  if [ "$KEEP_WORKDIR" != "1" ]; then
+    rm -rf "$work_dir"
+  fi
 done
 
 echo

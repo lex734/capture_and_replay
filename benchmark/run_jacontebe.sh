@@ -1,228 +1,418 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+REPO_ROOT=$(cd "$SCRIPT_DIR/.." && pwd)
+SUBJECT_DIR="$REPO_ROOT/benchmark/bms/JaConTeBe"
+EXPERIMENT_ROOT="$REPO_ROOT/benchmark/bms"
+OUT_ROOT="$REPO_ROOT/benchmark/output/capture-replay/jacontebe"
+CAPTURE_AGENT="$REPO_ROOT/capture/target/trace-capture-agent.jar"
+REPLAY_AGENT="$REPO_ROOT/replay/target/trace-replay-agent.jar"
+JAVA_CMD=${JAVA_CMD:-java}
+JACONTEBE_JVM_OPTS=${JACONTEBE_JVM_OPTS:---add-opens java.base/java.lang=ALL-UNNAMED}
+CAPTURE_TIMEOUT=${CAPTURE_TIMEOUT:-20s}
+REPLAY_TIMEOUT=${REPLAY_TIMEOUT:-20s}
+TIMEOUT_KILL_AFTER=${TIMEOUT_KILL_AFTER:-5s}
+KEEP_WORKDIR=${KEEP_WORKDIR:-0}
 TIMEOUT_CMD=$(command -v gtimeout || command -v timeout || true)
-if [ -z "$TIMEOUT_CMD" ]; then
-  echo "ERROR: neither gtimeout nor timeout found. Install with: brew install coreutils"
+STDBUF_CMD=$(command -v stdbuf || true)
+
+ALL_TESTS=(
+  dbcp1 dbcp2 dbcp3 dbcp4
+  derby1 derby2 derby3 derby4 derby5
+  groovy1 groovy2 groovy3 groovy4 groovy5 groovy6
+  jdk6_1 jdk6_2 jdk6_3 jdk6_4 jdk6_5 jdk6_6 jdk6_7 jdk6_8 jdk6_9 jdk6_10 jdk6_11 jdk6_12 jdk6_13 jdk6_14
+  jdk7_1 jdk7_2 jdk7_3 jdk7_4 jdk7_5 jdk7_6
+  log4j1 log4j2 log4j3 log4j4 log4j5
+  lucene1 lucene2
+  pool1 pool2 pool3 pool4 pool5
+)
+
+usage() {
+  cat <<'EOF'
+Usage:
+  benchmark/run_jacontebe.sh [test ...]
+  benchmark/run_jacontebe.sh --list
+
+Environment overrides:
+  JAVA_CMD=<java>
+  JACONTEBE_JVM_OPTS="<opts>" default: --add-opens java.base/java.lang=ALL-UNNAMED
+  CAPTURE_TIMEOUT=<duration>   default: 20s
+  REPLAY_TIMEOUT=<duration>    default: 20s
+  TIMEOUT_KILL_AFTER=<duration> default: 5s
+  KEEP_WORKDIR=1               keep per-test temp workdirs instead of deleting them
+
+Runs each selected JaConTeBe test sequentially:
+  1. stages sources with scripts/install.sh
+  2. runs capture once with trace-capture-agent.jar
+  3. runs replay once with trace-replay-agent.jar
+  4. stores logs and artifacts under benchmark/output/capture-replay/jacontebe/<test>/
+EOF
+}
+
+if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+  usage
+  exit 0
+fi
+
+if [ "${1:-}" = "--list" ]; then
+  printf '%s\n' "${ALL_TESTS[@]}"
+  exit 0
+fi
+
+if [ ! -d "$SUBJECT_DIR" ]; then
+  echo "ERROR: JaConTeBe directory not found at $SUBJECT_DIR"
   exit 1
 fi
 
-JACONTEBE_DIR=bms/JaConTeBe
-JPF_SCRIPTS=$JACONTEBE_DIR/testplans.alt/jpfscripts
-OUT=output/capture-replay/jacontebe
-CAPTURE_AGENT=../capture/target/trace-capture-agent.jar
-REPLAY_AGENT=../replay/target/trace-replay-agent.jar
+if [ ! -f "$CAPTURE_AGENT" ]; then
+  echo "ERROR: capture agent not found at $CAPTURE_AGENT"
+  exit 1
+fi
 
-# JaConTeBe should run on JDK 11.
-JAVA=/Library/Java/JavaVirtualMachines/amazon-corretto-11.jdk/Contents/Home/bin/java
-RUN_TIMEOUT=${JACONTEBE_TIMEOUT:-45s}
-JAVA_OPEN_FLAGS=(
-  --add-opens java.base/java.lang=ALL-UNNAMED
-  --add-opens java.base/java.util=ALL-UNNAMED
-  --add-opens java.base/java.io=ALL-UNNAMED
-  --add-opens java.base/java.util.concurrent=ALL-UNNAMED
-  --add-opens java.base/java.util.concurrent.atomic=ALL-UNNAMED
-  --add-opens java.base/java.lang.reflect=ALL-UNNAMED
-)
-mkdir -p $OUT
+if [ ! -f "$REPLAY_AGENT" ]; then
+  echo "ERROR: replay agent not found at $REPLAY_AGENT"
+  exit 1
+fi
 
-# Returns true if any recognized concurrency bug signal appears in the output files.
-# Covers signals from both the JaConTeBe harness and our capture/replay agents.
-has_bug_signal() {
-  local stdout_file="$1"
-  local stderr_file="$2"
+if [ -z "$TIMEOUT_CMD" ]; then
+  echo "ERROR: neither gtimeout nor timeout is available"
+  exit 1
+fi
 
-  grep -Eqs \
-    "AssertionError|\
-Bug [Ff]ound!|\
-Finished test: Bug has been reproduced successfully|\
-Deadlock detected|\
-RuntimeException: deadlock|\
-Detected suspicious forever waiting|\
-Program has been forced to exit from" \
-    "$stdout_file" "$stderr_file"
-}
+mkdir -p "$OUT_ROOT"
+export experiment_root="$EXPERIMENT_ROOT"
 
-bug_reason() {
-  local stdout_file="$1"
-  local stderr_file="$2"
+run_timed() {
+  local timeout_value="$1"
+  shift
 
-  if grep -Eq "Finished test: Bug has been reproduced successfully" "$stdout_file" "$stderr_file"; then
-    echo "bug-success"
-  elif grep -q "AssertionError" "$stderr_file"; then
-    echo "assertion"
-  elif grep -Eq "Bug [Ff]ound!" "$stdout_file" "$stderr_file"; then
-    echo "bug-message"
-  elif grep -Eq "Program has been forced to exit from endless loop" "$stdout_file" "$stderr_file"; then
-    echo "endless-loop"
-  elif grep -Eq "Program has been forced to exit from forever waiting|Detected suspicious forever waiting" "$stdout_file" "$stderr_file"; then
-    echo "forever-waiting"
-  elif grep -Eq "Program has been forced to exit from deadlock|Deadlock detected|RuntimeException: deadlock" "$stdout_file" "$stderr_file"; then
-    echo "deadlock"
+  if [ -n "$STDBUF_CMD" ]; then
+    "$TIMEOUT_CMD" --foreground --kill-after="$TIMEOUT_KILL_AFTER" "$timeout_value" \
+      "$STDBUF_CMD" -oL -eL "$@"
   else
-    echo "bug-signal"
+    "$TIMEOUT_CMD" --foreground --kill-after="$TIMEOUT_KILL_AFTER" "$timeout_value" "$@"
   fi
 }
 
-has_infra_error() {
-  local stdout_file="$1"
-  local stderr_file="$2"
-
-  grep -Eqs \
-    "VerifyError|\
-ClassFormatError|\
-UnsupportedClassVersionError|\
-NoClassDefFoundError|\
-NoSuchMethodError|\
-IllegalAccessError|\
-LinkageError|\
-Unable to initialize main class|\
-Deterministic site id collision|\
-\[Agent\] Fatal error" \
-    "$stdout_file" "$stderr_file"
+runtime_cp() {
+  local test_name="$1"
+  printf './versions.alt/lib/%s.jar:./source' "$test_name"
 }
 
-while IFS= read -r bench; do
-  [ -z "$bench" ] && continue
+cleanup_test_artifacts() {
+  local test_name="$1"
+  local work_dir="$2"
 
-  jpf_file="$JPF_SCRIPTS/${bench}.jpf"
-  if [ ! -f "$jpf_file" ]; then
-    echo "SKIP (no jpf file) — $bench"
-    continue
+  case "$test_name" in
+    derby1)
+      rm -rf "$work_dir/DB"
+      rm -f "$work_dir/derby.log"
+      ;;
+    groovy2)
+      rm -rf "$work_dir/test"
+      ;;
+    jdk6_10)
+      rm -f "$work_dir/file1" "$work_dir/file2"
+      ;;
+    jdk6_3|jdk7_3)
+      rm -rf "$work_dir/classes"
+      ;;
+    jdk7_6)
+      rm -rf "$work_dir/classes" "$work_dir/implcb"
+      ;;
+    lucene2)
+      rm -rf "$work_dir"/TestDoug2*
+      ;;
+  esac
+}
+
+create_workdir() {
+  local out_dir="$1"
+  local test_name="$2"
+  local work_dir
+
+  work_dir=$(mktemp -d "/tmp/jacontebe.${test_name}.XXXXXX")
+  ln -s "$SUBJECT_DIR/source" "$work_dir/source"
+  ln -s "$SUBJECT_DIR/versions.alt" "$work_dir/versions.alt"
+  printf '%s\n' "$work_dir"
+}
+
+main_and_args() {
+  local test_name="$1"
+
+  case "$test_name" in
+    dbcp1) printf '%s\n' 'Dbcp65' ;;
+    dbcp2) printf '%s\n' 'Dbcp270' ;;
+    dbcp3) printf '%s\n' 'org.apache.commons.dbcp.datasources.Dbcp369' ;;
+    dbcp4) printf '%s\n' 'org.apache.commons.dbcp.Dbcp271' ;;
+    derby1) printf '%s\n' 'Derby4129' ;;
+    derby2) printf '%s\n' 'Derby5560' ;;
+    derby3) printf '%s\n' 'Derby5561' ;;
+    derby4) printf '%s\n' 'org.junit.runner.JUnitCore org.apache.derby.impl.services.reflect.Derby764' ;;
+    derby5) printf '%s\n' 'org.apache.derby.impl.store.raw.data.Derby5447' ;;
+    groovy1) printf '%s\n' 'Groovy3495' ;;
+    groovy2) printf '%s\n' 'Groovy4736' ;;
+    groovy3) printf '%s\n' 'Groovy5198' ;;
+    groovy4) printf '%s\n' 'groovy.servlet.Groovy6456' ;;
+    groovy5) printf '%s\n' 'groovy.util.Groovy6068' ;;
+    groovy6) printf '%s\n' 'org.codehaus.groovy.ast.Groovy4292' ;;
+    jdk6_1) printf '%s\n' 'Test4243978' ;;
+    jdk6_2) printf '%s\n' 'Test4742723' ;;
+    jdk6_3) printf '%s\n' 'Test4779253' ;;
+    jdk6_4) printf '%s\n' 'Test4813150' ;;
+    jdk6_5) printf '%s\n' 'Test6436220' ;;
+    jdk6_6) printf '%s\n' 'Test6492872' ;;
+    jdk6_7) printf '%s\n' 'Test6582568' ;;
+    jdk6_8) printf '%s\n' 'Test6588239' ;;
+    jdk6_9) printf '%s\n' 'Test6648001' ;;
+    jdk6_10) printf '%s\n' 'Test6927486' ;;
+    jdk6_11) printf '%s\n' 'Test6934356' ;;
+    jdk6_12) printf '%s\n' 'Test6977738' ;;
+    jdk6_13) printf '%s\n' 'Test7100996' ;;
+    jdk6_14) printf '%s\n' 'Test7132889' ;;
+    jdk7_1) printf '%s\n' 'Test7045594' ;;
+    jdk7_2) printf '%s\n' 'Test7122142' ;;
+    jdk7_3) printf '%s\n' 'Test7132378' ;;
+    jdk7_4) printf '%s\n' 'Test8010939' ;;
+    jdk7_5) printf '%s\n' 'Test8012019' ;;
+    jdk7_6) printf '%s\n' 'Test8023541' ;;
+    log4j1) printf '%s\n' 'Test44032' ;;
+    log4j2) printf '%s\n' 'com.main.Test41214' ;;
+    log4j3) printf '%s\n' 'org.apache.log4j.helpers.Test54325' ;;
+    log4j4) printf '%s\n' 'org.apache.log4j.Test38137' ;;
+    log4j5) printf '%s\n' 'org.apache.log4j.Test50463' ;;
+    lucene1) printf '%s\n' 'junit.textui.TestRunner org.apache.lucene.index.Test2783' ;;
+    lucene2) printf '%s\n' 'junit.textui.TestRunner org.apache.lucene.Test1544' ;;
+    pool1) printf '%s\n' 'Test120' ;;
+    pool2) printf '%s\n' 'Test146' ;;
+    pool3) printf '%s\n' 'Test149' ;;
+    pool4) printf '%s\n' 'Test162' ;;
+    pool5) printf '%s\n' 'org.apache.commons.pool.Test46' ;;
+    *)
+      echo "Unknown test: $test_name" >&2
+      return 1
+      ;;
+  esac
+}
+
+special_jvm_opts() {
+  local test_name="$1"
+
+  case "$test_name" in
+    jdk6_9)
+      printf '%s\n' '-ea:sun.net.www.protocol.http.AuthenticationInfo -Dhttp.auth.serializeRequests=true'
+      ;;
+    jdk6_3|jdk7_3)
+      printf '%s\n' '-Xbootclasspath/p:classes'
+      ;;
+    jdk7_6)
+      printf '%s\n' '-Xbootclasspath/p:classes -Djava.security.policy=source/security.policy'
+      ;;
+    *)
+      printf '\n'
+      ;;
+  esac
+}
+
+prepare_special_test() {
+  local test_name="$1"
+  local timeout_value="$2"
+  local work_dir="$3"
+  local classpath
+  classpath=$(runtime_cp "$test_name")
+
+  case "$test_name" in
+    jdk6_3)
+      (
+        cd "$work_dir" || exit 1
+        run_timed "$timeout_value" "$JAVA_CMD" -cp "$classpath" asm.LoggerModifier
+      )
+      ;;
+    jdk7_3)
+      (
+        cd "$work_dir" || exit 1
+        run_timed "$timeout_value" "$JAVA_CMD" -cp "$classpath" asm.FutureTaskModifier
+      )
+      ;;
+    jdk7_6)
+      mkdir -p "$work_dir/classes/edu/illinois/jacontebe/globalevent"
+      cp "$SUBJECT_DIR/source/edu/illinois/jacontebe/globalevent/GlobalDriver.class" \
+        "$work_dir/classes/edu/illinois/jacontebe/globalevent/GlobalDriver.class"
+      (
+        cd "$work_dir" || exit 1
+        run_timed "$timeout_value" "$JAVA_CMD" -cp "$classpath" asm.ActivationModifier
+      )
+      ;;
+  esac
+}
+
+run_one_mode() {
+  local mode="$1"
+  local test_name="$2"
+  local out_dir="$3"
+  local timeout_value="$4"
+  local agent_jar="$5"
+  local work_dir="$6"
+
+  local cp
+  cp=$(runtime_cp "$test_name")
+  local main
+  main=$(main_and_args "$test_name") || return 1
+  local extra_opts
+  extra_opts=$(special_jvm_opts "$test_name")
+  local log_prefix="$out_dir/$mode"
+
+  cleanup_test_artifacts "$test_name" "$work_dir"
+  if ! prepare_special_test "$test_name" "$timeout_value" "$work_dir" >"$log_prefix.prep.stdout" 2>"$log_prefix.prep.stderr"; then
+    cleanup_test_artifacts "$test_name" "$work_dir"
+    return 98
   fi
 
-  build_dir="$JACONTEBE_DIR/build/$bench"
-  if [ ! -d "$build_dir" ]; then
-    echo "SKIP (no build dir) — $bench"
-    continue
+  local rc=0
+
+  if [ "$mode" = "capture" ]; then
+    (
+      cd "$work_dir" || exit 1
+      rm -f trace.bin trace-boundaries.tsv schedule-boundaries.tsv trace-reduced.tsv trace-semantic.tsv
+      # shellcheck disable=SC2086
+      run_timed "$timeout_value" "$JAVA_CMD" $extra_opts \
+        $JACONTEBE_JVM_OPTS \
+        -javaagent:"$agent_jar" \
+        -cp "$cp" \
+        $main
+    ) >"$log_prefix.stdout" 2>"$log_prefix.stderr" || rc=$?
+
+    if [ -f "$work_dir/trace.bin" ]; then
+      cp "$work_dir/trace.bin" "$out_dir/trace.bin"
+    fi
+    if [ -f "$work_dir/trace-boundaries.tsv" ]; then
+      cp "$work_dir/trace-boundaries.tsv" "$out_dir/trace-boundaries.tsv"
+    fi
+  else
+    (
+      cd "$work_dir" || exit 1
+      rm -f schedule-boundaries.tsv trace-reduced.tsv trace-semantic.tsv
+      # shellcheck disable=SC2086
+      run_timed "$timeout_value" "$JAVA_CMD" $extra_opts \
+        $JACONTEBE_JVM_OPTS \
+        -Dtool.static.analysis.path=./source \
+        -javaagent:"$agent_jar" \
+        -cp "$cp" \
+        $main
+    ) >"$log_prefix.stdout" 2>"$log_prefix.stderr" || rc=$?
+
+    if [ -f "$work_dir/schedule-boundaries.tsv" ]; then
+      cp "$work_dir/schedule-boundaries.tsv" "$out_dir/schedule-boundaries.tsv"
+    fi
+    if [ -f "$work_dir/trace-reduced.tsv" ]; then
+      cp "$work_dir/trace-reduced.tsv" "$out_dir/trace-reduced.tsv"
+    fi
+    if [ -f "$work_dir/trace-semantic.tsv" ]; then
+      cp "$work_dir/trace-semantic.tsv" "$out_dir/trace-semantic.tsv"
+    fi
   fi
 
-  # Parse target and classpath from .jpf file (strip \r for CRLF files)
-  target=$(grep '^target' "$jpf_file" | tr -d '\r' | sed 's/target *= *//')
-  raw_cp=$(grep '^classpath' "$jpf_file" | tr -d '\r' | sed 's/classpath *= *//')
+  cleanup_test_artifacts "$test_name" "$work_dir"
+  return "$rc"
+}
 
-  # Resolve ./source -> build dir, ./versions.alt -> lib dir (absolute paths)
-  abs_build=$(cd "$build_dir" && pwd)
-  abs_lib=$(cd "$JACONTEBE_DIR/versions.alt" && pwd)
-  classpath=$(echo "$raw_cp" \
-    | sed "s|\./source|$abs_build|g" \
-    | sed "s|\./versions\.alt|$abs_lib|g")
+tests_to_run=()
+if [ "$#" -eq 0 ]; then
+  tests_to_run=("${ALL_TESTS[@]}")
+else
+  tests_to_run=("$@")
+fi
 
-  dir="$OUT/$bench"
-  mkdir -p "$dir"
+summary_file="$OUT_ROOT/summary.tsv"
+printf 'test\tstage_rc\tcapture_rc\treplay_rc\ttrace_present\tschedule_present\tresult\n' >"$summary_file"
 
-  echo "=== $bench ($target) ==="
+echo "=== JaConTeBe Capture/Replay Runner ==="
+echo "Subject dir    : $SUBJECT_DIR"
+echo "Output dir     : $OUT_ROOT"
+echo "Capture agent  : $CAPTURE_AGENT"
+echo "Replay agent   : $REPLAY_AGENT"
+echo "Capture timeout: $CAPTURE_TIMEOUT"
+echo "Replay timeout : $REPLAY_TIMEOUT"
+echo "Kill-after     : $TIMEOUT_KILL_AFTER"
 
-  # Each benchmark must produce its own fresh trace. Otherwise a leftover
-  # root trace.bin from a previous benchmark can be mistaken for this run.
-  rm -f trace.bin
+total=0
+stage_failures=0
+capture_failures=0
+replay_failures=0
 
-  # Capture
+for test_name in "${tests_to_run[@]}"; do
+  total=$((total + 1))
+  out_dir="$OUT_ROOT/$test_name"
+  mkdir -p "$out_dir"
+
+  echo
+  echo "=== $test_name ==="
+
+  stage_rc=0
   capture_rc=0
-  $TIMEOUT_CMD "$RUN_TIMEOUT" $JAVA -ea \
-    -javaagent:$CAPTURE_AGENT \
-    "${JAVA_OPEN_FLAGS[@]}" \
-    -cp "$classpath" \
-    "$target" \
-    > "$dir/capture.stdout" 2> "$dir/capture.stderr" || capture_rc=$?
-
-  capture_bug=false
-  capture_bug_reason=""
-  if has_bug_signal "$dir/capture.stdout" "$dir/capture.stderr"; then
-    capture_bug=true
-    capture_bug_reason=$(bug_reason "$dir/capture.stdout" "$dir/capture.stderr")
-  fi
-
-  if [ $capture_rc -eq 124 ]; then
-    if [ "$capture_bug" = true ]; then
-      : # timed out but bug was already triggered — proceed to replay
-    elif has_infra_error "$dir/capture.stdout" "$dir/capture.stderr"; then
-      echo "CAPTURE ERROR (instrumentation/runtime error before timeout) — $bench" | tee "$dir/result.txt"
-      continue
-    elif [ -f trace.bin ]; then
-      # Timed out with no explicit bug signal but trace.bin was written — the
-      # program froze (likely deadlocked) before the watchdog could print its
-      # signal.  Proceed to replay: if replay reproduces a bug signal the
-      # capture did capture the bug; otherwise record as timeout.
-      capture_bug=true
-      capture_bug_reason="timeout-with-trace"
-    else
-      echo "TIMEOUT (capture) — $bench" | tee "$dir/result.txt"
-      continue
-    fi
-  elif [ $capture_rc -ne 0 ]; then
-    if [ "$capture_bug" != true ]; then
-      echo "CAPTURE ERROR (exit $capture_rc with no recognized bug signal) — $bench" | tee "$dir/result.txt"
-      continue
-    fi
-  fi
-
-  if [ -f trace.bin ]; then
-    cp trace.bin "$dir/trace.bin"
-  elif [ "$capture_bug" = true ]; then
-    echo "BUG TRIGGERED IN CAPTURE ($capture_bug_reason), but trace.bin was not produced; replay skipped — $bench" | tee "$dir/result.txt"
-    continue
-  else
-    echo "CAPTURE ERROR (trace.bin missing) — $bench" | tee "$dir/result.txt"
-    continue
-  fi
-
-  # If capture completed normally but did not reproduce the bug, do not spend
-  # replay time on a trace that we already know is not the target schedule.
-  if [ "$capture_bug" != true ]; then
-    echo "No bug triggered — $bench" | tee "$dir/result.txt"
-    continue
-  fi
-
-  # Replay should consume the exact trace archived for this benchmark, even if
-  # some later step or earlier run touched the root trace.bin.
-  cp "$dir/trace.bin" trace.bin
-
-  # Replay
   replay_rc=0
-  $TIMEOUT_CMD "$RUN_TIMEOUT" $JAVA -ea \
-    -javaagent:$REPLAY_AGENT \
-    "${JAVA_OPEN_FLAGS[@]}" \
-    -cp "$classpath" \
-    "$target" \
-    > "$dir/replay.stdout" 2> "$dir/replay.stderr" || replay_rc=$?
+  result="ok"
+  work_dir=$(create_workdir "$out_dir" "$test_name")
+  printf '%s\n' "$work_dir" >"$out_dir/workdir.txt"
 
-  replay_bug=false
-  replay_bug_reason=""
-  if has_bug_signal "$dir/replay.stdout" "$dir/replay.stderr"; then
-    replay_bug=true
-    replay_bug_reason=$(bug_reason "$dir/replay.stdout" "$dir/replay.stderr")
+  (
+    cd "$SUBJECT_DIR" || exit 1
+    bash ./scripts/install.sh orig "$test_name"
+  ) >"$out_dir/install.stdout" 2>"$out_dir/install.stderr" || stage_rc=$?
+
+  if [ "$stage_rc" -ne 0 ]; then
+    stage_failures=$((stage_failures + 1))
+    result="stage_failed"
+    echo "STAGE FAILED (exit $stage_rc)"
+    printf '%s\t%s\t-\t-\t%s\t%s\t%s\n' \
+      "$test_name" "$stage_rc" "no" "no" "$result" >>"$summary_file"
+    if [ "$KEEP_WORKDIR" != "1" ]; then
+      rm -rf "$work_dir"
+    fi
+    continue
   fi
 
-  # Record outcome
-  if [ "$replay_bug" = true ]; then
-    if [ "$capture_bug" = true ]; then
-      echo "BUG REPRODUCED ($replay_bug_reason) — $bench" | tee "$dir/result.txt"
-    else
-      echo "UNEXPECTED BUG SIGNAL on replay ($replay_bug_reason) — $bench" | tee "$dir/result.txt"
-    fi
-  elif [ $replay_rc -eq 124 ]; then
-    if has_infra_error "$dir/replay.stdout" "$dir/replay.stderr"; then
-      echo "REPLAY ERROR (instrumentation/runtime error before timeout) — $bench" | tee "$dir/result.txt"
-    else
-      echo "TIMEOUT (replay) — $bench" | tee "$dir/result.txt"
-    fi
-  elif [ $replay_rc -ne 0 ]; then
-    if has_infra_error "$dir/replay.stdout" "$dir/replay.stderr"; then
-      echo "REPLAY ERROR (instrumentation/runtime error) — $bench" | tee "$dir/result.txt"
-    else
-      echo "REPLAY ERROR (exit $replay_rc with no recognized bug signal) — $bench" | tee "$dir/result.txt"
+  run_one_mode capture "$test_name" "$out_dir" "$CAPTURE_TIMEOUT" "$CAPTURE_AGENT" "$work_dir" || capture_rc=$?
+  if [ ! -f "$out_dir/trace.bin" ]; then
+    capture_failures=$((capture_failures + 1))
+    result="capture_missing_trace"
+    if [ "$capture_rc" -eq 0 ]; then
+      capture_rc=99
     fi
   else
-    if [ "$capture_bug_reason" = "timeout-with-trace" ]; then
-      # Replay completed cleanly — the trace didn't reproduce the bug, meaning
-      # the capture timeout was a genuine timeout, not a captured deadlock.
-      echo "TIMEOUT (capture) — $bench" | tee "$dir/result.txt"
-    elif [ "$capture_bug" = true ]; then
-      echo "BUG NOT REPRODUCED — $bench" | tee "$dir/result.txt"
-    else
-      echo "No bug triggered — $bench" | tee "$dir/result.txt"
+    run_one_mode replay "$test_name" "$out_dir" "$REPLAY_TIMEOUT" "$REPLAY_AGENT" "$work_dir" || replay_rc=$?
+    if [ "$capture_rc" -ne 0 ]; then
+      capture_failures=$((capture_failures + 1))
+      if [ "$replay_rc" -ne 0 ]; then
+        replay_failures=$((replay_failures + 1))
+        result="capture_and_replay_failed"
+      else
+        result="capture_failed_replay_ran"
+      fi
+    elif [ "$replay_rc" -ne 0 ]; then
+      replay_failures=$((replay_failures + 1))
+      result="replay_failed"
     fi
   fi
 
-done < fray_benchmark/assets/jacontebe.txt
+  trace_present="no"
+  schedule_present="no"
+  [ -f "$out_dir/trace.bin" ] && trace_present="yes"
+  [ -f "$out_dir/schedule-boundaries.tsv" ] && schedule_present="yes"
+
+  echo "stage=$stage_rc capture=$capture_rc replay=$replay_rc trace=$trace_present schedule=$schedule_present result=$result"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$test_name" "$stage_rc" "$capture_rc" "$replay_rc" "$trace_present" "$schedule_present" "$result" >>"$summary_file"
+  if [ "$KEEP_WORKDIR" != "1" ]; then
+    rm -rf "$work_dir"
+  fi
+done
+
+echo
+echo "===== SUMMARY ====="
+echo "Tests selected : $total"
+echo "Stage failures : $stage_failures"
+echo "Capture issues : $capture_failures"
+echo "Replay issues  : $replay_failures"
+echo "Summary file   : $summary_file"

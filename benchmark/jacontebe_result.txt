@@ -1,0 +1,156 @@
+=== JaConTeBe Capture/Replay Runner ===
+Subject dir    : /home/enxing/capture_and_replay/benchmark/bms/JaConTeBe
+Output dir     : /home/enxing/capture_and_replay/benchmark/output/capture-replay/jacontebe
+Capture agent  : /home/enxing/capture_and_replay/capture/target/trace-capture-agent.jar
+Replay agent   : /home/enxing/capture_and_replay/replay/target/trace-replay-agent.jar
+Capture timeout: 20s
+Replay timeout : 20s
+Kill-after     : 5s
+
+=== dbcp1 ===
+stage=0 capture=0 replay=124 trace=yes schedule=yes result=replay_failed
+
+=== dbcp2 ===
+stage=0 capture=124 replay=124 trace=yes schedule=yes result=capture_and_replay_failed
+
+=== dbcp3 ===
+stage=0 capture=0 replay=0 trace=yes schedule=yes result=ok
+
+=== dbcp4 ===
+stage=0 capture=0 replay=124 trace=yes schedule=no result=replay_failed
+
+=== derby1 ===
+stage=0 capture=124 replay=124 trace=yes schedule=no result=capture_and_replay_failed
+
+=== derby2 ===
+stage=0 capture=124 replay=124 trace=yes schedule=yes result=capture_and_replay_failed
+
+=== derby3 ===
+stage=0 capture=0 replay=0 trace=yes schedule=yes result=ok
+
+=== derby4 ===
+stage=0 capture=1 replay=124 trace=yes schedule=yes result=capture_and_replay_failed
+
+=== derby5 ===
+stage=0 capture=0 replay=124 trace=yes schedule=yes result=replay_failed
+
+=== groovy1 ===
+stage=0 capture=0 replay=0 trace=yes schedule=yes result=ok
+
+=== groovy2 ===
+stage=0 capture=0 replay=124 trace=yes schedule=yes result=replay_failed
+
+=== groovy3 ===
+stage=0 capture=1 replay=1 trace=yes schedule=yes result=capture_and_replay_failed
+
+=== groovy4 ===
+stage=0 capture=0 replay=0 trace=yes schedule=yes result=ok
+
+=== groovy5 ===
+stage=0 capture=1 replay=1 trace=yes schedule=yes result=capture_and_replay_failed
+
+=== groovy6 ===
+stage=0 capture=0 replay=124 trace=yes schedule=no result=replay_failed
+
+=== jdk6_1 ===
+stage=0 capture=0 replay=0 trace=yes schedule=yes result=ok
+
+=== jdk6_2 ===
+stage=0 capture=0 replay=0 trace=yes schedule=yes result=ok
+
+=== jdk6_3 ===
+stage=0 capture=98 replay=0 trace=no schedule=no result=capture_missing_trace
+
+=== jdk6_4 ===
+stage=0 capture=124 replay=124 trace=yes schedule=yes result=capture_and_replay_failed
+
+=== jdk6_5 ===
+stage=0 capture=0 replay=0 trace=yes schedule=yes result=ok
+
+=== jdk6_6 ===
+stage=0 capture=124 replay=124 trace=yes schedule=yes result=capture_and_replay_failed
+
+=== jdk6_7 ===
+stage=0 capture=0 replay=0 trace=yes schedule=yes result=ok
+
+=== jdk6_8 ===
+STAGE FAILED (exit 123)
+
+=== jdk6_9 ===
+stage=0 capture=0 replay=124 trace=yes schedule=yes result=replay_failed
+
+=== jdk6_10 ===
+stage=0 capture=124 replay=124 trace=yes schedule=yes result=capture_and_replay_failed
+
+=== jdk6_11 ===
+stage=0 capture=124 replay=124 trace=yes schedule=yes result=capture_and_replay_failed
+
+=== jdk6_12 ===
+stage=0 capture=124 replay=124 trace=yes schedule=yes result=capture_and_replay_failed
+
+=== jdk6_13 ===
+stage=0 capture=0 replay=124 trace=yes schedule=yes result=replay_failed
+
+=== jdk6_14 ===
+stage=0 capture=0 replay=0 trace=yes schedule=yes result=ok
+
+=== jdk7_1 ===
+stage=0 capture=0 replay=124 trace=yes schedule=yes result=replay_failed
+
+=== jdk7_2 ===
+stage=0 capture=124 replay=124 trace=yes schedule=yes result=capture_and_replay_failed
+
+=== jdk7_3 ===
+stage=0 capture=98 replay=0 trace=no schedule=no result=capture_missing_trace
+
+=== jdk7_4 ===
+stage=0 capture=124 replay=124 trace=yes schedule=yes result=capture_and_replay_failed
+
+=== jdk7_5 ===
+stage=0 capture=124 replay=124 trace=yes schedule=yes result=capture_and_replay_failed
+
+=== jdk7_6 ===
+STAGE FAILED (exit 123)
+
+=== log4j1 ===
+stage=0 capture=0 replay=124 trace=yes schedule=yes result=replay_failed
+
+=== log4j2 ===
+stage=0 capture=0 replay=124 trace=yes schedule=yes result=replay_failed
+
+=== log4j3 ===
+stage=0 capture=0 replay=0 trace=yes schedule=yes result=ok
+
+=== log4j4 ===
+stage=0 capture=124 replay=124 trace=yes schedule=yes result=capture_and_replay_failed
+
+=== log4j5 ===
+stage=0 capture=124 replay=124 trace=yes schedule=yes result=capture_and_replay_failed
+
+=== lucene1 ===
+stage=0 capture=0 replay=124 trace=yes schedule=yes result=replay_failed
+
+=== lucene2 ===
+stage=0 capture=124 replay=124 trace=yes schedule=yes result=capture_and_replay_failed
+
+=== pool1 ===
+stage=0 capture=0 replay=0 trace=yes schedule=yes result=ok
+
+=== pool2 ===
+stage=0 capture=124 replay=124 trace=yes schedule=yes result=capture_and_replay_failed
+
+=== pool3 ===
+stage=0 capture=124 replay=124 trace=yes schedule=yes result=capture_and_replay_failed
+
+=== pool4 ===
+stage=0 capture=124 replay=124 trace=yes schedule=yes result=capture_and_replay_failed
+
+=== pool5 ===
+stage=0 capture=0 replay=0 trace=yes schedule=yes result=ok
+
+===== SUMMARY =====
+Tests selected : 47
+Stage failures : 2
+Capture issues : 22
+Replay issues  : 31
+Summary file   : /home/enxing/capture_and_replay/benchmark/output/capture-replay/jacontebe/summary.tsv

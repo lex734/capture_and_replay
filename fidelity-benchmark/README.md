@@ -104,6 +104,41 @@ java -cp fidelity-benchmark/target/fidelity-benchmark.jar fidelity.FidelityBench
      my-classes.txt
 ```
 
+## Running in Docker
+
+From the repo root:
+
+```bash
+./scripts/run-benchmarks-in-docker.sh fidelity
+```
+
+Single SCTBench class:
+
+```bash
+./scripts/run-benchmarks-in-docker.sh fidelity \
+  cmu.pasta.fray.benchmark.sctbench.cs.origin.AccountBad
+```
+
+Custom class list:
+
+```bash
+./scripts/run-benchmarks-in-docker.sh fidelity my-classes.txt
+```
+
+What the helper does:
+- builds a thin JDK 21 + Maven image from `docker/benchmarks.Dockerfile`
+- mounts this repository at `/workspace`
+- reuses Maven and Gradle caches through Docker volumes
+- runs `mvn -DskipTests package`
+- runs `./gradlew jar` in `benchmark/bms/SCTBench`
+- launches `fidelity.FidelityBenchmark`
+
+If you want an interactive shell in the same environment:
+
+```bash
+./scripts/run-benchmarks-in-docker.sh shell
+```
+
 ## SCTBench Classes
 
 The bundled `sctbench.txt` lists 28 classes from the SCTBench suite covering

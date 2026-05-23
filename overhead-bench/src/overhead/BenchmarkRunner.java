@@ -394,21 +394,27 @@ public class BenchmarkRunner {
             }
             capRuns++;
             capMs.add(captureResult.elapsedMs);
-            if (!Files.exists(workDir.resolve("trace.bin"))) {
+            if (!Files.exists(workDir.resolve("trace.bin")) || !Files.exists(workDir.resolve("trace-reduced.tsv"))) {
                 missingTrace = true;
                 continue;
             }
             if (traces.size() < replayMeasureCap) {
-                Path savedTrace = workDir.resolve("trace-" + safeWorkloadName(cls) + "-" + bugOutcome + "-" + capRuns + ".bin");
+                String tag = "trace-" + safeWorkloadName(cls) + "-" + bugOutcome + "-" + capRuns;
+                Path savedTrace = workDir.resolve(tag + ".bin");
+                Path savedReduced = workDir.resolve(tag + "-reduced.tsv");
                 Files.copy(workDir.resolve("trace.bin"), savedTrace, StandardCopyOption.REPLACE_EXISTING);
+                Files.copy(workDir.resolve("trace-reduced.tsv"), savedReduced, StandardCopyOption.REPLACE_EXISTING);
                 traces.add(savedTrace);
             }
         }
 
         boolean sawReplayMismatch = false;
         for (Path trace : traces) {
+            String reducedName = trace.getFileName().toString().replace(".bin", "-reduced.tsv");
+            Path reduced = trace.getParent().resolve(reducedName);
             for (int i = 0; i < replayMeasureCap; i++) {
                 Files.copy(trace, workDir.resolve("trace.bin"), StandardCopyOption.REPLACE_EXISTING);
+                Files.copy(reduced, workDir.resolve("trace-reduced.tsv"), StandardCopyOption.REPLACE_EXISTING);
                 RunResult replayResult = run(replayCmd, workDir, timeoutSeconds);
                 boolean replayBugObserved = hadBug(cls, replayResult);
                 boolean replayMatches = bugOutcome

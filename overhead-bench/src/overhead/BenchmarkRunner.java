@@ -134,8 +134,9 @@ public class BenchmarkRunner {
 
     // -- Per-workload benchmark ---------------------------------------------
 
-    static final String TRACE_BIN     = "trace.bin";
-    static final String TRACE_REDUCED = "trace-reduced.tsv";
+    static final String TRACE_BIN      = "trace.bin";
+    static final String TRACE_REDUCED  = "trace-reduced.tsv";
+    static final String TRACE_SEMANTIC = "trace-semantic.tsv";
 
     static RowResult benchmarkWorkload(
             String cls, Path captureJar, Path replayJar, String classpath, List<String> extraJvmArgs, Path workDir,
@@ -157,13 +158,13 @@ public class BenchmarkRunner {
         // -- Capture + Replay (buggy) -------------------------------------
         for (int i = 0; i < warmup; i++) run(captureCmd, workloadDir, timeoutSeconds);
         OutcomeResult buggy = measureCaptureAndReplayForDuration(
-            cls, captureCmd, replayCmd, workloadDir, timeoutSeconds, measureWindowSeconds, measure, true);
+            cls, captureCmd, replayCmd, captureJar, workloadDir, timeoutSeconds, measureWindowSeconds, measure, true);
 
         // -- Capture + Replay (clean) -------------------------------------
         deleteTraceFiles(workloadDir);
         for (int i = 0; i < warmup; i++) run(captureCmd, workloadDir, timeoutSeconds);
         OutcomeResult clean = measureCaptureAndReplayForDuration(
-            cls, captureCmd, replayCmd, workloadDir, timeoutSeconds, measureWindowSeconds, measure, false);
+            cls, captureCmd, replayCmd, captureJar, workloadDir, timeoutSeconds, measureWindowSeconds, measure, false);
 
         buggy = buggy.withBaseline(baseWindow.buggyMs, baseWindow.buggyRuns, baseWindow.attempts);
         clean = clean.withBaseline(baseWindow.cleanMs, baseWindow.cleanRuns, baseWindow.attempts);
@@ -388,7 +389,7 @@ public class BenchmarkRunner {
     }
 
     static OutcomeResult measureCaptureAndReplayForDuration(
-            String cls, List<String> captureCmd, List<String> replayCmd, Path workDir,
+            String cls, List<String> captureCmd, List<String> replayCmd, Path captureJar, Path workDir,
             int timeoutSeconds, int measureWindowSeconds, int replayMeasureCap, boolean bugOutcome) throws Exception {
         List<Long> capMs = new ArrayList<>();
         List<Long> repMs = new ArrayList<>();
@@ -409,6 +410,9 @@ public class BenchmarkRunner {
             }
             capRuns++;
             capMs.add(captureResult.elapsedMs);
+            if (Files.exists(workDir.resolve(TRACE_BIN))) {
+                runReductionIfNeeded(captureJar, workDir, timeoutSeconds + SHUTDOWN_GRACE_SECONDS);
+            }
             if (!Files.exists(workDir.resolve(TRACE_BIN)) || !Files.exists(workDir.resolve(TRACE_REDUCED))) {
                 missingTrace = true;
                 continue;
@@ -483,6 +487,23 @@ public class BenchmarkRunner {
     static void deleteTraceFiles(Path workDir) throws IOException {
         Files.deleteIfExists(workDir.resolve(TRACE_BIN));
         Files.deleteIfExists(workDir.resolve(TRACE_REDUCED));
+        Files.deleteIfExists(workDir.resolve(TRACE_SEMANTIC));
+    }
+
+    // Run trace reduction in a fresh JVM with ample heap so that large traces
+    // (from long-running or deadlocked benchmarks) don't OOM the reduction.
+    static void runReductionIfNeeded(Path captureJar, Path workDir, int timeoutSeconds) throws Exception {
+        if (Files.exists(workDir.resolve(TRACE_REDUCED))) return;
+        List<String> cmd = new ArrayList<>();
+        cmd.add("java");
+        cmd.add("-Xmx2g");
+        cmd.add("-cp");
+        cmd.add(captureJar.toString());
+        cmd.add("common.v1.TraceReducer");
+        cmd.add(TRACE_REDUCED);
+        cmd.add(TRACE_BIN);
+        cmd.add(TRACE_SEMANTIC);
+        run(cmd, workDir, timeoutSeconds);
     }
 
     static void deleteDir(Path dir) throws IOException {

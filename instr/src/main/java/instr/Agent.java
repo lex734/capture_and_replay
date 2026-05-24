@@ -28,13 +28,10 @@ public class Agent {
         try {
           BinarySchema.flush();
           SemanticTraceRegistry.saveCaptured("trace-semantic.tsv");
-          TraceReducer.reduceFieldInteractionsToFile("trace-reduced.tsv");
-          SemanticTraceRegistry.resetCaptureState();
-          SemanticTraceRegistry.resetReplayState();
-        } catch (Exception e) {
+        } catch (Throwable e) {
           e.printStackTrace(System.err);
         }
-      }, "trace-reducer"));
+      }, "trace-flush"));
       // 3. Register bytecode surgeon (The Transformer)
       inst.addTransformer(new SyncTransformer(config), true);
 

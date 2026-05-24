@@ -1,0 +1,22 @@
+Capture agent : /Users/scott/enxing_fyp/capture_and_replay/capture/target/trace-capture-agent.jar
+Replay agent  : /Users/scott/enxing_fyp/capture_and_replay/replay/target/trace-replay-agent.jar
+Classpath     : /Users/scott/enxing_fyp/capture_and_replay/benchmark/bms/SCTBench/build/libs/fray-benchmark-1.0-SNAPSHOT.jar
+Workload src  : /Users/scott/enxing_fyp/capture_and_replay/benchmark/fray_benchmark/assets/sctbench.txt
+Workloads     : 2
+Extra JVM args: --add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.util.concurrent=ALL-UNNAMED --add-opens java.base/java.util.concurrent.locks=ALL-UNNAMED
+Warmup rounds : 3  |  Replay rounds: 10  |  Window: 30s  |  Timeout: 8s
+
+[1/2] Running cmu.pasta.fray.benchmark.sctbench.cs.origin.Phase01Bad
+[2/2] Running cmu.pasta.fray.benchmark.sctbench.cs.origin.QueueBad
+
+Buggy Outcomes
+Workload                         Baseline (ms)      Capture (ms)       Replay (ms)    PlainBug      CapBug  Cap/Base  Rep/Base
+-------------------------------------------------------------------------------------------------------------------------------
+Phase01Bad                       62.7 +-  365.0   8008.0 +-    1.2   8008.8 +-    1.6     475/475         4/4   127.77x   127.79x
+QueueBad                         47.5 +-    5.7   8007.5 +-    0.5   7812.2 +- 1227.6       4/761         4/4   168.58x   164.47x
+
+Clean Outcomes
+Workload                         Baseline (ms)      Capture (ms)       Replay (ms)  PlainClean    CapClean  Cap/Base  Rep/Base
+-------------------------------------------------------------------------------------------------------------------------------
+Phase01Bad                                 N/A               N/A               N/A       0/475         0/4       N/A       N/A
+QueueBad                         38.9 +-    1.2               N/A               N/A     757/761         0/4       N/A       N/A

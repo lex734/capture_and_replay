@@ -134,6 +134,9 @@ public class BenchmarkRunner {
 
     // -- Per-workload benchmark ---------------------------------------------
 
+    static final String TRACE_BIN      = "trace.bin";
+    static final String TRACE_BOUNDARY = "trace-boundaries.tsv";
+
     static RowResult benchmarkWorkload(
             String cls, Path captureJar, Path replayJar, String classpath, List<String> extraJvmArgs, Path workDir,
             int warmup, int measure, int timeoutSeconds, int measureWindowSeconds)
@@ -144,7 +147,7 @@ public class BenchmarkRunner {
         List<String> replayCmd  = javaCmd(replayJar,  classpath, cls, extraJvmArgs);
         Path workloadDir = workDir.resolve(safeWorkloadName(cls));
         Files.createDirectories(workloadDir);
-        deleteIfExists(workloadDir.resolve("trace.bin"));
+        deleteTraceFiles(workloadDir);
 
         // -- Baseline ------------------------------------------------------
         for (int i = 0; i < warmup; i++) run(baseCmd, workloadDir, timeoutSeconds);
@@ -157,7 +160,7 @@ public class BenchmarkRunner {
             cls, captureCmd, replayCmd, workloadDir, timeoutSeconds, measureWindowSeconds, measure, true);
 
         // -- Capture + Replay (clean) -------------------------------------
-        deleteIfExists(workloadDir.resolve("trace.bin"));
+        deleteTraceFiles(workloadDir);
         for (int i = 0; i < warmup; i++) run(captureCmd, workloadDir, timeoutSeconds);
         OutcomeResult clean = measureCaptureAndReplayForDuration(
             cls, captureCmd, replayCmd, workloadDir, timeoutSeconds, measureWindowSeconds, measure, false);
@@ -242,10 +245,18 @@ public class BenchmarkRunner {
         return new WindowResult(buggyMs, cleanMs, attempts, buggyRuns, cleanRuns);
     }
 
+    // Grace period after SIGTERM before SIGKILL: the shutdown hook only writes a TSV
+    // file so a few seconds is ample even for a deadlocked JVM.
+    static final int SHUTDOWN_GRACE_SECONDS = 3;
+
     /**
      * Forks a subprocess and returns its wall-clock time in milliseconds.
      * stderr is merged into stdout; all output is discarded on success.
-     * On failure, throws with the captured output as the message.
+     *
+     * When the test timeout expires, SIGTERM is sent rather than SIGKILL so that
+     * JVM shutdown hooks (trace flush, boundary metadata write) run cleanly even
+     * for deadlocked processes. SIGKILL is only used as a last resort if the
+     * process does not exit within SHUTDOWN_GRACE_SECONDS after SIGTERM.
      */
     static RunResult run(List<String> cmd, Path workDir, int timeoutSeconds) throws Exception {
         ProcessBuilder pb = new ProcessBuilder(cmd);
@@ -268,8 +279,13 @@ public class BenchmarkRunner {
         long elapsedMs = (System.nanoTime() - t0) / 1_000_000L;
 
         if (!done) {
-            p.destroyForcibly();
-            p.waitFor(5, TimeUnit.SECONDS);
+            // SIGTERM lets JVM shutdown hooks write trace-boundaries.tsv and flush trace.bin.
+            p.destroy();
+            boolean cleanExit = p.waitFor(SHUTDOWN_GRACE_SECONDS, TimeUnit.SECONDS);
+            if (!cleanExit) {
+                p.destroyForcibly();
+                p.waitFor();
+            }
             drainer.join(1000);
             return new RunResult(false, true, -1, elapsedMs, outBuf.toString());
         }
@@ -384,7 +400,7 @@ public class BenchmarkRunner {
         List<Path> traces = new ArrayList<>();
         boolean missingTrace = false;
         while (attempts == 0 || System.nanoTime() < deadlineNanos) {
-            deleteIfExists(workDir.resolve("trace.bin"));
+            deleteTraceFiles(workDir);
             RunResult captureResult = run(captureCmd, workDir, timeoutSeconds);
             attempts++;
             boolean captureBugObserved = hadBug(cls, captureResult);
@@ -394,21 +410,32 @@ public class BenchmarkRunner {
             }
             capRuns++;
             capMs.add(captureResult.elapsedMs);
-            if (!Files.exists(workDir.resolve("trace.bin"))) {
+            if (!Files.exists(workDir.resolve(TRACE_BIN))
+                    || !Files.exists(workDir.resolve(TRACE_BOUNDARY))) {
+                // trace.bin may exist via mmap even when the process was SIGKILL'd, but
+                // trace-boundaries.tsv is written only by the JVM shutdown hook — it won't
+                // be present for killed processes.  Without it the replay agent throws in
+                // premain, so don't add such traces to the replay set.
                 missingTrace = true;
                 continue;
             }
             if (traces.size() < replayMeasureCap) {
-                Path savedTrace = workDir.resolve("trace-" + safeWorkloadName(cls) + "-" + bugOutcome + "-" + capRuns + ".bin");
-                Files.copy(workDir.resolve("trace.bin"), savedTrace, StandardCopyOption.REPLACE_EXISTING);
-                traces.add(savedTrace);
+                String tag = "trace-" + safeWorkloadName(cls) + "-" + bugOutcome + "-" + capRuns;
+                Path savedBin      = workDir.resolve(tag + ".bin");
+                Path savedBoundary = workDir.resolve(tag + "-boundaries.tsv");
+                Files.copy(workDir.resolve(TRACE_BIN),      savedBin,      StandardCopyOption.REPLACE_EXISTING);
+                Files.copy(workDir.resolve(TRACE_BOUNDARY), savedBoundary, StandardCopyOption.REPLACE_EXISTING);
+                traces.add(savedBin);
             }
         }
 
         boolean sawReplayMismatch = false;
-        for (Path trace : traces) {
+        for (Path traceBin : traces) {
+            String tag = traceBin.getFileName().toString().replaceFirst("\\.bin$", "");
+            Path traceBoundary = traceBin.resolveSibling(tag + "-boundaries.tsv");
             for (int i = 0; i < replayMeasureCap; i++) {
-                Files.copy(trace, workDir.resolve("trace.bin"), StandardCopyOption.REPLACE_EXISTING);
+                Files.copy(traceBin,     workDir.resolve(TRACE_BIN),      StandardCopyOption.REPLACE_EXISTING);
+                Files.copy(traceBoundary, workDir.resolve(TRACE_BOUNDARY), StandardCopyOption.REPLACE_EXISTING);
                 RunResult replayResult = run(replayCmd, workDir, timeoutSeconds);
                 boolean replayBugObserved = hadBug(cls, replayResult);
                 boolean replayMatches = bugOutcome
@@ -457,6 +484,11 @@ public class BenchmarkRunner {
 
     static void deleteIfExists(Path path) throws IOException {
         Files.deleteIfExists(path);
+    }
+
+    static void deleteTraceFiles(Path workDir) throws IOException {
+        Files.deleteIfExists(workDir.resolve(TRACE_BIN));
+        Files.deleteIfExists(workDir.resolve(TRACE_BOUNDARY));
     }
 
     static void deleteDir(Path dir) throws IOException {

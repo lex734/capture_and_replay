@@ -1,0 +1,25 @@
+Capture agent : /Users/scott/enxing_fyp/capture_and_replay/capture/target/trace-capture-agent.jar
+Replay agent  : /Users/scott/enxing_fyp/capture_and_replay/replay/target/trace-replay-agent.jar
+Classpath     : /Users/scott/enxing_fyp/capture_and_replay/benchmark/bms/SCTBench/build/libs/fray-benchmark-1.0-SNAPSHOT.jar
+Workload src  : /Users/scott/enxing_fyp/capture_and_replay/benchmark/fray_benchmark/assets/sctbench.txt
+Workloads     : 3
+Extra JVM args: --add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.util.concurrent=ALL-UNNAMED --add-opens java.base/java.util.concurrent.locks=ALL-UNNAMED
+Warmup rounds : 3  |  Replay rounds: 10  |  Window: 30s  |  Timeout: 8s
+
+[1/3] Running cmu.pasta.fray.benchmark.sctbench.cs.origin.ArithmeticProgBad
+[2/3] Running cmu.pasta.fray.benchmark.sctbench.cs.origin.QueueBad
+[3/3] Running cmu.pasta.fray.benchmark.sctbench.cs.origin.Lazy01Bad
+
+Buggy Outcomes
+Workload                         Baseline (ms)      Capture (ms)       Replay (ms)    PlainBug      CapBug  Cap/Base  Rep/Base
+-------------------------------------------------------------------------------------------------------------------------------
+ArithmeticProgBad                55.7 +-    4.6    108.0 +-    3.0        INCOMPLETE     534/534     275/275     1.94x       N/A
+QueueBad                       1501.7 +- 3067.3   8007.0 +-    0.7   8008.5 +-    1.5      11/431         4/4     5.33x     5.33x
+Lazy01Bad                        49.7 +-    9.8    103.8 +-    3.9    150.4 +-   10.3     592/596     192/285     2.09x     3.02x
+
+Clean Outcomes
+Workload                         Baseline (ms)      Capture (ms)       Replay (ms)  PlainClean    CapClean  Cap/Base  Rep/Base
+-------------------------------------------------------------------------------------------------------------------------------
+ArithmeticProgBad                          N/A               N/A               N/A       0/534       0/245       N/A       N/A
+QueueBad                         45.3 +-    7.9               N/A               N/A     420/431         0/4       N/A       N/A
+Lazy01Bad                        70.5 +-   50.6    105.0 +-    5.4    172.0 +-    0.0       4/596      85/281     1.49x     2.44x

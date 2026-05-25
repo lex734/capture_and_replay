@@ -21,6 +21,16 @@ public final class TraceReducer {
     private TraceReducer() {
     }
 
+    public static void main(String[] args) throws IOException {
+        String output   = args.length > 0 ? args[0] : "trace-reduced.tsv";
+        String trace    = args.length > 1 ? args[1] : DEFAULT_TRACE_FILE;
+        String semantic = args.length > 2 ? args[2] : DEFAULT_SEMANTIC_CAPTURE_FILE;
+        if (semantic != null && !semantic.isEmpty() && !new java.io.File(semantic).exists()) {
+            semantic = null;
+        }
+        reduceFieldInteractionsToFile(output, trace, semantic);
+    }
+
     public static void reduceFieldInteractionsToFile(String fileName) throws IOException {
         reduceFieldInteractionsToFile(fileName, DEFAULT_TRACE_FILE, DEFAULT_SEMANTIC_CAPTURE_FILE);
     }

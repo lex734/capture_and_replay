@@ -53,12 +53,28 @@ public class BenchmarkRunner {
         "object mismatch",
         "Incomplete replay",
     };
+    // Programs whose bug manifests as a silent hang, so timeout is the only signal
+    // that the bug occurred. A timed-out run is classified as "buggy" for any class
+    // in this set, both during capture and during replay.
+    //
+    // Deadlock01Bad: has explicit bug signals but fidelity shows 11/70 replay runs
+    //   also deadlock silently, so DEADLOCK_BENCHMARKS is needed for replay too.
+    //
+    // Carter01Bad, Sync01Bad: always produce explicit bug signals (exit 0);
+    //   hasBugSignal() already handles them. Kept here as harmless redundancy.
+    //
+    // Phase01Bad excluded: with the capture agent it always deadlocks silently (exit
+    //   143) but produces no bug signal, matching the fidelity benchmark's "clean"
+    //   classification. Timed-out captures are treated as clean (see captureMatches
+    //   below), so capture and replay overhead for the clean path is measurable.
+    //
+    // Sync02Bad excluded: without agent always deadlocks (8001 ms) while with agent
+    //   exits fast with explicit signal (140 ms). Classifying the baseline timeout as
+    //   "buggy" gives a nonsensical 0.02x Cap/Base ratio.
     static final Set<String> DEADLOCK_BENCHMARKS = new HashSet<>(Arrays.asList(
         "cmu.pasta.fray.benchmark.sctbench.cs.origin.Carter01Bad",
         "cmu.pasta.fray.benchmark.sctbench.cs.origin.Deadlock01Bad",
-        "cmu.pasta.fray.benchmark.sctbench.cs.origin.Phase01Bad",
-        "cmu.pasta.fray.benchmark.sctbench.cs.origin.Sync01Bad",
-        "cmu.pasta.fray.benchmark.sctbench.cs.origin.Sync02Bad"
+        "cmu.pasta.fray.benchmark.sctbench.cs.origin.Sync01Bad"
     ));
 
     public static void main(String[] args) throws Exception {
@@ -234,7 +250,7 @@ public class BenchmarkRunner {
             if (bugObserved) {
                 buggyRuns++;
                 buggyMs.add(rr.elapsedMs);
-            } else if (rr.completed) {
+            } else if (rr.completed || rr.timedOut) {
                 cleanRuns++;
                 cleanMs.add(rr.elapsedMs);
             }
@@ -242,10 +258,17 @@ public class BenchmarkRunner {
         return new WindowResult(buggyMs, cleanMs, attempts, buggyRuns, cleanRuns);
     }
 
+    // Grace period after SIGTERM before SIGKILL so the capture agent's shutdown hook
+    // can call buffer.force() and flush the mmap'd trace.bin to disk.
+    static final int SHUTDOWN_GRACE_SECONDS = 3;
+
     /**
      * Forks a subprocess and returns its wall-clock time in milliseconds.
      * stderr is merged into stdout; all output is discarded on success.
-     * On failure, throws with the captured output as the message.
+     *
+     * On timeout, sends SIGTERM first so JVM shutdown hooks (including the trace
+     * flush hook in BinarySchema) can run. SIGKILL is only used if the process
+     * does not exit within SHUTDOWN_GRACE_SECONDS.
      */
     static RunResult run(List<String> cmd, Path workDir, int timeoutSeconds) throws Exception {
         ProcessBuilder pb = new ProcessBuilder(cmd);
@@ -268,8 +291,12 @@ public class BenchmarkRunner {
         long elapsedMs = (System.nanoTime() - t0) / 1_000_000L;
 
         if (!done) {
-            p.destroyForcibly();
-            p.waitFor(5, TimeUnit.SECONDS);
+            p.destroy();
+            boolean cleanExit = p.waitFor(SHUTDOWN_GRACE_SECONDS, TimeUnit.SECONDS);
+            if (!cleanExit) {
+                p.destroyForcibly();
+                p.waitFor();
+            }
             drainer.join(1000);
             return new RunResult(false, true, -1, elapsedMs, outBuf.toString());
         }
@@ -388,7 +415,8 @@ public class BenchmarkRunner {
             RunResult captureResult = run(captureCmd, workDir, timeoutSeconds);
             attempts++;
             boolean captureBugObserved = hadBug(cls, captureResult);
-            boolean captureMatches = bugOutcome ? captureBugObserved : (!captureBugObserved && captureResult.completed);
+            boolean captureMatches = bugOutcome ? captureBugObserved
+                    : (!captureBugObserved && (captureResult.completed || captureResult.timedOut));
             if (!captureMatches) {
                 continue;
             }

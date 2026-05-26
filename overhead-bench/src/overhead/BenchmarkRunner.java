@@ -56,9 +56,13 @@ public class BenchmarkRunner {
     static final Set<String> DEADLOCK_BENCHMARKS = new HashSet<>(Arrays.asList(
         "cmu.pasta.fray.benchmark.sctbench.cs.origin.Carter01Bad",
         "cmu.pasta.fray.benchmark.sctbench.cs.origin.Deadlock01Bad",
-        "cmu.pasta.fray.benchmark.sctbench.cs.origin.Phase01Bad",
         "cmu.pasta.fray.benchmark.sctbench.cs.origin.Sync01Bad",
         "cmu.pasta.fray.benchmark.sctbench.cs.origin.Sync02Bad"
+    ));
+    // Benchmarks where timeout (deadlock/liveness failure) is the CLEAN outcome.
+    // The bug manifests as a fast exit with a detectable signal; without the bug the program hangs.
+    static final Set<String> DEADLOCK_CLEAN_BENCHMARKS = new HashSet<>(Arrays.asList(
+        "cmu.pasta.fray.benchmark.sctbench.cs.origin.Phase01Bad"
     ));
 
     public static void main(String[] args) throws Exception {
@@ -238,7 +242,7 @@ public class BenchmarkRunner {
             if (bugObserved) {
                 buggyRuns++;
                 buggyMs.add(rr.elapsedMs);
-            } else if (rr.completed) {
+            } else if (rr.completed || isCleanTimeout(cls, rr)) {
                 cleanRuns++;
                 cleanMs.add(rr.elapsedMs);
             }
@@ -335,6 +339,10 @@ public class BenchmarkRunner {
         return hasBugSignal(rr.output) || (rr.timedOut && DEADLOCK_BENCHMARKS.contains(cls));
     }
 
+    static boolean isCleanTimeout(String cls, RunResult rr) {
+        return rr.timedOut && DEADLOCK_CLEAN_BENCHMARKS.contains(cls);
+    }
+
     static boolean hasBugSignal(String out) {
         return out.contains("AssertionError")
             || out.contains("Bug Found!")
@@ -395,16 +403,21 @@ public class BenchmarkRunner {
         List<Long> repMs = new ArrayList<>();
         String replayStatus = "N/A";
         long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(measureWindowSeconds);
+        // Allow up to 10x the window to collect enough traces for benchmarks where the target
+        // outcome is rare under the capture agent (e.g. Phase01Bad bugs ~40% with agent).
+        long extendedDeadlineNanos = deadlineNanos + TimeUnit.SECONDS.toNanos((long) measureWindowSeconds * 9);
         int attempts = 0;
         int capRuns = 0;
         List<Path> traces = new ArrayList<>();
         boolean missingTrace = false;
-        while (attempts == 0 || System.nanoTime() < deadlineNanos) {
+        while (attempts == 0 || System.nanoTime() < deadlineNanos ||
+               (traces.size() < replayMeasureCap && System.nanoTime() < extendedDeadlineNanos)) {
             deleteTraceFiles(workDir);
             RunResult captureResult = run(captureCmd, workDir, timeoutSeconds);
             attempts++;
             boolean captureBugObserved = hadBug(cls, captureResult);
-            boolean captureMatches = bugOutcome ? captureBugObserved : (!captureBugObserved && captureResult.completed);
+            boolean captureMatches = bugOutcome ? captureBugObserved
+                : (!captureBugObserved && (captureResult.completed || isCleanTimeout(cls, captureResult)));
             if (!captureMatches) {
                 continue;
             }
@@ -438,7 +451,8 @@ public class BenchmarkRunner {
                 boolean replayBugObserved = hadBug(cls, replayResult);
                 boolean replayMatches = bugOutcome
                     ? replayBugObserved
-                    : (!replayBugObserved && replayResult.completed && !hasIncompleteReplaySignal(replayResult.output));
+                    : (!replayBugObserved && (replayResult.completed || isCleanTimeout(cls, replayResult))
+                        && !hasIncompleteReplaySignal(replayResult.output));
                 if (replayMatches) {
                     repMs.add(replayResult.elapsedMs);
                     replayStatus = null;

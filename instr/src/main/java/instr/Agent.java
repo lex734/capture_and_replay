@@ -28,6 +28,7 @@ public class Agent {
         try {
           BinarySchema.flush();
           SemanticTraceRegistry.saveCaptured("trace-semantic.tsv");
+          TraceReducer.reduceFieldInteractionsToFile("trace-reduced.tsv");
         } catch (Throwable e) {
           e.printStackTrace(System.err);
         }

@@ -142,8 +142,13 @@ public class CaptureMonitor {
     }
     isInside.set(true);
     try {
-      lock.unlock();
+      // Log MONITOR_EXIT (and increment globalEpoch) before releasing the JVM
+      // lock.  T2 is blocked in lock.lock() until unlock() returns, so it will
+      // read the incremented epoch for its own MONITOR_ENTER.  Logging after
+      // unlock() creates a race where T2 reads the stale pre-increment epoch,
+      // causing T2_ENTER.epoch < T1_EXIT.epoch and a false "behind" deadlock.
       TraceLogger.logSync(BinarySchema.Event.MONITOR_EXIT, lock, siteId);
+      lock.unlock();
     } finally {
       isInside.set(false);
     }

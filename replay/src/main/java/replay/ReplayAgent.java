@@ -57,11 +57,10 @@ public class ReplayAgent {
                 throwable.printStackTrace(System.err);
             });
 
-            // 3b. Register fidelity shutdown hook if enabled.
-            if (ReplayCoordinator.fidelityEnabled) {
-                Runtime.getRuntime().addShutdownHook(new Thread(
-                    ReplayCoordinator::printFidelityReport, "fidelity-report"));
-            }
+            // 3b. Always register the fidelity shutdown hook — file write is skipped
+            // when fidelityOutputPath is null, but console summary always prints.
+            Runtime.getRuntime().addShutdownHook(new Thread(
+                ReplayCoordinator::printFidelityReport, "fidelity-report"));
 
             // 3c. Register the main thread before the app starts.
             // The main thread never goes through preRegisterThread (which is only

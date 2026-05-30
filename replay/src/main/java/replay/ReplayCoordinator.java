@@ -29,6 +29,9 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadInfo;
+import java.lang.management.ThreadMXBean;
 
 public class ReplayCoordinator {
     private static final long MATCH_WAIT_SLICE_MS = 100L;
@@ -67,6 +70,10 @@ public class ReplayCoordinator {
     private static volatile boolean isIncomplete = false;
     private static volatile String incompleteReason = "";
     private static volatile String incompleteDetails = "";
+    private static volatile boolean traceUnapplicable = false;
+    private static volatile String firstUnapplicableInfo = "";
+    private static volatile boolean traceUnreachable = false;
+    private static volatile String firstUnreachableInfo = "";
     private static volatile int firstRoleInTrace = -1;
 
     public static boolean hasDiverged() {
@@ -140,6 +147,10 @@ public class ReplayCoordinator {
             isIncomplete = false;
             incompleteReason = "";
             incompleteDetails = "";
+            traceUnapplicable = false;
+            firstUnapplicableInfo = "";
+            traceUnreachable = false;
+            firstUnreachableInfo = "";
             firstRoleInTrace = -1;
 
             totalEvents.set(0);
@@ -296,7 +307,13 @@ public class ReplayCoordinator {
         synchronized (controlLock) {
             NavigableSet<Long> rolePending = pendingSeqsByRole.get(roleId);
             if (rolePending != null && !rolePending.isEmpty()) {
-                reportDivergence(roleId, "thread exited with " + rolePending.size() + " unconsumed replay events");
+                long firstSeq = rolePending.first();
+                int skipped = rolePending.size();
+                for (long seq : new ArrayList<>(rolePending)) {
+                    phantomConsumeEvent(seq);
+                }
+                recordUnapplicable("stopped coordinating role=" + roleId + " at seq=" + firstSeq
+                        + " (" + skipped + " events, thread exited)");
             }
             activeRoles.remove(roleId);
             startedRoles.remove(roleId);
@@ -513,7 +530,7 @@ public class ReplayCoordinator {
         }
         int traceValue = (int) event[6];
         if (naturalValue != traceValue) {
-            recordDegradation("plain read value injection");
+            recordDegradation("plain field value injection");
             recordValueDivergence("plain valued replay event diverged from runtime value");
             if (shouldInjectReadValue(packedType)) {
                 return traceValue;
@@ -531,7 +548,7 @@ public class ReplayCoordinator {
         }
         long traceValue = ((long) event[5] << 32) | (event[6] & 0xFFFFFFFFL);
         if (naturalValue != traceValue) {
-            recordDegradation("plain read value injection");
+            recordDegradation("plain field value injection");
             recordValueDivergence("plain valued replay event diverged from runtime value");
             if (shouldInjectReadValue(packedType)) {
                 return traceValue;
@@ -568,7 +585,7 @@ public class ReplayCoordinator {
         }
         trackFidelityObj(packedType, objSite, objCount, naturalValue, event);
         if (naturalValue != traceValue) {
-            recordDegradation("plain object-read value injection");
+            recordDegradation("plain object field value injection");
             recordValueDivergence("object-valued replay event diverged from runtime value");
             if (shouldInjectReadValue(packedType)) {
                 return traceValue;
@@ -626,8 +643,8 @@ public class ReplayCoordinator {
 
         Properties properties = new Properties();
         properties.setProperty("match", String.valueOf(match));
-        properties.setProperty("structural_divergence", String.valueOf(hasDiverged));
-        properties.setProperty("structural_divergence_details", firstDivergenceInfo == null ? "" : firstDivergenceInfo);
+        properties.setProperty("binding_conflict", String.valueOf(firstDivergenceInfo != null));
+        properties.setProperty("binding_conflict_details", firstDivergenceInfo == null ? "" : firstDivergenceInfo);
         properties.setProperty("degraded", String.valueOf(degradedReplay));
         properties.setProperty("degraded_details", firstDegradationInfo);
         properties.setProperty("value_diverged", String.valueOf(valueDivergedReplay));
@@ -637,6 +654,10 @@ public class ReplayCoordinator {
         properties.setProperty("incomplete", String.valueOf(isIncomplete));
         properties.setProperty("incomplete_reason", incompleteReason);
         properties.setProperty("incomplete_details", incompleteDetails);
+        properties.setProperty("unapplicable", String.valueOf(traceUnapplicable));
+        properties.setProperty("unapplicable_details", firstUnapplicableInfo);
+        properties.setProperty("unreachable", String.valueOf(traceUnreachable));
+        properties.setProperty("unreachable_details", firstUnreachableInfo);
         properties.setProperty("events_matched", String.valueOf(eventsMatched.get()));
         properties.setProperty("events_total", String.valueOf(totalEvents.get()));
         properties.setProperty("valued_events", String.valueOf(total));
@@ -647,11 +668,43 @@ public class ReplayCoordinator {
         properties.setProperty("locations_total", String.valueOf(locs));
         properties.setProperty("locations_unseen", String.valueOf(unseen));
 
-        try (Writer writer = new FileWriter(fidelityOutputPath)) {
-            properties.store(writer, "Replay Fidelity Result");
-        } catch (IOException e) {
-            System.err.println("[FIDELITY] Failed to write result file: " + e.getMessage());
+        if (fidelityOutputPath != null) {
+            try (Writer writer = new FileWriter(fidelityOutputPath)) {
+                properties.store(writer, "Replay Fidelity Result");
+            } catch (IOException e) {
+                System.err.println("[FIDELITY] Failed to write result file: " + e.getMessage());
+            }
         }
+
+        printSummaryToConsole(match, locs, seen, matched, total, agreed, injected);
+    }
+
+    private static void printSummaryToConsole(boolean match, int locs, int seen, int matched,
+            long total, long agreed, long injected) {
+        System.err.println("[REPLAY] ── Fidelity Report ──────────────────────────────────");
+        System.err.println("[REPLAY]   events matched:      " + eventsMatched.get() + " / " + totalEvents.get());
+        if (locs > 0) {
+            System.err.println("[REPLAY]   final state:        match=" + match
+                    + "  (" + matched + "/" + seen + " locations seen, " + (locs - seen) + " unseen)");
+        }
+        System.err.println("[REPLAY]   binding_conflict:    " + flag(firstDivergenceInfo != null, firstDivergenceInfo == null ? "" : firstDivergenceInfo));
+        System.err.println("[REPLAY]   unapplicable:        " + flag(traceUnapplicable, firstUnapplicableInfo));
+        System.err.println("[REPLAY]   unreachable:         " + flag(traceUnreachable, firstUnreachableInfo));
+        System.err.println("[REPLAY]   degraded:            " + flag(degradedReplay, firstDegradationInfo));
+        System.err.println("[REPLAY]   value_diverged:      " + flag(valueDivergedReplay, firstValueDivergenceInfo));
+        System.err.println("[REPLAY]   unsupported:         " + flag(unsupportedReplay, firstUnsupportedInfo));
+        System.err.println("[REPLAY]   incomplete:          " + flag(isIncomplete, incompleteReason + (incompleteDetails.isEmpty() ? "" : " " + incompleteDetails)));
+        if (total > 0) {
+            System.err.println("[REPLAY]   valued events:       agreed=" + agreed + "  injected=" + injected + "  total=" + total);
+        }
+        System.err.println("[REPLAY] ─────────────────────────────────────────────────────");
+    }
+
+    private static String flag(boolean value, String detail) {
+        if (!value) {
+            return "false";
+        }
+        return detail == null || detail.isEmpty() ? "true" : "true  (" + detail + ")";
     }
 
     private static long[] awaitSemanticEvent(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
@@ -663,6 +716,20 @@ public class ReplayCoordinator {
             synchronized (controlLock) {
                 while (true) {
                     if (hasDiverged) {
+                        return null;
+                    }
+                    long remaining = deadline - System.currentTimeMillis();
+                    if (remaining <= 0L) {
+                        Long expiredHead = headSeq(roleId);
+                        if (checkForDeadlock(roleId)) {
+                            recordUnreachable("deadlock detected: role=" + roleId
+                                    + (expiredHead != null ? " head=" + expiredHead : ""));
+                            hasDiverged = true;
+                            controlLock.notifyAll();
+                        } else {
+                            recordUnsupported("timed out waiting for replay constraints: role=" + roleId
+                                    + (expiredHead != null ? " head=" + expiredHead : ""));
+                        }
                         return null;
                     }
                     failFastOnDeadPendingRole();
@@ -679,8 +746,7 @@ public class ReplayCoordinator {
                             debug(String.format("[Replay] role=%d waiting for epoch gate headSeq=%d headEpoch=%d released=%d",
                                     roleId, headSeq, headEpoch, releasedEpoch.get()));
                             try {
-                                controlLock.wait(Math.min(MATCH_WAIT_SLICE_MS,
-                                        Math.max(1L, deadline - System.currentTimeMillis())));
+                                controlLock.wait(Math.min(MATCH_WAIT_SLICE_MS, remaining));
                                 continue;
                             } catch (InterruptedException e) {
                                 Thread.currentThread().interrupt();
@@ -701,20 +767,8 @@ public class ReplayCoordinator {
                         debug(String.format("[Replay] role=%d non-release no-match: %s", roleId, selection.reason));
                         return null;
                     }
-                    if (selection.state == MatchState.WAIT) {
-                        if (selection.reason.startsWith("object lifecycle position")) {
-                            debug(String.format("[Replay] role=%d non-release deferring: %s", roleId, selection.reason));
-                            return null;
-                        }
-                        debug(String.format("[Replay] role=%d non-release waiting condition treated as pass-through: %s",
-                                roleId, selection.reason));
-                        return null;
-                    }
-                    long remaining = deadline - System.currentTimeMillis();
-                    if (remaining <= 0L) {
-                        debug(String.format("[Replay] role=%d non-release timeout waiting: %s", roleId, selection.reason));
-                        return null;
-                    }
+                    // WAIT: block until predecessors are satisfied or deadline expires
+                    debug(String.format("[Replay] role=%d non-release waiting: %s", roleId, selection.reason));
                     try {
                         controlLock.wait(Math.min(MATCH_WAIT_SLICE_MS, remaining));
                     } catch (InterruptedException e) {
@@ -728,6 +782,20 @@ public class ReplayCoordinator {
         synchronized (controlLock) {
             while (true) {
                 if (hasDiverged) {
+                    return null;
+                }
+                long remaining = deadline - System.currentTimeMillis();
+                if (remaining <= 0L) {
+                    Long expiredHead = headSeq(roleId);
+                    if (checkForDeadlock(roleId)) {
+                        recordUnreachable("deadlock detected: role=" + roleId
+                                + (expiredHead != null ? " head=" + expiredHead : ""));
+                        hasDiverged = true;
+                        controlLock.notifyAll();
+                    } else {
+                        recordUnsupported("timed out waiting for replay constraints: role=" + roleId
+                                + (expiredHead != null ? " head=" + expiredHead : ""));
+                    }
                     return null;
                 }
                 failFastOnDeadPendingRole();
@@ -750,7 +818,7 @@ public class ReplayCoordinator {
                             debug(String.format("[Replay] role=%d waiting to advance epoch %d (lowestPending=%d)",
                                     roleId, headEpoch, lowestPending));
                             try {
-                                controlLock.wait(Math.min(MATCH_WAIT_SLICE_MS, Math.max(1L, deadline - System.currentTimeMillis())));
+                                controlLock.wait(Math.min(MATCH_WAIT_SLICE_MS, remaining));
                                 continue;
                             } catch (InterruptedException e) {
                                 Thread.currentThread().interrupt();
@@ -761,7 +829,7 @@ public class ReplayCoordinator {
                         debug(String.format("[Replay] role=%d non-release headSeq=%d waiting for released epoch %d -> %d",
                                 roleId, headSeq, releasedEpoch.get(), headEpoch));
                         try {
-                            controlLock.wait(Math.min(MATCH_WAIT_SLICE_MS, Math.max(1L, deadline - System.currentTimeMillis())));
+                            controlLock.wait(Math.min(MATCH_WAIT_SLICE_MS, remaining));
                             continue;
                         } catch (InterruptedException e) {
                             Thread.currentThread().interrupt();
@@ -788,13 +856,6 @@ public class ReplayCoordinator {
                     return null;
                 }
 
-                long remaining = deadline - System.currentTimeMillis();
-                if (remaining <= 0L) {
-                    recordUnsupported(selection.reason.isEmpty()
-                            ? "timed out waiting for predecessor constraints to become realizable"
-                            : selection.reason);
-                    return null;
-                }
                 try {
                     controlLock.wait(Math.min(MATCH_WAIT_SLICE_MS, remaining));
                 } catch (InterruptedException e) {
@@ -816,6 +877,20 @@ public class ReplayCoordinator {
                 if (hasDiverged) {
                     return null;
                 }
+                long remaining = deadline - System.currentTimeMillis();
+                if (remaining <= 0L) {
+                    Long expiredHead = headSeq(roleId);
+                    if (checkForDeadlock(roleId)) {
+                        recordUnreachable("deadlock detected: role=" + roleId
+                                + (expiredHead != null ? " head=" + expiredHead : ""));
+                        hasDiverged = true;
+                        controlLock.notifyAll();
+                    } else {
+                        recordUnsupported("timed out waiting for replay constraints: role=" + roleId
+                                + (expiredHead != null ? " head=" + expiredHead : ""));
+                    }
+                    return null;
+                }
                 failFastOnDeadPendingRole();
                 Long headSeq = headSeq(roleId);
                 if (headSeq == null) {
@@ -834,8 +909,7 @@ public class ReplayCoordinator {
                             pendingTargetEpoch.compareAndSet(headEpoch, Long.MAX_VALUE);
                         } else {
                             try {
-                                controlLock.wait(Math.min(MATCH_WAIT_SLICE_MS,
-                                        Math.max(1L, deadline - System.currentTimeMillis())));
+                                controlLock.wait(Math.min(MATCH_WAIT_SLICE_MS, remaining));
                                 continue;
                             } catch (InterruptedException e) {
                                 Thread.currentThread().interrupt();
@@ -844,8 +918,7 @@ public class ReplayCoordinator {
                         }
                     } else {
                         try {
-                            controlLock.wait(Math.min(MATCH_WAIT_SLICE_MS,
-                                    Math.max(1L, deadline - System.currentTimeMillis())));
+                            controlLock.wait(Math.min(MATCH_WAIT_SLICE_MS, remaining));
                             continue;
                         } catch (InterruptedException e) {
                             Thread.currentThread().interrupt();
@@ -868,13 +941,6 @@ public class ReplayCoordinator {
                 }
                 if (selection.state == MatchState.NO_MATCH) {
                     debug(String.format("[Replay] role=%d prepared sync no-match: %s", roleId, selection.reason));
-                    return null;
-                }
-                long remaining = deadline - System.currentTimeMillis();
-                if (remaining <= 0L) {
-                    recordUnsupported(selection.reason.isEmpty()
-                            ? "timed out waiting for replay constraints to become realizable"
-                            : selection.reason);
                     return null;
                 }
                 try {
@@ -931,10 +997,7 @@ public class ReplayCoordinator {
     }
 
     private static boolean shouldEnforcePredecessors(long[] event) {
-        if (event == null || event.length < 3) {
-            return false;
-        }
-        return shouldSynchronizeAtEvent((int) event[2]);
+        return true;
     }
 
     private static boolean samePackedShape(long[] expected, int actualPackedType) {
@@ -1173,7 +1236,9 @@ public class ReplayCoordinator {
     private static boolean shouldInjectReadValue(int packedType) {
         int baseType = packedType & 0xFF;
         return baseType == BinarySchema.Event.FIELD_READ
+                || baseType == BinarySchema.Event.FIELD_WRITE
                 || baseType == BinarySchema.Event.ARRAY_READ
+                || baseType == BinarySchema.Event.ARRAY_WRITE
                 || baseType == BinarySchema.Event.ATOMIC_READ;
     }
 
@@ -1268,7 +1333,7 @@ public class ReplayCoordinator {
     }
 
     private static void failFastOnDeadPendingRole() {
-        for (Map.Entry<Integer, NavigableSet<Long>> entry : pendingSeqsByRole.entrySet()) {
+        for (Map.Entry<Integer, NavigableSet<Long>> entry : new ArrayList<>(pendingSeqsByRole.entrySet())) {
             NavigableSet<Long> rolePending = entry.getValue();
             if (rolePending == null || rolePending.isEmpty()) {
                 continue;
@@ -1276,8 +1341,13 @@ public class ReplayCoordinator {
             Integer ownerRole = entry.getKey();
             Thread ownerThread = roleIdToThread.get(ownerRole);
             if (ownerThread != null && !ownerThread.isAlive()) {
-                reportDivergence(ownerRole, "thread exited with pending replay head seq=" + rolePending.first());
-                return;
+                long firstSeq = rolePending.first();
+                int skipped = rolePending.size();
+                for (long seq : new ArrayList<>(rolePending)) {
+                    phantomConsumeEvent(seq);
+                }
+                recordUnapplicable("stopped coordinating role=" + ownerRole + " at seq=" + firstSeq
+                        + " (" + skipped + " events, thread dead)");
             }
         }
     }
@@ -1294,7 +1364,16 @@ public class ReplayCoordinator {
         if (requireLiveThread) {
             Thread thread = roleIdToThread.get(roleId);
             if (thread != null && !thread.isAlive()) {
-                reportDivergence(roleId, "thread exited with unconsumed replay events");
+                NavigableSet<Long> rolePending = pendingSeqsByRole.get(roleId);
+                if (rolePending != null && !rolePending.isEmpty()) {
+                    long firstSeq = rolePending.first();
+                    int skipped = rolePending.size();
+                    for (long seq : new ArrayList<>(rolePending)) {
+                        phantomConsumeEvent(seq);
+                    }
+                    recordUnapplicable("stopped coordinating role=" + roleId + " at seq=" + firstSeq
+                            + " (" + skipped + " events, exited behind epoch)");
+                }
                 return false;
             }
         }
@@ -1392,6 +1471,215 @@ public class ReplayCoordinator {
         }
     }
 
+    private static void recordUnapplicable(String details) {
+        traceUnapplicable = true;
+        if (firstUnapplicableInfo.isEmpty()) {
+            firstUnapplicableInfo = details == null ? "" : details;
+        }
+    }
+
+    private static void recordUnreachable(String details) {
+        traceUnreachable = true;
+        if (firstUnreachableInfo.isEmpty()) {
+            firstUnreachableInfo = details == null ? "" : details;
+        }
+    }
+
+    private static void phantomConsumeEvent(long seq) {
+        long[] event = eventsBySeq.get(seq);
+        if (event == null || !pendingSeqs.contains(seq)) {
+            return;
+        }
+        int roleId = (int) event[1];
+        int packedType = (int) event[2];
+        int baseType = packedType & 0xFF;
+
+        pendingSeqs.remove(seq);
+        NavigableSet<Long> rolePending = pendingSeqsByRole.get(roleId);
+        if (rolePending != null) {
+            rolePending.remove(seq);
+            if (rolePending.isEmpty()) {
+                pendingSeqsByRole.remove(roleId);
+            }
+        }
+        String domainId = ReducedTraceRegistry.lookupDomainId(seq);
+        if (domainId != null && sharedDomains.contains(domainId)) {
+            NavigableSet<Long> domainPending = pendingSeqsBySharedDomain.get(domainId);
+            if (domainPending != null) {
+                domainPending.remove(seq);
+                if (domainPending.isEmpty()) {
+                    pendingSeqsBySharedDomain.remove(domainId);
+                }
+            }
+        }
+
+        matchedSeqs.add(seq);
+
+        // Advance epoch so that events in other threads that depended on this
+        // release via JMM_SYNCHRONIZES_WITH are unblocked.
+        if (shouldSynchronizeAtEvent(packedType)) {
+            long epoch = ReducedTraceRegistry.lookupEpoch(seq);
+            if (epoch != Long.MIN_VALUE) {
+                releasedEpoch.updateAndGet(current -> Math.max(current, epoch));
+                pendingTargetEpoch.compareAndSet(epoch, Long.MAX_VALUE);
+            }
+        }
+
+        // If a THREAD_START is phantom-consumed the child thread was never started;
+        // recursively phantom-consume its events so constraint gates open downstream.
+        if (baseType == BinarySchema.Event.THREAD_START) {
+            ArrayDeque<Long> starts = pendingThreadStartsByParent.get(roleId);
+            if (starts != null) {
+                starts.removeIf(s -> s == seq);
+            }
+            Integer childRole = threadStartChildRoleBySeq.get(seq);
+            if (childRole != null) {
+                pendingRoles.remove(childRole);
+                activeRoles.remove(childRole);
+                startedRoles.remove(childRole);
+                NavigableSet<Long> childPending = pendingSeqsByRole.get(childRole);
+                if (childPending != null) {
+                    for (long childSeq : new ArrayList<>(childPending)) {
+                        phantomConsumeEvent(childSeq);
+                    }
+                }
+            }
+        }
+    }
+
+    private static boolean checkForDeadlock(int timedOutRoleId) {
+        Map<Integer, Set<Integer>> waitingFor = new HashMap<>();
+
+        // Build coordinator edges (constraint + epoch-gate)
+        for (Map.Entry<Integer, NavigableSet<Long>> entry : pendingSeqsByRole.entrySet()) {
+            int roleA = entry.getKey();
+            NavigableSet<Long> pending = entry.getValue();
+            if (pending == null || pending.isEmpty()) {
+                continue;
+            }
+            Long headSeq = pending.first();
+            long[] headEvent = eventsBySeq.get(headSeq);
+            if (headEvent == null) {
+                continue;
+            }
+            Set<Integer> blockers = new HashSet<>();
+            for (ReplayConstraint c : ReducedTraceRegistry.lookupConstraints(headSeq)) {
+                if (!matchedSeqs.contains(c.predecessorSeq())) {
+                    long[] predEvent = eventsBySeq.get(c.predecessorSeq());
+                    if (predEvent != null) {
+                        int roleB = (int) predEvent[1];
+                        if (roleB != roleA && pendingSeqsByRole.containsKey(roleB)) {
+                            blockers.add(roleB);
+                        }
+                    }
+                }
+            }
+            long headEpoch = ReducedTraceRegistry.lookupEpoch(headSeq);
+            if (headEpoch != Long.MIN_VALUE && headEpoch > releasedEpoch.get()
+                    && shouldSynchronizeAtEvent(packedType(headEvent))) {
+                for (Map.Entry<Integer, NavigableSet<Long>> other : pendingSeqsByRole.entrySet()) {
+                    int roleB = other.getKey();
+                    if (roleB == roleA) {
+                        continue;
+                    }
+                    NavigableSet<Long> otherPending = other.getValue();
+                    if (otherPending == null || otherPending.isEmpty()) {
+                        continue;
+                    }
+                    long otherHeadEpoch = ReducedTraceRegistry.lookupEpoch(otherPending.first());
+                    if (otherHeadEpoch != Long.MIN_VALUE && otherHeadEpoch < headEpoch) {
+                        blockers.add(roleB);
+                    }
+                }
+            }
+            if (!blockers.isEmpty()) {
+                waitingFor.put(roleA, blockers);
+            }
+        }
+
+        // Add JVM lock-wait edges: role A's thread BLOCKED on a lock held by role B's thread
+        ThreadMXBean tmx = ManagementFactory.getThreadMXBean();
+        if (tmx.isSynchronizerUsageSupported()) {
+            // Map: lock identity hash → roleId of the thread holding it
+            Map<Integer, Integer> lockHolder = new HashMap<>();
+            for (Map.Entry<Integer, Thread> e : roleIdToThread.entrySet()) {
+                Thread t = e.getValue();
+                if (t == null || !t.isAlive()) {
+                    continue;
+                }
+                ThreadInfo info = tmx.getThreadInfo(new long[]{t.getId()}, false, true)[0];
+                if (info == null) {
+                    continue;
+                }
+                for (java.lang.management.LockInfo li : info.getLockedSynchronizers()) {
+                    lockHolder.put(li.getIdentityHashCode(), e.getKey());
+                }
+            }
+            int controlLockHash = System.identityHashCode(controlLock);
+            for (Map.Entry<Integer, Thread> e : roleIdToThread.entrySet()) {
+                int roleA = e.getKey();
+                Thread t = e.getValue();
+                if (t == null || !t.isAlive()) {
+                    continue;
+                }
+                Thread.State state = t.getState();
+                if (state != Thread.State.BLOCKED && state != Thread.State.WAITING
+                        && state != Thread.State.TIMED_WAITING) {
+                    continue;
+                }
+                ThreadInfo info = tmx.getThreadInfo(new long[]{t.getId()}, false, true)[0];
+                if (info == null || info.getLockInfo() == null) {
+                    continue;
+                }
+                // Skip threads waiting inside the coordinator itself
+                if (info.getLockInfo().getIdentityHashCode() == controlLockHash) {
+                    continue;
+                }
+                Integer roleB = lockHolder.get(info.getLockInfo().getIdentityHashCode());
+                if (roleB != null && roleB != roleA) {
+                    waitingFor.computeIfAbsent(roleA, k -> new HashSet<>()).add(roleB);
+                }
+            }
+        }
+
+        return hasCycleInWaitForGraph(waitingFor);
+    }
+
+    private static int packedType(long[] event) {
+        return (int) event[2];
+    }
+
+    private static boolean hasCycleInWaitForGraph(Map<Integer, Set<Integer>> graph) {
+        Set<Integer> visited = new HashSet<>();
+        Set<Integer> inStack = new HashSet<>();
+        for (Integer node : graph.keySet()) {
+            if (!visited.contains(node) && dfsCycle(graph, node, visited, inStack)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean dfsCycle(Map<Integer, Set<Integer>> graph, int node,
+            Set<Integer> visited, Set<Integer> inStack) {
+        visited.add(node);
+        inStack.add(node);
+        Set<Integer> neighbors = graph.get(node);
+        if (neighbors != null) {
+            for (int neighbor : neighbors) {
+                if (!visited.contains(neighbor)) {
+                    if (dfsCycle(graph, neighbor, visited, inStack)) {
+                        return true;
+                    }
+                } else if (inStack.contains(neighbor)) {
+                    return true;
+                }
+            }
+        }
+        inStack.remove(node);
+        return false;
+    }
+
     private static void tryPrebindStaticFieldValue(FieldKey fieldKey, long[] event, ClassLoader loader,
             Set<String> loadedClassNames) {
         if (fieldKey == null || event == null) {
@@ -1449,6 +1737,9 @@ public class ReplayCoordinator {
             } else if (shouldInjectReadValue(packedType)
                     || baseType == BinarySchema.Event.NONDETERMINISTIC_INT) {
                 injectedEvents.incrementAndGet();
+            } else if (isWriteEvent(baseType)) {
+                recordValueDivergence("int write at seq=" + event[0]
+                        + " trace=" + (int) event[6] + " runtime=" + naturalValue);
             }
         }
     }
@@ -1473,6 +1764,9 @@ public class ReplayCoordinator {
             } else if (shouldInjectReadValue(packedType)
                     || baseType == BinarySchema.Event.NONDETERMINISTIC_LONG) {
                 injectedEvents.incrementAndGet();
+            } else if (isWriteEvent(baseType)) {
+                recordValueDivergence("long write at seq=" + event[0]
+                        + " trace=" + traceValue + " runtime=" + naturalValue);
             }
         }
     }
@@ -1498,6 +1792,9 @@ public class ReplayCoordinator {
                 naturalAgreements.incrementAndGet();
             } else if (shouldInjectReadValue(packedType)) {
                 injectedEvents.incrementAndGet();
+            } else if (isWriteEvent(baseType)) {
+                recordValueDivergence("object write at seq=" + event[0]
+                        + " trace=" + traceValue + " runtime=" + naturalTrace);
             }
         }
     }

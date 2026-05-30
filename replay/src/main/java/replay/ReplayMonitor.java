@@ -261,14 +261,17 @@ public class ReplayMonitor {
                 System.err.println("[DIVERGENCE] replayUnlock: current thread does not own lock; skipping unlock");
                 return;
             }
+            // Consume the MONITOR_EXIT coordinator event (releasing the epoch) before
+            // calling lock.unlock().  This matches the corrected capture order where
+            // the epoch is incremented while the lock is still held, ensuring any
+            // thread that subsequently acquires the lock sees the updated epoch.
+            int[] traceId = boundTraceId(lock);
+            ReplayCoordinator.awaitTurn(roleId, packedType, traceId[0], traceId[1], lock, currentSiteId);
             try {
                 lock.unlock();
             } catch (IllegalMonitorStateException e) {
                 System.err.println("[DIVERGENCE] replayUnlock: unlock without ownership; skipping sync consume");
-                return;
             }
-            int[] traceId = boundTraceId(lock);
-            ReplayCoordinator.awaitTurn(roleId, packedType, traceId[0], traceId[1], lock, currentSiteId);
         } finally {
             isInside.set(false);
         }

@@ -44,10 +44,9 @@ public class ReplayMonitor {
             ReplayCoordinator.awaitTurn(roleId, packedType, 0, 0, lock, currentSiteId);
             long seq = ReplayCoordinator.getLastMatchedSeq();
             debug(String.format(
-                    "[CHECK-SYNC]  epoch=%d seq=%d role=%d  %-24s lock=%s  site=%d",
+                    "[CHECK-SYNC]  epoch=%d seq=%d role=%d  %-24s lock=%s",
                     seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(eventType),
-                    lock != null ? lock.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(lock)) : "null",
-                    currentSiteId));
+                    lock != null ? lock.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(lock)) : "null"));
         } finally {
             isInside.set(false);
         }
@@ -77,10 +76,9 @@ public class ReplayMonitor {
             if (roleId == -1) return;
             long seq = ReplayCoordinator.getLastMatchedSeq();
             debug(String.format(
-                    "[CHECK-SYNC]  epoch=%d seq=%d role=%d  %-24s lock=%s  site=%d",
+                    "[CHECK-SYNC]  epoch=%d seq=%d role=%d  %-24s lock=%s",
                     seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(BinarySchema.Event.MONITOR_ENTER),
-                    lock.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(lock)),
-                    currentSiteId));
+                    lock.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(lock))));
         } finally {
             isInside.set(false);
         }
@@ -98,10 +96,9 @@ public class ReplayMonitor {
             ReplayCoordinator.completePreparedSyncTurn();
             long seq = ReplayCoordinator.getLastMatchedSeq();
             debug(String.format(
-                    "[CHECK-SYNC]  epoch=%d seq=%d role=%d  %-24s lock=%s  site=%d",
+                    "[CHECK-SYNC]  epoch=%d seq=%d role=%d  %-24s lock=%s",
                     seq >>> 32, seq & 0xFFFFFFFFL, roleId, getEventName(BinarySchema.Event.MONITOR_EXIT),
-                    lock.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(lock)),
-                    currentSiteId));
+                    lock.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(lock))));
         } finally {
             isInside.set(false);
         }
@@ -829,22 +826,21 @@ public class ReplayMonitor {
         }
     }
 
-    public static void checkException(Object exception, int siteId) {
+    public static void checkException(Object exception) {
         if (isInside.get()) return;
         if (exception == null) return;
         isInside.set(true);
         try {
             long tid = Thread.currentThread().getId();
-            int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
+            int roleId = IdentityMapper.getRoleIdBySite(tid, 0);
             if (roleId == -1) return;
 
             int packedType = BinarySchema.packType(BinarySchema.Event.EXCEPTION_THROW, BinarySchema.Flags.NONE);
-            ReplayCoordinator.awaitTurn(roleId, packedType, 0, 0, exception, siteId);
+            ReplayCoordinator.awaitTurn(roleId, packedType, 0, 0, exception, 0);
             long seq = ReplayCoordinator.getLastMatchedSeq();
             debug(String.format(
-                    "[CHECK-THROW] epoch=%d seq=%d role=%d  %s  site=%d",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId,
-                    exception.getClass().getName(), siteId));
+                    "[CHECK-THROW] epoch=%d seq=%d role=%d  %s",
+                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, exception.getClass().getName()));
         } finally {
             isInside.set(false);
         }
@@ -853,86 +849,79 @@ public class ReplayMonitor {
     // ---- Nondeterministic value injection ----
     // These events are not object-based. Replay returns the captured value and
     // records degraded replay if that differs from the natural runtime value.
-    //
-    // In the current trace format the nondeterministic source key is encoded as:
-    //   objSite  = 0
-    //   objCount = nondeterministic call-site key
-    //
-    // This is just slot reuse in the V0/V1 transitional binary format, not
-    // replay object identity.
 
-    public static int replayNondetInt(int siteId) {
+    public static int replayNondetInt() {
         if (isInside.get()) return 0;
         isInside.set(true);
         try {
             long tid = Thread.currentThread().getId();
-            int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
+            int roleId = IdentityMapper.getRoleIdBySite(tid, 0);
             if (roleId == -1) return 0;
             int packedType = BinarySchema.packType(BinarySchema.Event.NONDETERMINISTIC_INT, BinarySchema.Flags.NONE);
-            int val = ReplayCoordinator.awaitTurnInt(roleId, packedType, 0, siteId, null);
+            int val = ReplayCoordinator.awaitTurnInt(roleId, packedType, 0, 0, null);
             long seq = ReplayCoordinator.getLastMatchedSeq();
             debug(String.format(
-                    "[REPLAY-NONDET] epoch=%d seq=%d role=%d  nondet_int=%d  site=%d",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, val, siteId));
+                    "[REPLAY-NONDET] epoch=%d seq=%d role=%d  nondet_int=%d",
+                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, val));
             return val;
         } finally {
             isInside.set(false);
         }
     }
 
-    public static float replayNondetFloat(int siteId) {
+    public static float replayNondetFloat() {
         if (isInside.get()) return 0f;
         isInside.set(true);
         try {
             long tid = Thread.currentThread().getId();
-            int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
+            int roleId = IdentityMapper.getRoleIdBySite(tid, 0);
             if (roleId == -1) return 0f;
             int packedType = BinarySchema.packType(BinarySchema.Event.NONDETERMINISTIC_INT, BinarySchema.Flags.NONE);
-            int bits = ReplayCoordinator.awaitTurnInt(roleId, packedType, 0, siteId, null);
+            int bits = ReplayCoordinator.awaitTurnInt(roleId, packedType, 0, 0, null);
             float val = Float.intBitsToFloat(bits);
             long seq = ReplayCoordinator.getLastMatchedSeq();
             debug(String.format(
-                    "[REPLAY-NONDET] epoch=%d seq=%d role=%d  nondet_float=%f  site=%d",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, val, siteId));
+                    "[REPLAY-NONDET] epoch=%d seq=%d role=%d  nondet_float=%f",
+                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, val));
             return val;
         } finally {
             isInside.set(false);
         }
     }
 
-    public static long replayNondetLong(int siteId) {
+    public static long replayNondetLong() {
         if (isInside.get()) return 0L;
         isInside.set(true);
         try {
             long tid = Thread.currentThread().getId();
-            int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
+            int roleId = IdentityMapper.getRoleIdBySite(tid, 0);
             if (roleId == -1) return 0L;
             int packedType = BinarySchema.packType(BinarySchema.Event.NONDETERMINISTIC_LONG, BinarySchema.Flags.NONE);
-            long val = ReplayCoordinator.awaitTurnLong(roleId, packedType, 0, siteId, null);
+            long val = ReplayCoordinator.awaitTurnLong(roleId, packedType, 0, 0, null);
             long seq = ReplayCoordinator.getLastMatchedSeq();
             debug(String.format(
-                    "[REPLAY-NONDET] epoch=%d seq=%d role=%d  nondet_long=%d  site=%d",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, val, siteId));
+                    "[REPLAY-NONDET] epoch=%d seq=%d role=%d  nondet_long=%d",
+                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, val));
             return val;
         } finally {
             isInside.set(false);
         }
     }
 
-    public static double replayNondetDouble(int siteId) {
+    public static double replayNondetDouble() {
         if (isInside.get()) return 0.0;
         isInside.set(true);
         try {
             long tid = Thread.currentThread().getId();
-            int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
+            int roleId = IdentityMapper.getRoleIdBySite(tid, 0);
             if (roleId == -1) return 0.0;
             int packedType = BinarySchema.packType(BinarySchema.Event.NONDETERMINISTIC_LONG, BinarySchema.Flags.NONE);
-            long bits = ReplayCoordinator.awaitTurnLong(roleId, packedType, 0, siteId, null);
+            long bits = ReplayCoordinator.awaitTurnLong(roleId, packedType, 0, 0, null);
             double val = Double.longBitsToDouble(bits);
             long seq = ReplayCoordinator.getLastMatchedSeq();
             debug(String.format(
-                    "[REPLAY-NONDET] epoch=%d seq=%d role=%d  nondet_double=%f  site=%d",
-                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, val, siteId));
+                    "[REPLAY-NONDET] epoch=%d seq=%d role=%d  nondet_double=%f",
+                    seq >>> 32, seq & 0xFFFFFFFFL, roleId, val));
             return val;
         } finally {
             isInside.set(false);

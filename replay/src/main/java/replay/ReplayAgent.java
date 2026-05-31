@@ -12,6 +12,9 @@ import java.util.HashSet;
 import java.util.Set;
 
 public class ReplayAgent {
+    private static final String REDUCED_TRACE_PATH_PROPERTY = "tool.reduced.trace";
+    private static final String DEFAULT_REDUCED_TRACE_FILE = "trace-reduced.tsv";
+
     public static void premain(String agentArgs, Instrumentation inst) {
         // System.out.println("[ReplayAgent] Initializing Enforcer...");
 
@@ -24,11 +27,13 @@ public class ReplayAgent {
             ReducedTraceRegistry.reset();
             SyncTransformer.resetSiteRegistry();
             // 2. Load the reduced replay artifact
-            java.io.File reducedFile = new java.io.File("trace-reduced.tsv");
+            String reducedTracePath = System.getProperty(
+                REDUCED_TRACE_PATH_PROPERTY, DEFAULT_REDUCED_TRACE_FILE);
+            java.io.File reducedFile = new java.io.File(reducedTracePath);
             if (!reducedFile.exists()) {
                 return;
             }
-            ReducedTraceRegistry.load("trace-reduced.tsv");
+            ReducedTraceRegistry.load(reducedFile.getPath());
 
             // 3. Initialize the Coordinator with the data
             String fidelityOutput = System.getProperty("tool.fidelity.output");

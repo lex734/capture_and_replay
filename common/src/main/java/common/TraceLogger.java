@@ -100,9 +100,9 @@ public class TraceLogger {
             long childTid = ((Thread) lock).getId();
             int childRoleId = IdentityMapper.getRoleIdBySite(childTid, currentSiteId);
             BinarySchema.write(seq, (long) roleId, packedType,
-                    birthId.siteId, birthId.count, childRoleId, currentSiteId);
+                    birthId.siteId, birthId.count, childRoleId, 0);
             SemanticTraceRegistry.recordThreadEvent(seq, roleId, packedType, birthId.siteId, birthId.count,
-                    lock.getClass().getName().replace('.', '/'), currentSiteId, childRoleId);
+                    lock.getClass().getName().replace('.', '/'), childRoleId);
             debug("[SYNC]   epoch=%d seq=%d role=%d  %-24s lock=%s  site=%d  childRole=%d",
                     seq >>> 32, seq & 0xFFFFFFFFL, roleId, eventName,
                     lock.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(lock)),
@@ -111,20 +111,20 @@ public class TraceLogger {
         }
 
         BinarySchema.write(seq, (long) roleId, packedType, birthId.siteId,
-                birthId.count, currentSiteId);
+                birthId.count, 0);
 
         if (eventType == BinarySchema.Event.CLASS_INIT_BEGIN || eventType == BinarySchema.Event.CLASS_INIT_END) {
-            SemanticTraceRegistry.recordClassInitEvent(seq, roleId, packedType, currentSiteId);
+            SemanticTraceRegistry.recordClassInitEvent(seq, roleId, packedType);
         } else if (eventType == BinarySchema.Event.THREAD_JOIN
                 || eventType == BinarySchema.Event.THREAD_JOIN_TIMEOUT
                 || eventType == BinarySchema.Event.THREAD_WAKEUP
                 || eventType == BinarySchema.Event.THREAD_INTERRUPT
                 || eventType == BinarySchema.Event.THREAD_INTERRUPT_CHECK) {
             SemanticTraceRegistry.recordThreadEvent(seq, roleId, packedType, birthId.siteId, birthId.count,
-                    lock == null ? "" : lock.getClass().getName().replace('.', '/'), currentSiteId, -1);
+                    lock == null ? "" : lock.getClass().getName().replace('.', '/'), -1);
         } else {
             SemanticTraceRegistry.recordSyncEvent(seq, roleId, packedType, birthId.siteId, birthId.count,
-                    lock == null ? "" : lock.getClass().getName().replace('.', '/'), currentSiteId);
+                    lock == null ? "" : lock.getClass().getName().replace('.', '/'));
         }
 
         debug("[SYNC]   epoch=%d seq=%d role=%d  %-24s lock=%s  site=%d",
@@ -455,96 +455,90 @@ public class TraceLogger {
      * Logs a nondeterministic int-sized return value (int, boolean).
      * Current binary-format encoding:
      *   objSite  = 0
-     *   objCount = nondeterministic call-site key
+     *   objCount = 0
      *   data2    = value
-     *
-     * The objSite/objCount slots are reused here as a source key carrier, not
-     * as object identity.
      */
-    public static void logNondetInt(int value, int siteId) {
+    public static void logNondetInt(int value) {
         long seq = nextSeq(false);
         long tid = Thread.currentThread().getId();
-        int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
+        int roleId = IdentityMapper.getRoleIdBySite(tid, 0);
         if (roleId == -1) return;
         int packedType = BinarySchema.packType(BinarySchema.Event.NONDETERMINISTIC_INT, BinarySchema.Flags.NONE);
-        SemanticTraceRegistry.recordNondeterministicEvent(seq, roleId, packedType, siteId);
-        debug("[NONDET] epoch=%d seq=%d role=%d  nondet_int=%d  site=%d",
-                seq >>> 32, seq & 0xFFFFFFFFL, roleId, value, siteId);
-        BinarySchema.write(seq, (long) roleId, packedType, 0, siteId, value);
+        SemanticTraceRegistry.recordNondeterministicEvent(seq, roleId, packedType);
+        debug("[NONDET] epoch=%d seq=%d role=%d  nondet_int=%d",
+                seq >>> 32, seq & 0xFFFFFFFFL, roleId, value);
+        BinarySchema.write(seq, (long) roleId, packedType, 0, 0, value);
     }
 
     /**
      * Logs a nondeterministic float return value (stored as raw int bits).
      */
-    public static void logNondetFloat(float value, int siteId) {
+    public static void logNondetFloat(float value) {
         long seq = nextSeq(false);
         long tid = Thread.currentThread().getId();
-        int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
+        int roleId = IdentityMapper.getRoleIdBySite(tid, 0);
         if (roleId == -1) return;
         int bits = Float.floatToRawIntBits(value);
         int packedType = BinarySchema.packType(BinarySchema.Event.NONDETERMINISTIC_INT, BinarySchema.Flags.NONE);
-        SemanticTraceRegistry.recordNondeterministicEvent(seq, roleId, packedType, siteId);
-        debug("[NONDET] epoch=%d seq=%d role=%d  nondet_float=%f  site=%d",
-                seq >>> 32, seq & 0xFFFFFFFFL, roleId, value, siteId);
-        BinarySchema.write(seq, (long) roleId, packedType, 0, siteId, bits);
+        SemanticTraceRegistry.recordNondeterministicEvent(seq, roleId, packedType);
+        debug("[NONDET] epoch=%d seq=%d role=%d  nondet_float=%f",
+                seq >>> 32, seq & 0xFFFFFFFFL, roleId, value);
+        BinarySchema.write(seq, (long) roleId, packedType, 0, 0, bits);
     }
 
     /**
      * Logs a nondeterministic long return value (long, System time).
      * Current binary-format encoding:
      *   objSite  = 0
-     *   objCount = nondeterministic call-site key
+     *   objCount = 0
      *   data1    = hi32
      *   data2    = lo32
-     *
-     * The objSite/objCount slots are reused here as a source key carrier, not
-     * as object identity.
      */
-    public static void logNondetLong(long value, int siteId) {
+    public static void logNondetLong(long value) {
         long seq = nextSeq(false);
         long tid = Thread.currentThread().getId();
-        int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
+        int roleId = IdentityMapper.getRoleIdBySite(tid, 0);
         if (roleId == -1) return;
         int packedType = BinarySchema.packType(BinarySchema.Event.NONDETERMINISTIC_LONG, BinarySchema.Flags.NONE);
-        SemanticTraceRegistry.recordNondeterministicEvent(seq, roleId, packedType, siteId);
-        debug("[NONDET] epoch=%d seq=%d role=%d  nondet_long=%d  site=%d",
-                seq >>> 32, seq & 0xFFFFFFFFL, roleId, value, siteId);
-        BinarySchema.write(seq, (long) roleId, packedType, 0, siteId, (int) (value >> 32), (int) value);
+        SemanticTraceRegistry.recordNondeterministicEvent(seq, roleId, packedType);
+        debug("[NONDET] epoch=%d seq=%d role=%d  nondet_long=%d",
+                seq >>> 32, seq & 0xFFFFFFFFL, roleId, value);
+        BinarySchema.write(seq, (long) roleId, packedType, 0, 0, (int) (value >> 32), (int) value);
     }
 
     /**
      * Logs a nondeterministic double return value (stored as raw long bits).
      */
-    public static void logNondetDouble(double value, int siteId) {
+    public static void logNondetDouble(double value) {
         long seq = nextSeq(false);
         long tid = Thread.currentThread().getId();
-        int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
+        int roleId = IdentityMapper.getRoleIdBySite(tid, 0);
         if (roleId == -1) return;
         long bits = Double.doubleToRawLongBits(value);
         int packedType = BinarySchema.packType(BinarySchema.Event.NONDETERMINISTIC_LONG, BinarySchema.Flags.NONE);
-        SemanticTraceRegistry.recordNondeterministicEvent(seq, roleId, packedType, siteId);
-        debug("[NONDET] epoch=%d seq=%d role=%d  nondet_double=%f  site=%d",
-                seq >>> 32, seq & 0xFFFFFFFFL, roleId, value, siteId);
-        BinarySchema.write(seq, (long) roleId, packedType, 0, siteId, (int) (bits >> 32), (int) bits);
+        SemanticTraceRegistry.recordNondeterministicEvent(seq, roleId, packedType);
+        debug("[NONDET] epoch=%d seq=%d role=%d  nondet_double=%f",
+                seq >>> 32, seq & 0xFFFFFFFFL, roleId, value);
+        BinarySchema.write(seq, (long) roleId, packedType, 0, 0, (int) (bits >> 32), (int) bits);
     }
 
-    public static void logException(Object exception, int siteId) {
+    public static void logException(Object exception) {
         long seq = nextSeq(false); // exceptions are not JMM release events
         long tid = Thread.currentThread().getId();
-        int roleId = IdentityMapper.getRoleIdBySite(tid, siteId);
+        int roleId = IdentityMapper.getRoleIdBySite(tid, 0);
         if (roleId == -1) return;
 
-        BirthId birthId = IdentityMapper.getBirthId(exception, null, siteId);
+        BirthId birthId = IdentityMapper.getBirthId(exception, null, 0);
         int packedType = BinarySchema.packType(BinarySchema.Event.EXCEPTION_THROW, BinarySchema.Flags.NONE);
         SemanticTraceRegistry.recordExceptionEvent(seq, roleId, packedType, birthId.siteId, birthId.count,
-                exception == null ? "" : exception.getClass().getName().replace('.', '/'), siteId);
+                exception == null ? "" : exception.getClass().getName().replace('.', '/'));
         // String className = exception.getClass().getName();
         // System.out.println(String.format(
         //         "[THROW]  epoch=%d seq=%d role=%d  %s  site=%d",
         //         seq >>> 32, seq & 0xFFFFFFFFL, roleId, className, siteId));
 
         BinarySchema.write(seq, (long) roleId, packedType,
-                birthId.siteId, birthId.count, siteId);
+                birthId.siteId, birthId.count, 0);
     }
 
     // Helper method to get event name for sync events

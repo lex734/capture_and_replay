@@ -56,29 +56,29 @@ public final class SemanticTraceRegistry {
     }
 
     public static void recordSyncEvent(long seq, long roleId, int packedType,
-            int ownerSite, int ownerCount, String ownerTypeName, int sourceSiteId) {
+            int ownerSite, int ownerCount, String ownerTypeName) {
         capturedObjectEvents.add(SemanticObjectEvent.sync(
-                seq, roleId, packedType, ownerSite, ownerCount, ownerTypeName, sourceSiteId));
+                seq, roleId, packedType, ownerSite, ownerCount, ownerTypeName));
     }
 
     public static void recordThreadEvent(long seq, long roleId, int packedType,
-            int ownerSite, int ownerCount, String ownerTypeName, int sourceSiteId, int targetRoleId) {
+            int ownerSite, int ownerCount, String ownerTypeName, int targetRoleId) {
         capturedObjectEvents.add(SemanticObjectEvent.thread(
-                seq, roleId, packedType, ownerSite, ownerCount, ownerTypeName, sourceSiteId, targetRoleId));
+                seq, roleId, packedType, ownerSite, ownerCount, ownerTypeName, targetRoleId));
     }
 
-    public static void recordClassInitEvent(long seq, long roleId, int packedType, int sourceSiteId) {
-        capturedObjectEvents.add(SemanticObjectEvent.classInit(seq, roleId, packedType, sourceSiteId));
+    public static void recordClassInitEvent(long seq, long roleId, int packedType) {
+        capturedObjectEvents.add(SemanticObjectEvent.classInit(seq, roleId, packedType));
     }
 
     public static void recordExceptionEvent(long seq, long roleId, int packedType,
-            int ownerSite, int ownerCount, String ownerTypeName, int sourceSiteId) {
+            int ownerSite, int ownerCount, String ownerTypeName) {
         capturedObjectEvents.add(SemanticObjectEvent.exception(
-                seq, roleId, packedType, ownerSite, ownerCount, ownerTypeName, sourceSiteId));
+                seq, roleId, packedType, ownerSite, ownerCount, ownerTypeName));
     }
 
-    public static void recordNondeterministicEvent(long seq, long roleId, int packedType, int sourceSiteId) {
-        capturedObjectEvents.add(SemanticObjectEvent.nondeterministic(seq, roleId, packedType, sourceSiteId));
+    public static void recordNondeterministicEvent(long seq, long roleId, int packedType) {
+        capturedObjectEvents.add(SemanticObjectEvent.nondeterministic(seq, roleId, packedType));
     }
 
     public static void recordReplayObjectEvent(long replaySeq, SemanticObjectEvent event) {
@@ -124,7 +124,7 @@ public final class SemanticTraceRegistry {
                     continue;
                 }
                 String[] parts = line.split("\t", -1);
-                if (parts.length < 11 || !"CAPTURE".equals(parts[0])) {
+                if (parts.length < 10 || !"CAPTURE".equals(parts[0])) {
                     continue;
                 }
                 SemanticObjectEvent.Kind kind = SemanticObjectEvent.Kind.valueOf(parts[1]);
@@ -135,14 +135,13 @@ public final class SemanticTraceRegistry {
                 int ownerCount = Integer.parseInt(parts[6]);
                 String ownerTypeName = parts[7];
                 int index = Integer.parseInt(parts[8]);
-                int sourceSiteId = Integer.parseInt(parts[9]);
-                int targetRoleId = Integer.parseInt(parts[10]);
+                int targetRoleId = Integer.parseInt(parts[9]);
                 FieldKey fieldKey = null;
-                if (parts.length >= 14 && !parts[11].isEmpty()) {
-                    fieldKey = FieldKey.of(parts[11], parts[12], parts[13]);
+                if (parts.length >= 13 && !parts[10].isEmpty()) {
+                    fieldKey = FieldKey.of(parts[10], parts[11], parts[12]);
                 }
                 events.add(rebuildCapturedEvent(kind, seq, roleId, packedType, ownerSite, ownerCount,
-                        ownerTypeName, fieldKey, index, sourceSiteId, targetRoleId));
+                        ownerTypeName, fieldKey, index, targetRoleId));
             }
         }
         return events;
@@ -171,8 +170,6 @@ public final class SemanticTraceRegistry {
         writer.write('\t');
         writer.write(Integer.toString(event.index()));
         writer.write('\t');
-        writer.write(Integer.toString(event.sourceSiteId()));
-        writer.write('\t');
         writer.write(Integer.toString(event.targetRoleId()));
         writer.write('\t');
         if (event.fieldKey() != null) {
@@ -190,7 +187,7 @@ public final class SemanticTraceRegistry {
 
     private static SemanticObjectEvent rebuildCapturedEvent(SemanticObjectEvent.Kind kind, long seq, long roleId,
             int packedType, int ownerSite, int ownerCount, String ownerTypeName, FieldKey fieldKey, int index,
-            int sourceSiteId, int targetRoleId) {
+            int targetRoleId) {
         switch (kind) {
             case FIELD:
                 return SemanticObjectEvent.field(seq, roleId, packedType, ownerSite, ownerCount, fieldKey);
@@ -200,18 +197,16 @@ public final class SemanticTraceRegistry {
                 return SemanticObjectEvent.atomic(seq, roleId, packedType, ownerSite, ownerCount, ownerTypeName, index);
             case THREAD:
                 return SemanticObjectEvent.thread(seq, roleId, packedType, ownerSite, ownerCount, ownerTypeName,
-                        sourceSiteId, targetRoleId);
+                        targetRoleId);
             case CLASS_INIT:
-                return SemanticObjectEvent.classInit(seq, roleId, packedType, sourceSiteId);
+                return SemanticObjectEvent.classInit(seq, roleId, packedType);
             case EXCEPTION:
-                return SemanticObjectEvent.exception(seq, roleId, packedType, ownerSite, ownerCount, ownerTypeName,
-                        sourceSiteId);
+                return SemanticObjectEvent.exception(seq, roleId, packedType, ownerSite, ownerCount, ownerTypeName);
             case NONDET:
-                return SemanticObjectEvent.nondeterministic(seq, roleId, packedType, sourceSiteId);
+                return SemanticObjectEvent.nondeterministic(seq, roleId, packedType);
             case SYNC:
             default:
-                return SemanticObjectEvent.sync(seq, roleId, packedType, ownerSite, ownerCount, ownerTypeName,
-                        sourceSiteId);
+                return SemanticObjectEvent.sync(seq, roleId, packedType, ownerSite, ownerCount, ownerTypeName);
         }
     }
 }

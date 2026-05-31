@@ -334,13 +334,13 @@ public class CaptureMonitor {
     }
   }
 
-  public static void logException(Object exception, int siteId) {
+  public static void logException(Object exception) {
     if (isInside.get()) return;
     if (exception == null) return;
-    if (shouldIgnoreCurrentRole(siteId)) return;
+    if (shouldIgnoreCurrentRole(0)) return;
     isInside.set(true);
     try {
-      TraceLogger.logException(exception, siteId);
+      TraceLogger.logException(exception);
     } finally {
       isInside.set(false);
     }
@@ -379,45 +379,45 @@ public class CaptureMonitor {
     }
   }
 
-  public static void logNondetInt(int value, int siteId) {
+  public static void logNondetInt(int value) {
     if (isInside.get()) return;
-    if (shouldIgnoreCurrentRole(siteId)) return;
+    if (shouldIgnoreCurrentRole(0)) return;
     isInside.set(true);
     try {
-      TraceLogger.logNondetInt(value, siteId);
+      TraceLogger.logNondetInt(value);
     } finally {
       isInside.set(false);
     }
   }
 
-  public static void logNondetFloat(float value, int siteId) {
+  public static void logNondetFloat(float value) {
     if (isInside.get()) return;
-    if (shouldIgnoreCurrentRole(siteId)) return;
+    if (shouldIgnoreCurrentRole(0)) return;
     isInside.set(true);
     try {
-      TraceLogger.logNondetFloat(value, siteId);
+      TraceLogger.logNondetFloat(value);
     } finally {
       isInside.set(false);
     }
   }
 
-  public static void logNondetLong(long value, int siteId) {
+  public static void logNondetLong(long value) {
     if (isInside.get()) return;
-    if (shouldIgnoreCurrentRole(siteId)) return;
+    if (shouldIgnoreCurrentRole(0)) return;
     isInside.set(true);
     try {
-      TraceLogger.logNondetLong(value, siteId);
+      TraceLogger.logNondetLong(value);
     } finally {
       isInside.set(false);
     }
   }
 
-  public static void logNondetDouble(double value, int siteId) {
+  public static void logNondetDouble(double value) {
     if (isInside.get()) return;
-    if (shouldIgnoreCurrentRole(siteId)) return;
+    if (shouldIgnoreCurrentRole(0)) return;
     isInside.set(true);
     try {
-      TraceLogger.logNondetDouble(value, siteId);
+      TraceLogger.logNondetDouble(value);
     } finally {
       isInside.set(false);
     }

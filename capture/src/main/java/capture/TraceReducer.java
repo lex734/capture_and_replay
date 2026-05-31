@@ -370,23 +370,20 @@ public final class TraceReducer {
         }
         if (event.isThread()) {
             return SemanticObjectEvent.thread(replayEventId, event.roleId(), event.packedType(),
-                    event.ownerSite(), event.ownerCount(), event.ownerTypeName(), event.sourceSiteId(),
-                    event.targetRoleId());
+                    event.ownerSite(), event.ownerCount(), event.ownerTypeName(), event.targetRoleId());
         }
         if (event.isClassInit()) {
-            return SemanticObjectEvent.classInit(replayEventId, event.roleId(), event.packedType(),
-                    event.sourceSiteId());
+            return SemanticObjectEvent.classInit(replayEventId, event.roleId(), event.packedType());
         }
         if (event.isException()) {
             return SemanticObjectEvent.exception(replayEventId, event.roleId(), event.packedType(),
-                    event.ownerSite(), event.ownerCount(), event.ownerTypeName(), event.sourceSiteId());
+                    event.ownerSite(), event.ownerCount(), event.ownerTypeName());
         }
         if (event.isNondeterministic()) {
-            return SemanticObjectEvent.nondeterministic(replayEventId, event.roleId(), event.packedType(),
-                    event.sourceSiteId());
+            return SemanticObjectEvent.nondeterministic(replayEventId, event.roleId(), event.packedType());
         }
         return SemanticObjectEvent.sync(replayEventId, event.roleId(), event.packedType(),
-                event.ownerSite(), event.ownerCount(), event.ownerTypeName(), event.sourceSiteId());
+                event.ownerSite(), event.ownerCount(), event.ownerTypeName());
     }
 
     private static Set<RawEvent> computeRelevantEventClosure(
@@ -586,10 +583,10 @@ public final class TraceReducer {
                 return "atomic-object:" + event.objSite + ":" + event.objCount;
             case BinarySchema.Event.CLASS_INIT_BEGIN:
             case BinarySchema.Event.CLASS_INIT_END:
-                return "class-init:" + event.data2;
+                return "class-init";
             case BinarySchema.Event.NONDETERMINISTIC_INT:
             case BinarySchema.Event.NONDETERMINISTIC_LONG:
-                return "nondet:" + event.baseType + ":" + event.objCount;
+                return "nondet:" + event.baseType;
             default:
                 return "event:" + event.baseType + ":" + event.objSite + ":" + event.objCount;
         }

@@ -329,13 +329,10 @@ public class SyncTransformer implements ClassFileTransformer {
             // coordinator sees EXCEPTION_THROW in the right sequence position.
             if (opcode == Opcodes.ATHROW) {
                 String logMethod = isReplay ? "checkException" : "logException";
-                String siteString = className + "." + methodName + "#throw_" + instructionId++;
-                int siteId = SyncTransformer.registerSiteId(siteString);
                 // Stack: [..., exception]
                 mv.visitInsn(Opcodes.DUP);       // [..., exception, exception]
-                mv.visitLdcInsn(siteId);          // [..., exception, exception, siteId]
                 mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, logMethod,
-                        "(Ljava/lang/Object;I)V", false);
+                        "(Ljava/lang/Object;)V", false);
                 // Stack restored to [..., exception]; ATHROW executes below via super.visitInsn
             }
             // Handle Intrinsic Locks
@@ -966,7 +963,6 @@ public class SyncTransformer implements ClassFileTransformer {
                     if (!isStaticCall) {
                         mv.visitInsn(Opcodes.POP); // pop receiver
                     }
-                    mv.visitLdcInsn(siteId);
                     emitNondetReplayCall(nondetType);
                 } else {
                     // Save args and receiver (for instance methods) before the call
@@ -989,7 +985,6 @@ public class SyncTransformer implements ClassFileTransformer {
                     // DUP return value so we can log it while leaving it on the stack
                     boolean isWide = nondetType.equals("LONG") || nondetType.equals("DOUBLE");
                     mv.visitInsn(isWide ? Opcodes.DUP2 : Opcodes.DUP);
-                    mv.visitLdcInsn(siteId);
                     emitNondetLogCall(nondetType);
                 }
                 return;
@@ -1125,38 +1120,38 @@ public class SyncTransformer implements ClassFileTransformer {
             return null;
         }
 
-        /** Emits a call to logNondet*(value, siteId) in CaptureMonitor. Stack: [..., value, siteId] → [...] */
+        /** Emits a call to logNondet*(value) in CaptureMonitor. Stack: [..., value] → [...] */
         private void emitNondetLogCall(String nondetType) {
             switch (nondetType) {
                 case "INT":
-                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logNondetInt", "(II)V", false);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logNondetInt", "(I)V", false);
                     break;
                 case "FLOAT":
-                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logNondetFloat", "(FI)V", false);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logNondetFloat", "(F)V", false);
                     break;
                 case "LONG":
-                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logNondetLong", "(JI)V", false);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logNondetLong", "(J)V", false);
                     break;
                 case "DOUBLE":
-                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logNondetDouble", "(DI)V", false);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "logNondetDouble", "(D)V", false);
                     break;
             }
         }
 
-        /** Emits a call to replayNondet*(siteId) in ReplayMonitor. Stack: [..., siteId] → [..., value] */
+        /** Emits a call to replayNondet*() in ReplayMonitor. Stack: [...] → [..., value] */
         private void emitNondetReplayCall(String nondetType) {
             switch (nondetType) {
                 case "INT":
-                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayNondetInt", "(I)I", false);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayNondetInt", "()I", false);
                     break;
                 case "FLOAT":
-                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayNondetFloat", "(I)F", false);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayNondetFloat", "()F", false);
                     break;
                 case "LONG":
-                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayNondetLong", "(I)J", false);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayNondetLong", "()J", false);
                     break;
                 case "DOUBLE":
-                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayNondetDouble", "(I)D", false);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, monitorClass, "replayNondetDouble", "()D", false);
                     break;
             }
         }

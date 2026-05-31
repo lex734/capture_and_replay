@@ -173,8 +173,6 @@ public final class ReducedTraceRegistry {
                 writer.write('\t');
                 writer.write(Integer.toString(objectEvent.index()));
                 writer.write('\t');
-                writer.write(Integer.toString(objectEvent.sourceSiteId()));
-                writer.write('\t');
                 writer.write(Integer.toString(objectEvent.targetRoleId()));
                 writer.write('\t');
                 if (objectEvent.fieldKey() != null) {
@@ -283,7 +281,7 @@ public final class ReducedTraceRegistry {
                         }
                         break;
                     case "SEMANTIC":
-                        if (parts.length == 14) {
+                        if (parts.length == 13) {
                             long replaySeq = Long.parseLong(parts[1]);
                             SemanticObjectEvent.Kind kind = SemanticObjectEvent.Kind.valueOf(parts[2]);
                             long roleId = Long.parseLong(parts[3]);
@@ -292,11 +290,10 @@ public final class ReducedTraceRegistry {
                             int ownerCount = Integer.parseInt(parts[6]);
                             String ownerTypeName = parts[7];
                             int index = Integer.parseInt(parts[8]);
-                            int sourceSiteId = Integer.parseInt(parts[9]);
-                            int targetRoleId = Integer.parseInt(parts[10]);
-                            String fieldOwner = parts[11];
-                            String fieldName = parts[12];
-                            String fieldDesc = parts[13];
+                            int targetRoleId = Integer.parseInt(parts[9]);
+                            String fieldOwner = parts[10];
+                            String fieldName = parts[11];
+                            String fieldDesc = parts[12];
                             SemanticObjectEvent event;
                             switch (kind) {
                                 case FIELD:
@@ -313,22 +310,22 @@ public final class ReducedTraceRegistry {
                                     break;
                                 case THREAD:
                                     event = SemanticObjectEvent.thread(replaySeq, roleId, packedType, ownerSite, ownerCount,
-                                            ownerTypeName, sourceSiteId, targetRoleId);
+                                            ownerTypeName, targetRoleId);
                                     break;
                                 case CLASS_INIT:
-                                    event = SemanticObjectEvent.classInit(replaySeq, roleId, packedType, sourceSiteId);
+                                    event = SemanticObjectEvent.classInit(replaySeq, roleId, packedType);
                                     break;
                                 case EXCEPTION:
                                     event = SemanticObjectEvent.exception(replaySeq, roleId, packedType, ownerSite, ownerCount,
-                                            ownerTypeName, sourceSiteId);
+                                            ownerTypeName);
                                     break;
                                 case NONDET:
-                                    event = SemanticObjectEvent.nondeterministic(replaySeq, roleId, packedType, sourceSiteId);
+                                    event = SemanticObjectEvent.nondeterministic(replaySeq, roleId, packedType);
                                     break;
                                 case SYNC:
                                 default:
                                     event = SemanticObjectEvent.sync(replaySeq, roleId, packedType, ownerSite, ownerCount,
-                                            ownerTypeName, sourceSiteId);
+                                            ownerTypeName);
                                     break;
                             }
                             SemanticTraceRegistry.recordReplayObjectEvent(replaySeq, event);

@@ -1024,25 +1024,16 @@ public class ReplayCoordinator {
             int actualObjCount, int sourceContextKey) {
         SemanticObjectEvent expectedObject = SemanticTraceRegistry.lookupObjectEvent(expected[0]);
         if (expectedObject == null) {
-            return sameNondeterministicSourceKey(expected, sourceContextKey)
-                    && (actualFieldKey == null || sameFieldKeyFallback(expected, actualFieldKey));
+            return actualFieldKey == null || sameFieldKeyFallback(expected, actualFieldKey);
         }
 
         if (expectedObject.fieldKey() != null && actualFieldKey != null
                 && !expectedObject.fieldKey().equals(actualFieldKey)) {
             return false;
         }
-        if (expectedObject.sourceSiteId() >= 0
-                && sourceContextKey != 0
-                && expectedObject.sourceSiteId() != sourceContextKey) {
-            return false;
-        }
         if ((expectedObject.isArray() || expectedObject.isAtomic()) && expectedObject.index() >= 0
                 && expectedObject.index() != actualObjCount) {
             return false;
-        }
-        if (expectedObject.isNondeterministic()) {
-            return sameNondeterministicSourceKey(expected, sourceContextKey);
         }
         return true;
     }
@@ -1055,15 +1046,6 @@ public class ReplayCoordinator {
         return expectedObject == null
                 || expectedObject.fieldKey() == null
                 || expectedObject.fieldKey().equals(actualFieldKey);
-    }
-
-    private static boolean sameNondeterministicSourceKey(long[] expected, int actualSourceKey) {
-        int baseType = (int) expected[2] & 0xFF;
-        if (baseType != BinarySchema.Event.NONDETERMINISTIC_INT
-                && baseType != BinarySchema.Event.NONDETERMINISTIC_LONG) {
-            return true;
-        }
-        return actualSourceKey == (int) expected[4];
     }
 
     private static boolean bindingCompatible(long[] expected, Object runtimeObject, int actualObjCount,
@@ -1812,22 +1794,19 @@ public class ReplayCoordinator {
             }
             if (objectEvent.isThread()) {
                 return " thread=" + objectEvent.ownerTypeName()
-                        + " sourceSite=" + objectEvent.sourceSiteId()
                         + " targetRole=" + objectEvent.targetRoleId();
             }
             if (objectEvent.isClassInit()) {
-                return " classInitSite=" + objectEvent.sourceSiteId();
+                return " classInit";
             }
             if (objectEvent.isException()) {
-                return " exception=" + objectEvent.ownerTypeName()
-                        + " sourceSite=" + objectEvent.sourceSiteId();
+                return " exception=" + objectEvent.ownerTypeName();
             }
             if (objectEvent.isNondeterministic()) {
-                return " nondetSite=" + objectEvent.sourceSiteId();
+                return " nondetType=" + ((int) expected[2] & 0xFF);
             }
             if (objectEvent.isSync()) {
-                return " sync=" + objectEvent.ownerTypeName()
-                        + " sourceSite=" + objectEvent.sourceSiteId();
+                return " sync=" + objectEvent.ownerTypeName();
             }
         }
         FieldInteractionDomain domain = ReducedTraceRegistry.lookupFieldDomain(expected[0]);
@@ -1862,9 +1841,6 @@ public class ReplayCoordinator {
             }
             if (objectEvent.index() >= 0) {
                 builder.append('|').append(objectEvent.index());
-            }
-            if (objectEvent.sourceSiteId() >= 0) {
-                builder.append('|').append("site=").append(objectEvent.sourceSiteId());
             }
             if (objectEvent.targetRoleId() >= 0) {
                 builder.append('|').append("targetRole=").append(objectEvent.targetRoleId());

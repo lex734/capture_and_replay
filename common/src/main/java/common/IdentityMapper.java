@@ -80,6 +80,9 @@ public class IdentityMapper {
     }
 
     public static int getRoleIdBySite(long tid, int siteId) {
+        if ("REPLAY".equals(System.getProperty("tool.mode"))) {
+            return getRoleId(tid);
+        }
         if (isIgnoredSite(siteId)) {
             return IGNORED_ROLE_ID;
         }

@@ -11,13 +11,16 @@ package correctness;
 public class VolatileWriteRaceTest {
 
     static volatile int x = 0;
+    static volatile int y = 0;
 
     public static void main(String[] args) throws InterruptedException {
         Thread t1 = new Thread(() -> {
-            for (int i = 0; i < 100; i++) x = 1;
+            for (int i = 0; i < 100; i++) {
+                x = y;
+            }
         });
         Thread t2 = new Thread(() -> {
-            for (int i = 0; i < 100; i++) x = 2;
+            for (int i = 0; i < 100; i++) x = 1;
         });
 
         t1.start();

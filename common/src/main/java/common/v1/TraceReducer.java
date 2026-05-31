@@ -119,6 +119,16 @@ public final class TraceReducer {
                 retainedEvents.add(event);
                 continue;
             }
+            // Epoch-release events (volatile writes, atomic writes/RMW/CAS, unpark, etc.)
+            // advance the global epoch that subsequent events snapshot.  They must always
+            // be retained so that the epoch chain remains intact during replay.  Pruning
+            // them because they appear write-only in the captured trace is incorrect:
+            // volatile fields are shared by declaration, and any event after them that
+            // snapshots the resulting epoch would block permanently in the epoch gate.
+            if (event.isEpochRelease()) {
+                retainedEvents.add(event);
+                continue;
+            }
             if (shouldRetainConcurrentOwnerEvent(event, concurrentOwnerKeys, concurrentWindowStartSeq)) {
                 retainedEvents.add(event);
             }
@@ -215,6 +225,14 @@ public final class TraceReducer {
             if (ownerKey == null || ownerKey.isEmpty()) {
                 continue;
             }
+            // Volatile fields and atomic objects are shared by design: treat their owner
+            // keys as concurrent regardless of how many threads appear in the trace.
+            // This ensures all accesses (reads and writes) are retained, which is
+            // necessary both for value injection and to keep the epoch chain intact.
+            if (isVolatileOrAtomicEvent(event)) {
+                concurrentOwnerKeys.add(ownerKey);
+                continue;
+            }
             Set<Long> roles = rolesByOwner.computeIfAbsent(ownerKey, ignored -> new HashSet<>());
             roles.add(event.roleId);
             if (roles.size() > 1) {
@@ -222,6 +240,21 @@ public final class TraceReducer {
             }
         }
         return concurrentOwnerKeys;
+    }
+
+    private static boolean isVolatileOrAtomicEvent(RawEvent event) {
+        switch (event.baseType) {
+            case BinarySchema.Event.ATOMIC_READ:
+            case BinarySchema.Event.ATOMIC_WRITE:
+            case BinarySchema.Event.ATOMIC_RMW:
+            case BinarySchema.Event.ATOMIC_CAS:
+                return true;
+            case BinarySchema.Event.FIELD_READ:
+            case BinarySchema.Event.FIELD_WRITE:
+                return (event.flags & BinarySchema.Flags.IS_VOLATILE) != 0;
+            default:
+                return false;
+        }
     }
 
     private static boolean shouldRetainConcurrentOwnerEvent(RawEvent event, Set<String> concurrentOwnerKeys,
@@ -243,6 +276,11 @@ public final class TraceReducer {
         }
         if (concurrentWindowStartSeq != Long.MAX_VALUE && event.seq() < concurrentWindowStartSeq) {
             return false;
+        }
+        // Epoch-release events must always be retained so the epoch chain stays
+        // intact; the removeIf pass must not undo what the loop above guarantees.
+        if (event.isEpochRelease()) {
+            return true;
         }
         switch (event.baseType) {
             case BinarySchema.Event.MONITOR_ENTER:

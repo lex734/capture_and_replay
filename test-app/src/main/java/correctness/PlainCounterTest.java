@@ -1,5 +1,4 @@
 package correctness;
-
 /**
  * Data race on a plain (non-volatile, non-atomic) int.
  * Two threads perform increment and decrement with a read-modify-write cycle
@@ -10,14 +9,38 @@ package correctness;
  */
 public class PlainCounterTest {
 
-    static int counter = 0;
+
+    // static int counter = 0;
+    static int x = 0;
+    // static ReentrantLock l = new ReentrantLock();
 
     public static void main(String[] args) throws InterruptedException {
+        System.out.println("HEY");
         Thread t1 = new Thread(() -> {
-            for (int i = 0; i < 100; i++) counter++;
+            for (int i = 0; i < 100; i++) {
+                // try {
+                x++;
+                //     l.lock();
+                    // counter++;
+                // } catch (Exception e) {
+                // }
+                // finally{
+                //     l.unlock();
+                // }
+            }
         });
         Thread t2 = new Thread(() -> {
-            for (int i = 0; i < 100; i++) counter--;
+            for (int i = 0; i < 100; i++) {
+                x--;
+                // try {
+                //     l.lock();
+                //     counter--;
+                // } catch (Exception e) {
+                // }
+                // finally{
+                //     l.unlock();
+                // }
+            }
         });
 
         t1.start();
@@ -25,6 +48,6 @@ public class PlainCounterTest {
         t1.join();
         t2.join();
 
-        System.out.println("Final counter: " + counter);
+        System.out.println("Final counter: " + x);
     }
 }

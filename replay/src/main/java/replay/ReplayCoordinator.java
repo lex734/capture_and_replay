@@ -1,26 +1,18 @@
 package replay;
 
-import common.BinarySchema;
-import common.IdentityMapper;
-import common.v1.FieldKey;
-import common.v1.FieldInteractionDomain;
-import common.v1.ReducedTraceRegistry;
-import common.v1.ReplayConstraint;
-import common.v1.SemanticIdentity;
-import common.v1.SemanticObjectEvent;
-import common.v1.SemanticTraceRegistry;
-import java.lang.reflect.Field;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.Writer;
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadInfo;
+import java.lang.management.ThreadMXBean;
+import java.lang.reflect.Field;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableSet;
@@ -29,9 +21,16 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
-import java.lang.management.ManagementFactory;
-import java.lang.management.ThreadInfo;
-import java.lang.management.ThreadMXBean;
+
+import common.BinarySchema;
+import common.IdentityMapper;
+import common.v1.FieldInteractionDomain;
+import common.v1.FieldKey;
+import common.v1.ReducedTraceRegistry;
+import common.v1.ReplayConstraint;
+import common.v1.SemanticIdentity;
+import common.v1.SemanticObjectEvent;
+import common.v1.SemanticTraceRegistry;
 
 public class ReplayCoordinator {
     private static final long MATCH_WAIT_SLICE_MS = 100L;
@@ -688,16 +687,20 @@ public class ReplayCoordinator {
                     + "  (" + matched + "/" + seen + " locations seen, " + (locs - seen) + " unseen)");
         }
         System.err.println("[REPLAY]   binding_conflict:    " + flag(firstDivergenceInfo != null, firstDivergenceInfo == null ? "" : firstDivergenceInfo));
-        System.err.println("[REPLAY]   unapplicable:        " + flag(traceUnapplicable, firstUnapplicableInfo));
+        System.err.println("[REPLAY]   unapplicable:        " + flag(traceUnapplicable));
         System.err.println("[REPLAY]   unreachable:         " + flag(traceUnreachable, firstUnreachableInfo));
         System.err.println("[REPLAY]   degraded:            " + flag(degradedReplay, firstDegradationInfo));
         System.err.println("[REPLAY]   value_diverged:      " + flag(valueDivergedReplay, firstValueDivergenceInfo));
         System.err.println("[REPLAY]   unsupported:         " + flag(unsupportedReplay, firstUnsupportedInfo));
-        System.err.println("[REPLAY]   incomplete:          " + flag(isIncomplete, incompleteReason + (incompleteDetails.isEmpty() ? "" : " " + incompleteDetails)));
+        System.err.println("[REPLAY]   incomplete:          " + flag(isIncomplete));
         if (total > 0) {
             System.err.println("[REPLAY]   valued events:       agreed=" + agreed + "  injected=" + injected + "  total=" + total);
         }
         System.err.println("[REPLAY] ─────────────────────────────────────────────────────");
+    }
+
+    private static String flag(boolean value) {
+        return flag(value, "");
     }
 
     private static String flag(boolean value, String detail) {

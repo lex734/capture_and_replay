@@ -1,4 +1,4 @@
-package common.v1;
+package common;
 
 public enum ReplayMode {
     SAFE,

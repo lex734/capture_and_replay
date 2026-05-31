@@ -1,8 +1,10 @@
-package common;
+package capture;
 
 import java.util.concurrent.atomic.AtomicLong;
 import common.IdentityMapper.BirthId;
+import common.BinarySchema;
 import common.FieldKey;
+import common.IdentityMapper;
 import common.SemanticTraceRegistry;
 
 public class TraceLogger {
@@ -316,7 +318,7 @@ public class TraceLogger {
 
     /**
      * Atomic logger for int-sized values (int, boolean, byte, short, char).
-     * 
+     *
      * @param intValue the written value (void set) or return value (get/RMW)
      * @param receiver the atomic object instance (AtomicInteger,
      *                 AtomicIntegerArray, etc.)
@@ -331,20 +333,6 @@ public class TraceLogger {
         BirthId birthId = IdentityMapper.getBirthId(receiver, null, currentSiteId);
         boolean isArray = (index >= 0);
         String ownerTypeName = receiver == null ? "" : receiver.getClass().getName().replace('.', '/');
-
-        // String eventName = getEventName(eventType);
-        // String receiverStr = receiver != null
-        //         ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver))
-        //         : "null";
-        // if (isArray) {
-        //     System.out.println(String.format(
-        //             "[ATOMIC] epoch=%d seq=%d role=%d  %-12s %s[%d] = %d",
-        //             seq >>> 32, seq & 0xFFFFFFFFL, roleId, eventName, receiverStr, index, intValue));
-        // } else {
-        //     System.out.println(String.format(
-        //             "[ATOMIC] epoch=%d seq=%d role=%d  %-12s %s = %d",
-        //             seq >>> 32, seq & 0xFFFFFFFFL, roleId, eventName, receiverStr, intValue));
-        // }
 
         if (isArray) {
             int packedType = packAtomicArrayType(eventType, birthId.siteId, false);
@@ -373,20 +361,6 @@ public class TraceLogger {
         BirthId birthId = IdentityMapper.getBirthId(receiver, null, currentSiteId);
         boolean isArray = (index >= 0);
         String ownerTypeName = receiver == null ? "" : receiver.getClass().getName().replace('.', '/');
-
-        // String eventName = getEventName(eventType);
-        // String receiverStr = receiver != null
-        //         ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver))
-        //         : "null";
-        // if (isArray) {
-        //     System.out.println(String.format(
-        //             "[ATOMIC] epoch=%d seq=%d role=%d  %-12s %s[%d] = %dL",
-        //             seq >>> 32, seq & 0xFFFFFFFFL, roleId, eventName, receiverStr, index, longValue));
-        // } else {
-        //     System.out.println(String.format(
-        //             "[ATOMIC] epoch=%d seq=%d role=%d  %-12s %s = %dL",
-        //             seq >>> 32, seq & 0xFFFFFFFFL, roleId, eventName, receiverStr, longValue));
-        // }
 
         if (isArray) {
             int packedType = packAtomicArrayType(eventType, birthId.siteId, false);
@@ -418,23 +392,6 @@ public class TraceLogger {
         BirthId valueBirth = IdentityMapper.getBirthId(objValue, null, currentSiteId);
         boolean isArray = (index >= 0);
         String ownerTypeName = receiver == null ? "" : receiver.getClass().getName().replace('.', '/');
-
-        // String eventName = getEventName(eventType);
-        // String receiverStr = receiver != null
-        //         ? receiver.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(receiver))
-        //         : "null";
-        // String valueStr = objValue != null
-        //         ? objValue.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(objValue))
-        //         : "null";
-        // if (isArray) {
-        //     System.out.println(String.format(
-        //             "[ATOMIC] epoch=%d seq=%d role=%d  %-12s %s[%d] = %s",
-        //             seq >>> 32, seq & 0xFFFFFFFFL, roleId, eventName, receiverStr, index, valueStr));
-        // } else {
-        //     System.out.println(String.format(
-        //             "[ATOMIC] epoch=%d seq=%d role=%d  %-12s %s = %s",
-        //             seq >>> 32, seq & 0xFFFFFFFFL, roleId, eventName, receiverStr, valueStr));
-        // }
 
         if (isArray) {
             int packedType = packAtomicArrayType(eventType, receiverBirth.siteId, true);
@@ -538,11 +495,6 @@ public class TraceLogger {
         int packedType = BinarySchema.packType(BinarySchema.Event.EXCEPTION_THROW, BinarySchema.Flags.NONE);
         SemanticTraceRegistry.recordExceptionEvent(seq, roleId, packedType, birthId.siteId, birthId.count,
                 exception == null ? "" : exception.getClass().getName().replace('.', '/'), siteId);
-        // String className = exception.getClass().getName();
-        // System.out.println(String.format(
-        //         "[THROW]  epoch=%d seq=%d role=%d  %s  site=%d",
-        //         seq >>> 32, seq & 0xFFFFFFFFL, roleId, className, siteId));
-
         BinarySchema.write(seq, (long) roleId, packedType,
                 birthId.siteId, birthId.count, siteId);
     }

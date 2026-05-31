@@ -1,4 +1,4 @@
-package common.v1;
+package common;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -17,8 +17,6 @@ public final class SemanticTraceRegistry {
     private static final List<SemanticObjectEvent> capturedObjectEvents =
             Collections.synchronizedList(new ArrayList<>());
     private static final Map<Long, SemanticObjectEvent> replayObjectEventsBySeq = new ConcurrentHashMap<>();
-    private static final Map<Long, SemanticFieldEvent> replayFieldEventsBySeq = new ConcurrentHashMap<>();
-
     private SemanticTraceRegistry() {
     }
 
@@ -33,16 +31,14 @@ public final class SemanticTraceRegistry {
 
     public static void resetReplayState() {
         replayObjectEventsBySeq.clear();
-        replayFieldEventsBySeq.clear();
     }
 
     public static void recordFieldEvent(long seq, long roleId, int packedType, int ownerSite, int ownerCount, FieldKey fieldKey) {
         if (fieldKey == null) {
             return;
         }
-        SemanticFieldEvent event = SemanticFieldEvent.capture(
-                seq, roleId, packedType, ownerSite, ownerCount, fieldKey);
-        capturedObjectEvents.add(event.event());
+        capturedObjectEvents.add(SemanticObjectEvent.field(
+                seq, roleId, packedType, ownerSite, ownerCount, fieldKey));
     }
 
     public static void recordArrayEvent(long seq, long roleId, int packedType,
@@ -90,15 +86,6 @@ public final class SemanticTraceRegistry {
             return;
         }
         replayObjectEventsBySeq.put(replaySeq, event);
-        if (event.isField() && event.fieldKey() != null) {
-            replayFieldEventsBySeq.put(replaySeq,
-                    SemanticFieldEvent.capture(event.seq(), event.roleId(), event.packedType(),
-                            event.ownerSite(), event.ownerCount(), event.fieldKey()));
-        }
-    }
-
-    public static SemanticFieldEvent lookupFieldEvent(long replaySeq) {
-        return replayFieldEventsBySeq.get(replaySeq);
     }
 
     public static SemanticObjectEvent lookupObjectEvent(long replaySeq) {

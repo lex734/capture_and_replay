@@ -1,15 +1,6 @@
 # Capture and Replay
 
-This repository contains a Java capture/replay system for concurrent programs.
-
-At a high level it works in four stages:
-
-1. `Stage A`: instrument the target program
-2. `Stage B`: capture runtime events plus semantic object information
-3. `Stage C`: reduce the raw capture into a replay-oriented trace
-4. `Stage D`: replay against the reduced trace
-
-The current implementation is intentionally close to the `divergence-finder` branch in its replay coordination model, while adding a semantic object layer so replay does not depend purely on allocation order.
+This repository contains a Java agent-based capture/replay system for concurrent programs. It instruments a target JVM during capture, records both raw runtime events and semantic object metadata, reduces that capture into a replay-oriented trace, and then replays against that reduced trace with coordination and semantic object binding.
 
 ## Build
 
@@ -44,302 +35,181 @@ java -javaagent:replay/target/trace-replay-agent.jar \
 
 The working directory will contain:
 
-- `trace.bin`
-  Raw captured events
-- `trace-semantic.tsv`
-  Persisted semantic object events from capture
-- `trace-reduced.tsv`
-  Reduced replay trace used by Stage D
+- `trace.bin`: raw captured events
+- `trace-semantic.tsv`: semantic object events from capture
+- `trace-reduced.tsv`: reduced replay trace consumed by replay
 
-## Pipeline
+## How It Works
 
-### Stage A: Instrumentation
+The tool runs in four stages.
 
-Instrumentation lives mainly in:
+### 1. Instrumentation
 
-- `instr/src/main/java/instr/SyncTransformer.java`
-- `capture/src/main/java/capture/CaptureMonitor.java`
-- `replay/src/main/java/replay/ReplayMonitor.java`
+Both capture and replay install the same bytecode transformer, [SyncTransformer.java](common/src/main/java/common/SyncTransformer.java), and switch behavior by setting `tool.mode`.
 
-What is instrumented:
+The transformer:
 
-- explicit monitor enter/exit bytecodes
-- `Thread.start`, `join`, timeout join variants
-- `ReentrantLock` / `Condition` wrapper calls
-- field, array, atomic, class-init, exception, and nondeterministic events
+- assigns stable site IDs from site strings so capture and replay agree across class-load order
+- instruments monitor operations, thread lifecycle events, arrays, fields, atomics, exceptions, and nondeterministic events
+- records allocation sites through `IdentityMapper.registerAllocation(...)`
+- routes sync checks to either `capture/CaptureMonitor` or `replay/ReplayMonitor`
+- caches volatile-field metadata so cross-class field accesses can still be classified correctly
 
-Important policy:
+The main entrypoints are:
 
-- explicit `MONITORENTER` / `MONITOREXIT` are instrumented
-- synchronized methods are not given special synthetic monitor events
-- wrapper-based `ReentrantLock` / `Condition` calls are instrumented explicitly
+- [CaptureAgent.java](capture/src/main/java/capture/CaptureAgent.java)
+- [ReplayAgent.java](replay/src/main/java/replay/ReplayAgent.java)
 
-### Stage B: Capture
+### 2. Capture
 
-Core classes:
+During capture, instrumented code calls into capture-side logging helpers, which append raw events to `trace.bin` and also record semantic object events in memory.
 
-- `common/src/main/java/common/TraceLogger.java`
-- `common/src/main/java/common/BinarySchema.java`
-- `common/src/main/java/common/v1/SemanticTraceRegistry.java`
+Two representations are produced:
 
-Capture produces two coupled streams:
+- raw binary events in `trace.bin`
+- semantic object events in `SemanticTraceRegistry`, later persisted to `trace-semantic.tsv`
 
-1. raw events in `trace.bin`
-2. semantic object events in memory, later persisted to `trace-semantic.tsv`
-
-#### Raw event sequencing
-
-Each captured event has a packed sequence:
+Raw capture sequence numbers are packed as:
 
 `captureSeq = (epoch << 32) | localSeq`
 
 Where:
 
-- `epoch` advances only on JMM release-side events
-- `localSeq` is thread-local and preserves per-thread execution shape inside an epoch
+- `epoch` advances on release-like synchronization events
+- `localSeq` preserves thread-local order within that epoch
 
-This means capture sequence is not a global total order by itself. It is a compact causal key:
+This means the packed sequence is a compact causal key, not the only source of cross-thread ordering. The physical append order in `trace.bin` is also preserved.
 
-- high 32 bits: release-oriented epoch
-- low 32 bits: thread-local order
+Semantic capture records enough structure for replay to match objects by meaning rather than only by allocation order:
 
-To preserve a real cross-thread append order, raw records are also written to `trace.bin` in actual file-slot order.
+- field owners and field keys
+- array owners and indices
+- atomic owners
+- thread lifecycle objects and target roles
+- monitor/sync owners
+- exception and nondeterministic sites
 
-#### Semantic capture
+### 3. Reduction
 
-Semantic capture records:
+At JVM shutdown, capture flushes `trace.bin`, saves `trace-semantic.tsv`, and then runs the reducer to build `trace-reduced.tsv`.
 
-- object/field/array/atomic identities
-- thread lifecycle identities
-- sync object identities
-- source sites and target roles where relevant
+The reducer:
 
-This is the layer that lets replay identify objects semantically instead of relying only on raw allocation order.
+- reads raw events from `trace.bin`
+- aligns them with semantic events from memory or `trace-semantic.tsv`
+- filters to replay-supported, replay-relevant events
+- keeps the concurrent window starting at the first `THREAD_START`
+- retains synchronization protocol events and epoch-release events
+- keeps cross-role shared-owner activity so replay can preserve causality and value flow
+- emits replay constraints such as `THREAD_ORDER` and `THREAD_START_CAUSAL`
 
-### Stage C: Reduction
-
-Core class:
-
-- `common/src/main/java/common/v1/TraceReducer.java`
-
-The reducer consumes:
-
-- `trace.bin`
-- `trace-semantic.tsv`
-
-And produces:
-
-- `trace-reduced.tsv`
-
-The reducer does not simply keep every raw event. It keeps a replay-oriented subset plus constraints.
-
-#### Current reduction policy
-
-The important current rules are:
-
-- only replay roles `> 0` are considered
-- ignored role `-1` and global role `0` are not replay-relevant
-- the replay-relevant window starts at the first `THREAD_START`
-- cross-role owners are preserved owner-centrically:
-  if an owner participates across roles, keep all runtime events for that owner in the concurrent window
-- lock/condition protocol events are always retained:
-  `MONITOR_ENTER`, `MONITOR_EXIT`, `THREAD_WAIT`, `THREAD_NOTIFY`, `THREAD_NOTIFY_ALL`
-- static object-valued field noise is pruned aggressively
-
-#### Replay sequence in the reduced trace
-
-Reduced replay events use a new key:
+Reduced replay sequence numbers are packed as:
 
 `replaySeq = (reducedOrder << 32) | originalLocalSeq`
 
 Where:
 
-- high 32 bits: synthetic reduced causal order
-- low 32 bits: original captured local sequence
+- `reducedOrder` is a synthetic monotonic order in the reduced trace
+- `originalLocalSeq` preserves thread-local shape from capture
 
-This is deliberate:
+Replay epoch data is stored separately in `trace-reduced.tsv` and loaded through `ReducedTraceRegistry`.
 
-- replay needs a unique, monotonic event id for the reduced trace
-- we still preserve thread-local shape from capture in the low half
+### 4. Replay
 
-Epoch is not inferred from `replaySeq`. It is stored separately in `trace-reduced.tsv` and loaded through `ReducedTraceRegistry`.
+Replay loads `trace-reduced.tsv`, initializes replay state, installs the same transformer in replay mode, and uses `ReplayCoordinator` to block or release runtime events until they are legal according to the reduced trace.
 
-#### Constraints emitted by Stage C
+Replay uses:
 
-The reducer records:
+- per-role pending event queues
+- shared-domain coordination for cross-thread field/object interactions
+- replay epochs to gate progress on release/acquire structure
+- semantic object binding through `SemanticIdentity`
+- best-effort prebinding for stable static roots
+- optional value injection when the recorded value is required and safe to realize
 
-- `THREAD_ORDER`
-- `DOMAIN_ORDER`
-- `JMM_SYNCHRONIZES_WITH`
-- `THREAD_START_CAUSAL`
+The replay model is intentionally stricter once an object is bound. Extra irrelevant runtime objects may exist, but once a runtime object is committed to a replay-relevant trace object, replay expects future uses to stay consistent with that binding.
 
-These are consumed by replay as metadata, not as a second trace format.
+## Core Files
 
-### Stage D: Replay
+These are the main files to read first.
 
-Core classes:
+### Shared infrastructure in `common/`
 
-- `replay/src/main/java/replay/ReplayCoordinator.java`
-- `replay/src/main/java/replay/ReplayMonitor.java`
-- `common/src/main/java/common/v1/SemanticIdentity.java`
-- `common/src/main/java/common/v1/ReducedTraceRegistry.java`
+- [SyncTransformer.java](common/src/main/java/common/SyncTransformer.java)
+  The bytecode transformer. Instruments classes, assigns site IDs, resolves volatile fields, and switches between capture and replay monitors.
 
-Replay loads the reduced trace and uses:
+- [IdentityMapper.java](common/src/main/java/common/IdentityMapper.java)
+  Maps runtime threads, objects, static fields, and allocations to stable IDs used by capture and replay.
 
-- per-role pending queues
-- separate replay epochs
-- semantic object binding
-- value injection only when the replay model explicitly allows it
+- [BinarySchema.java](common/src/main/java/common/BinarySchema.java)
+  Defines the raw event format, event kinds, and binary trace storage helpers for `trace.bin`.
 
-#### Replay object model
+- [TraceLogger.java](common/src/main/java/common/TraceLogger.java)
+  Shared low-level event logging logic used by capture-side instrumentation paths.
 
-Replay does not assume a trace object and a runtime object are matched by pure allocation order.
+- [SemanticTraceRegistry.java](common/src/main/java/common/SemanticTraceRegistry.java)
+  Stores semantic object events during capture, saves them to `trace-semantic.tsv`, and reloads or exposes replay-side semantic metadata.
 
-Instead it uses:
+- [SemanticObjectEvent.java](common/src/main/java/common/SemanticObjectEvent.java)
+  The semantic event model for fields, arrays, atomics, sync objects, thread events, exceptions, class init, and nondeterministic events.
 
-- semantic object events from capture
-- runtime semantic observations during replay
-- `SemanticIdentity` bindings
+- [SemanticIdentity.java](common/src/main/java/common/SemanticIdentity.java)
+  The runtime binding layer that maps trace object identities to replay-time runtime objects and checks binding consistency.
 
-Static prebinding handles obvious stable roots early. Everything else can bind on first legal runtime use.
+- [ReducedTraceRegistry.java](common/src/main/java/common/ReducedTraceRegistry.java)
+  In-memory representation of the reduced replay trace. Loads and saves `trace-reduced.tsv`, indexes epochs, domains, constraints, and reduced events.
 
-#### Tolerance policy
+- [FieldKey.java](common/src/main/java/common/FieldKey.java)
+  Canonical identifier for a field: owner internal name, field name, and descriptor.
 
-The current tolerance model is object-level:
+- [FieldInteractionDomain.java](common/src/main/java/common/FieldInteractionDomain.java)
+  Identifies a shared field interaction domain for replay coordination.
 
-- unbound or unrelated runtime objects may pass through
-- once a runtime object is bound to a replay-relevant trace object, replay becomes strict on that object
+- [ReplayConstraint.java](common/src/main/java/common/ReplayConstraint.java)
+  Encodes reducer-emitted ordering constraints used during replay.
 
-In other words, tolerance is for extra runtime objects, not fuzziness on already-bound relevant objects.
+- [AgentRuntimeConfig.java](common/src/main/java/common/AgentRuntimeConfig.java)
+  Parses agent args and decides which classes should be instrumented.
 
-## Same As Divergence-Finder
+### Capture-side files in `capture/`
 
-The current design intentionally preserves several `divergence-finder` ideas.
+- [CaptureAgent.java](capture/src/main/java/capture/CaptureAgent.java)
+  Capture entrypoint. Resets shared state, initializes `trace.bin`, installs the transformer, and flushes/reduces output on shutdown.
 
-### 1. Epochs are for synchronization, not identity
+- [CaptureMonitor.java](capture/src/main/java/capture/CaptureMonitor.java)
+  Capture-side monitor hooks called from instrumented bytecode. Bridges runtime operations into capture logging.
 
-Replay epochs are used to coordinate JMM-style release/acquire progress.
+- [TraceLogger.java](capture/src/main/java/capture/TraceLogger.java)
+  Capture-specific event logging wrapper that records concrete runtime events and semantic metadata.
 
-They are not used to decide whether two objects are “the same object”.
+- [TraceReducer.java](capture/src/main/java/capture/TraceReducer.java)
+  The reduction stage. Converts raw capture plus semantic metadata into the reduced replay trace and emitted constraints.
 
-### 2. Per-role queue discipline
+### Replay-side files in `replay/`
 
-Replay is still fundamentally queue-based per role:
+- [ReplayAgent.java](replay/src/main/java/replay/ReplayAgent.java)
+  Replay entrypoint. Loads `trace-reduced.tsv`, initializes replay state, prebinds obvious static roots, installs hooks, and enables replay mode.
 
-- each role has a head event
-- replay tries to consume that role’s next legal event
-- thread-start causality is respected explicitly
+- [ReplayMonitor.java](replay/src/main/java/replay/ReplayMonitor.java)
+  Replay-side monitor hooks injected into the target program. Each hook asks `ReplayCoordinator` whether the runtime action is currently legal.
 
-### 3. Natural monitor scheduling
+- [ReplayCoordinator.java](replay/src/main/java/replay/ReplayCoordinator.java)
+  The core replay engine. Owns pending queues, epoch gating, semantic matching, divergence handling, value injection, fidelity reporting, and thread lifecycle coordination.
 
-Replay does not try to invent synthetic scheduling for synchronized methods.
+## File Outputs
 
-Where possible, it lets the JVM’s natural monitor/lock behavior happen and coordinates around the recorded events.
-
-### 4. Release-driven epoch advancement
-
-Only release-like events open later replay epochs, in the same spirit as `divergence-finder`:
-
-- monitor exit
-- thread start
-- notify / notifyAll
-- unpark
-- interrupt
-- class-init end
-- selected atomic and volatile release events
-
-## Different From Divergence-Finder
-
-The biggest differences are deliberate.
-
-### 1. Semantic object matching
-
-`divergence-finder` is closer to exact replay over directly captured identities.
-
-This branch adds semantic binding so replay can identify objects without relying purely on allocation order.
-
-That is the main architectural difference.
-
-### 2. Reduced trace instead of near-direct raw replay
-
-`divergence-finder` is closer to replaying the captured stream directly.
-
-This branch inserts Stage C:
-
-- compute replay relevance
-- preserve the concurrent object/protocol slice
-- emit a reduced replay trace and constraints
-
-So Stage D is replaying a reduced artifact, not the original full raw stream.
-
-### 3. Replay sequence format
-
-`divergence-finder` uses the captured event order directly much more directly.
-
-This branch uses:
-
-- capture sequence for raw capture semantics
-- reduced replay sequence for Stage D event identity
-- separate stored epoch metadata
-
-That split is intentional:
-
-- replay order and replay epoch are not the same thing
-- thread-local local sequence is still preserved
-
-### 4. Persisted semantic artifact
-
-This branch persists semantic capture explicitly in:
+- `trace.bin`
+  Raw binary event stream written during capture.
 
 - `trace-semantic.tsv`
+  Human-readable semantic event log used to rebuild object-level meaning during reduction and replay.
 
-That allows reduction to be rerun from persisted semantic state rather than depending only on live in-memory shutdown state.
+- `trace-reduced.tsv`
+  Reduced replay-oriented trace with domains, epochs, semantic events, reduced raw events, and replay constraints.
 
-## Files and Responsibilities
+## Design Notes
 
-- `common/TraceLogger.java`
-  Capture-side event creation and causal epoch assignment
-- `common/BinarySchema.java`
-  Raw binary event storage
-- `common/v1/SemanticTraceRegistry.java`
-  Captured and replay semantic object event registry
-- `common/v1/TraceReducer.java`
-  Reduction policy and reduced trace emission
-- `common/v1/ReducedTraceRegistry.java`
-  Reduced trace loading and lookup
-- `common/v1/SemanticIdentity.java`
-  Replay object binding policy
-- `replay/ReplayCoordinator.java`
-  Role queues, epoch gates, matching, and fidelity reporting
-- `replay/ReplayMonitor.java`
-  Replay-side runtime hooks
-- `capture/CaptureMonitor.java`
-  Capture-side runtime hooks
-- `instr/SyncTransformer.java`
-  Bytecode transformation
-- `fidelity-benchmark/FidelityBenchmark.java`
-  Capture/replay benchmark harness
-
-## Known Current Boundaries
-
-The design is intentionally stronger than “just outcome reproduction”, but weaker than exact replay of every runtime instruction.
-
-In practice, the hardest cases are:
-
-- wrapper-based lock/condition handoffs
-- deadlock/timeout captures where shutdown timing matters
-- traces where semantic binding and reduced replay order interact tightly
-
-So when debugging fidelity, the first question is usually:
-
-- is this a capture ordering bug?
-- a reduction policy bug?
-- or a replay coordination bug?
-
-That separation is the main reason the repository now persists:
-
-- raw events
-- semantic events
-- reduced replay trace
-
-as three distinct artifacts.
+- Replay coordination is queue-based per role rather than based on a single global schedule.
+- Epochs are used for synchronization progress, not as a substitute for object identity.
+- Semantic object binding is what allows replay to survive differences in allocation order.
+- Reduction is intentionally lossy: it keeps the events needed for replay, not a verbatim copy of all capture activity.

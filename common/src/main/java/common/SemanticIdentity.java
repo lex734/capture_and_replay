@@ -1,4 +1,4 @@
-package common.v1;
+package common;
 
 import java.util.Collections;
 import java.util.HashSet;

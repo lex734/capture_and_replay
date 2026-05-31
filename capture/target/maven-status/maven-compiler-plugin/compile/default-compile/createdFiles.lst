@@ -1,1 +1,6 @@
+capture/TraceReducer$RawEvent.class
+capture/CaptureAgent.class
+capture/TraceLogger.class
+capture/TraceReducer$CaptureSemanticKey.class
 capture/CaptureMonitor.class
+capture/TraceReducer.class

@@ -1,3 +1,5 @@
-replay/ReplayCoordinator.class
 replay/ReplayMonitor.class
+replay/ReplayCoordinator.class
+replay/ReplayCoordinator$MatchState.class
+replay/ReplayCoordinator$MatchSelection.class
 replay/ReplayAgent.class

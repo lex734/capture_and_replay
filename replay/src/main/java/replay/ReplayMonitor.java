@@ -1,8 +1,8 @@
 package replay;
 
 import common.BinarySchema;
+import common.FieldKey;
 import common.IdentityMapper;
-import common.v1.FieldKey;
 import java.util.Date;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;

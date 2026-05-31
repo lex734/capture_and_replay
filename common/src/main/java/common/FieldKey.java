@@ -1,13 +1,13 @@
-package common.v1;
+package common;
 
 import java.util.Objects;
 
-public final class MethodKey {
+public final class FieldKey {
     private final ClassKey owner;
     private final String name;
     private final String descriptor;
 
-    public MethodKey(ClassKey owner, String name, String descriptor) {
+    public FieldKey(ClassKey owner, String name, String descriptor) {
         this.owner = Objects.requireNonNull(owner, "owner");
         if (name == null || name.isEmpty()) {
             throw new IllegalArgumentException("name must be non-empty");
@@ -19,8 +19,8 @@ public final class MethodKey {
         this.descriptor = descriptor;
     }
 
-    public static MethodKey of(String owner, String name, String descriptor) {
-        return new MethodKey(ClassKey.of(owner), name, descriptor);
+    public static FieldKey of(String owner, String name, String descriptor) {
+        return new FieldKey(ClassKey.of(owner), name, descriptor);
     }
 
     public ClassKey owner() {
@@ -37,10 +37,10 @@ public final class MethodKey {
 
     @Override
     public boolean equals(Object other) {
-        if (!(other instanceof MethodKey)) {
+        if (!(other instanceof FieldKey)) {
             return false;
         }
-        MethodKey that = (MethodKey) other;
+        FieldKey that = (FieldKey) other;
         return owner.equals(that.owner) && name.equals(that.name) && descriptor.equals(that.descriptor);
     }
 

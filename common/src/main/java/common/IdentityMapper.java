@@ -1,6 +1,5 @@
 package common;
 
-import common.v1.TraceObjectId;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Map;

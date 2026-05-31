@@ -23,14 +23,14 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 import common.BinarySchema;
+import common.FieldInteractionDomain;
+import common.FieldKey;
 import common.IdentityMapper;
-import common.v1.FieldInteractionDomain;
-import common.v1.FieldKey;
-import common.v1.ReducedTraceRegistry;
-import common.v1.ReplayConstraint;
-import common.v1.SemanticIdentity;
-import common.v1.SemanticObjectEvent;
-import common.v1.SemanticTraceRegistry;
+import common.ReducedTraceRegistry;
+import common.ReplayConstraint;
+import common.SemanticIdentity;
+import common.SemanticObjectEvent;
+import common.SemanticTraceRegistry;
 
 public class ReplayCoordinator {
     private static final long MATCH_WAIT_SLICE_MS = 100L;
@@ -1518,8 +1518,7 @@ public class ReplayCoordinator {
 
         matchedSeqs.add(seq);
 
-        // Advance epoch so that events in other threads that depended on this
-        // release via JMM_SYNCHRONIZES_WITH are unblocked.
+        // Advance epoch so that later-epoch events in other threads are unblocked.
         if (shouldSynchronizeAtEvent(packedType)) {
             long epoch = ReducedTraceRegistry.lookupEpoch(seq);
             if (epoch != Long.MIN_VALUE) {

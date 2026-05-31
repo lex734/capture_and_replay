@@ -1,6 +1,5 @@
 package capture;
 
-import common.TraceLogger;
 import common.BinarySchema;
 import common.IdentityMapper;
 import java.util.concurrent.TimeUnit;

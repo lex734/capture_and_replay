@@ -23,7 +23,7 @@
               <transformers>
                 <transformer>
                   <manifestEntries>
-                    <Premain-Class>instr.Agent</Premain-Class>
+                    <Premain-Class>capture.CaptureAgent</Premain-Class>
                     <Can-Retransform-Classes>true</Can-Retransform-Classes>
                   </manifestEntries>
                 </transformer>

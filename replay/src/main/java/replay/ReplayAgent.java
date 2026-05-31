@@ -1,12 +1,11 @@
 package replay;
 
+import common.AgentRuntimeConfig;
 import common.IdentityMapper;
-import common.v1.AgentRuntimeConfig;
-import common.v1.ReducedTraceRegistry;
-import common.v1.SemanticTraceRegistry;
-import common.v1.TraceObjectId;
-import instr.SyncTransformer;
-import instr.StaticPrePassRegistry;
+import common.ReducedTraceRegistry;
+import common.SemanticTraceRegistry;
+import common.SyncTransformer;
+import common.TraceObjectId;
 
 import java.lang.instrument.Instrumentation;
 import java.util.HashSet;
@@ -24,8 +23,6 @@ public class ReplayAgent {
             SemanticTraceRegistry.resetReplayState();
             ReducedTraceRegistry.reset();
             SyncTransformer.resetSiteRegistry();
-            StaticPrePassRegistry.reset();
-
             // 2. Load the reduced replay artifact
             java.io.File reducedFile = new java.io.File("trace-reduced.tsv");
             if (!reducedFile.exists()) {

@@ -1,14 +1,14 @@
-package instr;
+package capture;
 
 import common.BinarySchema;
+import common.AgentRuntimeConfig;
 import common.IdentityMapper;
-import common.v1.AgentRuntimeConfig;
-import common.v1.TraceReducer;
-import common.v1.SemanticTraceRegistry;
-import common.v1.TraceObjectId;
+import common.SemanticTraceRegistry;
+import common.SyncTransformer;
+import common.TraceObjectId;
 import java.lang.instrument.Instrumentation;
 
-public class Agent {
+public class CaptureAgent {
   public static void premain(String agentArgs, Instrumentation inst) {
     try {
       AgentRuntimeConfig config = AgentRuntimeConfig.parse(agentArgs);
@@ -19,7 +19,6 @@ public class Agent {
       SemanticTraceRegistry.resetCaptureState();
       SemanticTraceRegistry.resetReplayState();
       SyncTransformer.resetSiteRegistry();
-      StaticPrePassRegistry.reset();
       // common is shaded into this agent jar, which is already on the system
       // classpath via -javaagent, so no separate appendToSystemClassLoaderSearch needed.
       // 1. Setup the binary trace file (1 million events for now)

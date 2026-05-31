@@ -1,7 +1,5 @@
-package instr;
+package common;
 
-import common.BinarySchema;
-import common.v1.AgentRuntimeConfig;
 import java.lang.instrument.ClassFileTransformer;
 import java.security.ProtectionDomain;
 import java.util.ArrayDeque;
@@ -11,7 +9,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.io.InputStream;
 import org.objectweb.asm.*;
 import org.objectweb.asm.commons.LocalVariablesSorter;
-import org.w3c.dom.events.EventTarget;
 
 public class SyncTransformer implements ClassFileTransformer {
 
@@ -104,7 +101,6 @@ public class SyncTransformer implements ClassFileTransformer {
         if (className == null || !config.shouldInstrumentClass(className)) {
             return null;
         }
-        StaticPrePassRegistry.record(StaticPrePassAnalyzer.analyzeClass(className, classfileBuffer, config));
         // set up ASM to read and write the class
         try {
             ClassReader reader = new ClassReader(classfileBuffer);
@@ -325,7 +321,7 @@ public class SyncTransformer implements ClassFileTransformer {
         public void visitCode() {
             super.visitCode();
         }
-        
+
         @Override
         public void visitInsn(int opcode) {
             if (!superInitCalled) { super.visitInsn(opcode); return; }
@@ -394,7 +390,7 @@ public class SyncTransformer implements ClassFileTransformer {
                 String typeSuffix = isLongOp ? "Long" : (isObjOp ? "Obj" : "Int");
                 String valDesc    = isLongOp ? "J" : (isObjOp ? "Ljava/lang/Object;" : "I");
                 boolean isLoad    = isLongOp ? (opcode == Opcodes.LALOAD || opcode == Opcodes.DALOAD) : isArrayLoad(opcode);
-                
+
                 int eventType = isLoad ? 7 : 8;
                 int siteId = SyncTransformer.registerSiteId(className + "." + methodName + "#" + instructionId++);
 
@@ -1202,7 +1198,7 @@ public class SyncTransformer implements ClassFileTransformer {
         private static char getReturnType(String descriptor) {
             return descriptor.charAt(descriptor.indexOf(')') + 1);
         }
-        
+
         @Override
         public void visitFieldInsn(int opcode, String owner, String name, String descriptor) {
             if (!superInitCalled) { super.visitFieldInsn(opcode, owner, name, descriptor); return; }

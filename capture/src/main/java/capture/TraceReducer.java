@@ -1,6 +1,13 @@
-package common.v1;
+package capture;
 
 import common.BinarySchema;
+import common.FieldInteractionDomain;
+import common.FieldKey;
+import common.ReducedConstraintKind;
+import common.ReducedTraceRegistry;
+import common.ReplayConstraint;
+import common.SemanticObjectEvent;
+import common.SemanticTraceRegistry;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.MappedByteBuffer;
@@ -73,7 +80,6 @@ public final class TraceReducer {
         Map<Long, List<RawEvent>> publisherEventsByValueObject = new HashMap<>();
         Map<Long, List<RawEvent>> threadLifecycleEventsByRole = new HashMap<>();
         Map<Long, RawEvent> threadStartByChildRole = new HashMap<>();
-        Map<Long, RawEvent> epochReleaseByEpoch = new HashMap<>();
 
         for (RawEvent event : concurrentEvents) {
             if (event.domainId != null && !event.domainId.isEmpty()) {
@@ -95,14 +101,10 @@ public final class TraceReducer {
             if (publishedValueKey != Long.MIN_VALUE) {
                 publisherEventsByValueObject.computeIfAbsent(publishedValueKey, ignored -> new ArrayList<>()).add(event);
             }
-            if (event.isEpochRelease()) {
-                epochReleaseByEpoch.putIfAbsent(event.epoch(), event);
-            }
         }
 
         Map<Long, RawEvent> firstByRole = new HashMap<>();
         Map<Long, RawEvent> lastByRole = new HashMap<>();
-        Map<String, RawEvent> lastByDomain = new HashMap<>();
         Map<RawEvent, Long> replayIdByEvent = new HashMap<>();
         Set<RawEvent> relevantEvents = computeRelevantEventClosure(
                 concurrentEvents,
@@ -110,8 +112,7 @@ public final class TraceReducer {
                 eventsByDomain,
                 publisherEventsByValueObject,
                 threadLifecycleEventsByRole,
-                threadStartByChildRole,
-                epochReleaseByEpoch);
+                threadStartByChildRole);
         Set<String> concurrentOwnerKeys = computeConcurrentOwnerKeys(concurrentEvents);
         Set<RawEvent> retainedEvents = new HashSet<>(relevantEvents);
         for (RawEvent event : concurrentEvents) {
@@ -172,28 +173,6 @@ public final class TraceReducer {
                 firstByRole.put(event.roleId, event);
             }
 
-            if (event.domainId != null && !event.domainId.isEmpty()) {
-                RawEvent previousDomainEvent = lastByDomain.put(event.domainId, event);
-                if (previousDomainEvent != null && shouldRecordDomainOrder(previousDomainEvent, event)) {
-                    ReducedTraceRegistry.recordConstraint(new ReplayConstraint(
-                            ReducedConstraintKind.DOMAIN_ORDER,
-                            replayIdByEvent.get(previousDomainEvent),
-                            replayEventId,
-                            event.domainId));
-                }
-            }
-
-            RawEvent epochRelease = epochReleaseByEpoch.get(event.epoch());
-            if (epochRelease != null && epochRelease != event && relevantEvents.contains(epochRelease)) {
-                Long predecessorReplayId = replayIdByEvent.get(epochRelease);
-                if (predecessorReplayId != null) {
-                    ReducedTraceRegistry.recordConstraint(new ReplayConstraint(
-                            ReducedConstraintKind.JMM_SYNCHRONIZES_WITH,
-                            predecessorReplayId,
-                            replayEventId,
-                            event.domainId == null ? "" : event.domainId));
-                }
-            }
         }
 
         for (RawEvent event : concurrentEvents) {
@@ -416,8 +395,7 @@ public final class TraceReducer {
             Map<String, List<RawEvent>> eventsByDomain,
             Map<Long, List<RawEvent>> publisherEventsByValueObject,
             Map<Long, List<RawEvent>> threadLifecycleEventsByRole,
-            Map<Long, RawEvent> threadStartByChildRole,
-            Map<Long, RawEvent> epochReleaseByEpoch) {
+            Map<Long, RawEvent> threadStartByChildRole) {
         Set<RawEvent> relevantEvents = new HashSet<>();
         ArrayDeque<RawEvent> work = new ArrayDeque<>();
 
@@ -450,10 +428,6 @@ public final class TraceReducer {
                 enqueueAll(work, publisherEventsByValueObject.get(ownerKey));
             }
 
-            RawEvent epochRelease = epochReleaseByEpoch.get(event.epoch());
-            if (epochRelease != null) {
-                work.add(epochRelease);
-            }
         }
 
         return relevantEvents;
@@ -497,19 +471,6 @@ public final class TraceReducer {
 
     private static boolean isVolatileEvent(SemanticObjectEvent event) {
         return event != null && event.isVolatile();
-    }
-
-    private static boolean shouldRecordDomainOrder(RawEvent previousDomainEvent, RawEvent event) {
-        if (previousDomainEvent == null || event == null) {
-            return false;
-        }
-        // Synchronization protocol events are already anchored by per-thread order and
-        // JMM release edges. Adding raw post-observation domain order between them can
-        // manufacture impossible requirements such as a later acquire needing to
-        // precede the exiting thread's post-release MONITOR_EXIT log on the same
-        // monitor.
-        return !(isSynchronizationProtocolEvent(previousDomainEvent.baseType)
-                && isSynchronizationProtocolEvent(event.baseType));
     }
 
     private static boolean isSynchronizationProtocolEvent(int baseType) {

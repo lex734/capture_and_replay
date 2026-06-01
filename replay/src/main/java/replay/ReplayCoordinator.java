@@ -979,14 +979,18 @@ public class ReplayCoordinator {
             return new MatchSelection(MatchState.FOUND, head, false, "");
         }
 
-        if (shouldBlockForRelevantObject(runtimeObject)) {
-            return new MatchSelection(MatchState.WAIT, null, false,
-                    "bound relevant object awaiting exact role-head seq=" + headSeq);
-        }
-
         boolean headBaseShapeMatches = samePackedShape(head, packedType);
         boolean headContextMatches = headBaseShapeMatches
                 && sameSemanticEventContext(head, actualFieldKey, objCount, nondeterministicSourceKey);
+        // Only block on a bound owner when the head event at least shares the same
+        // field shape and context (field key, static/instance flag, type).  If the
+        // head is for a completely different field (e.g. a static field while the
+        // current call is for an instance field), waiting will never unblock because
+        // the head can never become compatible with this call.
+        if (headContextMatches && shouldBlockForRelevantObject(runtimeObject)) {
+            return new MatchSelection(MatchState.WAIT, null, false,
+                    "bound relevant object awaiting exact role-head seq=" + headSeq);
+        }
         if (headContextMatches) {
             return new MatchSelection(MatchState.NO_MATCH, null, false,
                     "runtime event matched role-head shape/context but could not bind to seq=" + headSeq);

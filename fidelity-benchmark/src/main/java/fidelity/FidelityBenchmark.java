@@ -21,6 +21,8 @@ import java.util.stream.Collectors;
  * </pre>
  */
 public class FidelityBenchmark {
+    private static final String REDUCED_TRACE_PATH_PROPERTY = "tool.reduced.trace";
+    private static final String REDUCED_TRACE_FILE_NAME = "trace-reduced.tsv";
 
     private static final long CAPTURE_TIMEOUT_MS = 3_000;
     private static final long REPLAY_TIMEOUT_MS  = 5_000;
@@ -105,11 +107,13 @@ public class FidelityBenchmark {
                 classSummary.successfulCaptures++;
                 OutcomeBucketStats bucket = classSummary.bucketFor(cr.hadBug);
                 bucket.captureCount++;
+                Path reducedTrace = workDir.resolve(REDUCED_TRACE_FILE_NAME).toAbsolutePath();
 
                 for (int replayRun = 0; replayRun < replayRunsPerCapture; replayRun++) {
                     Path propsFile = workDir.resolve(
                         "fidelity_capture_" + captureTrial + "_replay_" + replayRun + ".properties");
-                    ReplayResult rr = runReplay(replayJarAbs, sctbenchJarAbs, cls, workDir, propsFile);
+                    ReplayResult rr = runReplay(
+                        replayJarAbs, sctbenchJarAbs, cls, workDir, reducedTrace, propsFile);
                     bucket.recordReplay(rr, cr.hadBug);
                 }
             }
@@ -152,9 +156,9 @@ public class FidelityBenchmark {
             String status = r.timedOut ? "timed out" : "exit " + r.exitCode;
             return new CaptureResult(false, "no trace.bin produced (" + status + ")", false);
         }
-        if (!Files.exists(workDir.resolve("trace-reduced.tsv"))) {
+        if (!Files.exists(workDir.resolve(REDUCED_TRACE_FILE_NAME))) {
             String status = r.timedOut ? "timed out" : "exit " + r.exitCode;
-            return new CaptureResult(false, "no trace-reduced.tsv produced (" + status + ")", false);
+            return new CaptureResult(false, "no " + REDUCED_TRACE_FILE_NAME + " produced (" + status + ")", false);
         }
 
         boolean hadBug = hasBugSignal(r.stdout, r.stderr)
@@ -168,10 +172,15 @@ public class FidelityBenchmark {
 
     private static ReplayResult runReplay(
             String replayJar, String sctbenchJar, String cls,
-            Path workDir, Path propsFile)
+            Path workDir, Path reducedTrace, Path propsFile)
             throws IOException, InterruptedException {
 
+        if (!Files.isRegularFile(reducedTrace)) {
+            throw new FileNotFoundException("Missing reduced trace for replay: " + reducedTrace);
+        }
+
         List<String> extraArgs = Arrays.asList(
+            "-D" + REDUCED_TRACE_PATH_PROPERTY + "=" + reducedTrace,
             "-Dtool.fidelity.output=" + propsFile.toAbsolutePath(),
             "-javaagent:" + replayJar,
             "-ea", "-cp", sctbenchJar, cls);

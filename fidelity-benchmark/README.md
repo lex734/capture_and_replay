@@ -54,6 +54,11 @@ java -cp fidelity-benchmark/target/fidelity-benchmark.jar fidelity.FidelityBench
      <capture-agent.jar> <replay-agent.jar> <sctbench.jar> [class-or-classlist.txt]
 ```
 
+Each successful capture is stored under `fidelity-benchmark/work/.../capture_N/`.
+The runner requires both `trace.bin` and `trace-reduced.tsv`, and replay is
+started with an explicit `-Dtool.reduced.trace=/abs/path/to/trace-reduced.tsv`
+so it consumes the reduced trace from that capture directory.
+
 Arguments:
 
 | Argument | Required | Default |

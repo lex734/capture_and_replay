@@ -438,7 +438,7 @@ public class BenchmarkRunner {
                 RunResult replayResult = run(replayCmd, workDir, timeoutSeconds);
                 boolean replayBugObserved = hadBug(cls, replayResult);
                 boolean replayMatches = bugOutcome
-                    ? replayBugObserved
+                    ? (replayBugObserved && !hasIncompleteReplaySignal(replayResult.output))
                     : (!replayBugObserved && replayResult.completed && !hasIncompleteReplaySignal(replayResult.output));
                 if (replayMatches) {
                     repMs.add(replayResult.elapsedMs);

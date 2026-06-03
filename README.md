@@ -129,6 +129,51 @@ Replay uses:
 
 The replay model is intentionally stricter once an object is bound. Extra irrelevant runtime objects may exist, but once a runtime object is committed to a replay-relevant trace object, replay expects future uses to stay consistent with that binding.
 
+#### Replay Constraints
+
+The reducer emits `ReplayConstraint` records attached to events in `trace-reduced.tsv`. There are two kinds:
+
+- **`THREAD_ORDER`**: Links consecutive events from the same role in the reduced trace. Each event in a role's pending queue cannot be consumed until the preceding event for that role has already been matched. This preserves per-thread program order across the reduced event set.
+
+- **`THREAD_START_CAUSAL`**: Links a `THREAD_START` event to the first retained event of the child role. The child's first event cannot be consumed until the parent's `THREAD_START` has been matched. This preserves the causal edge between a parent launching a thread and the child's first recorded action.
+
+At match time, `predecessorsSatisfied` checks that every constraint on a candidate event has its predecessor sequence in `matchedSeqs`. If any predecessor is still pending, `selectCandidate` returns `WAIT` and the calling thread blocks on `controlLock` until another thread makes progress.
+
+Epoch gating adds a second gate on top of constraints. Certain release events (volatile field writes, `MONITOR_EXIT`, `THREAD_START`, atomic writes/RMWs/CAS, `THREAD_NOTIFY`, `THREAD_UNPARK`, `CLASS_INIT_END`) advance the global `releasedEpoch` counter when consumed. A role whose pending head event carries an epoch higher than `releasedEpoch` cannot proceed until all active roles that are behind that epoch have advanced past it, ensuring that cross-thread happens-before edges are respected.
+
+#### Event Matching and Classification
+
+When a replay hook fires, the coordinator calls `selectCandidate` against the role's pending queue head. The result is one of three states:
+
+- **`FOUND`**: The runtime event matches the trace head — same packed type, same semantic context (field key, array index, etc.), and the runtime object is binding-compatible with the trace object identity. If predecessor constraints and the epoch gate are satisfied, the event is consumed and the role proceeds.
+- **`WAIT`**: The runtime event looks compatible with the trace head (same shape and context, or the runtime object is already bound to a relevant trace identity) but cannot yet be committed — either because predecessor constraints are unsatisfied or because the epoch gate has not opened. The calling thread blocks on `controlLock` and retries.
+- **`NO_MATCH`**: The runtime event does not match the current trace head for this role. The coordinator returns `null` and execution continues without coordination for this call.
+
+For valued events, replay can inject the recorded value back into the runtime. Fields and array elements inject their trace value on reads when the runtime diverges; nondeterministic sources (e.g. `System.nanoTime`) always inject the captured value; CAS results inject the captured success/failure value.
+
+The fidelity report printed at JVM shutdown tracks the following classification flags:
+
+| Flag | Meaning |
+|---|---|
+| `match` | All write locations seen during replay matched their trace-recorded values |
+| `binding_conflict` | A runtime object was committed to a trace object already bound to a different runtime object (structural divergence) |
+| `degraded` | Replay injected at least one value (nondeterministic source, field read/write, object field, CAS result) |
+| `value_diverged` | At least one valued event's runtime value differed from its trace value |
+| `unsupported` | Replay timed out waiting for constraints without detecting a deadlock, or an atomic RMW result differed from the trace |
+| `incomplete` | The trace had unconsumed events when replay finished (`unconsumed_tail`) or ended with unmatched unsupported events (`unsupported_tail`) |
+| `unapplicable` | A role's thread exited while it still had pending trace events; those events were phantom-consumed to unblock downstream roles |
+| `unreachable` | A deadlock was detected and confirmed during replay |
+
+#### Deadlock Detection
+
+Every call to `awaitSemanticEvent` runs against a 2-second timeout (`MATCH_TIMEOUT_MS`). On expiry, `checkForDeadlock` builds a combined wait-for graph from two sources:
+
+1. **Coordinator edges**: For each role whose pending head event has unsatisfied `THREAD_ORDER` or `THREAD_START_CAUSAL` predecessor constraints, an edge is added from that role to the role that owns the blocking predecessor. Epoch-gate stalls add edges as well: a role waiting for epoch `E` to be released depends on every other role whose pending head epoch is below `E`.
+
+2. **JVM lock-wait edges**: Using `ThreadMXBean`, threads in `BLOCKED`, `WAITING`, or `TIMED_WAITING` state are inspected for the lock they are waiting on. If that lock is held by another replay role's thread (and the wait is not inside the coordinator's own `controlLock`), an edge is added from the waiting role to the holding role.
+
+`hasCycleInWaitForGraph` then runs a DFS over the combined graph. If a cycle is found, the timeout is treated as a genuine deadlock: `hasDiverged` is set to `true`, the `unreachable` flag is recorded, and all waiting threads are notified so they can exit. Without a cycle, the timeout is treated as an unsupported scenario: the `unsupported` flag is recorded and the coordinator returns `null` for that event, allowing replay to continue in a degraded state.
+
 ## Core Files
 
 These are the main files to read first.

@@ -19,13 +19,18 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Measures the wall-clock overhead added by the capture and replay agents.
+ * Measures the wall-clock overhead added by the capture and replay agents,
+ * and optionally by Fray (when FRAY_HOME and FRAY_VERSION env vars are set).
  *
  * For each workload class, runs MEASURE rounds in three modes:
  *   1. Baseline  - plain JVM, no agent
  *   2. Capture   - with trace-capture-agent.jar attached
  *   3. Replay    - with trace-replay-agent.jar attached (reads the trace produced
  *                  by a dedicated capture run that precedes the replay measurements)
+ *
+ * When Fray is configured, two additional modes are measured:
+ *   4. FrayBase  - Fray's patched JDK, no agents (fair baseline for Fray)
+ *   5. Fray      - Fray's patched JDK + JVMTI + instrumentation agent, random scheduler
  *
  * Prints a summary table with mean +- std-dev in milliseconds and the
  * overhead ratio relative to the baseline.
@@ -106,6 +111,16 @@ public class BenchmarkRunner {
         checkExists(captureJar, "capture agent");
         checkExists(replayJar,  "replay agent");
 
+        // Fray is optional: enabled when FRAY_HOME and FRAY_VERSION are set.
+        FrayPaths fray = null;
+        String frayHome    = System.getenv("FRAY_HOME");
+        String frayVersion = System.getenv("FRAY_VERSION");
+        if (frayHome != null && !frayHome.isBlank() && frayVersion != null && !frayVersion.isBlank()) {
+            fray = new FrayPaths(frayHome.trim(), frayVersion.trim());
+            System.out.println("Fray home     : " + fray.home);
+            System.out.println("Fray version  : " + fray.version);
+        }
+
         System.out.println("Capture agent : " + captureJar);
         System.out.println("Replay agent  : " + replayJar);
         System.out.println("Classpath     : " + classpathDisplay);
@@ -124,13 +139,13 @@ public class BenchmarkRunner {
                 String workload = workloads.get(i);
                 System.out.printf("[%d/%d] Running %s%n", i + 1, workloads.size(), workload);
                 rows.add(benchmarkWorkload(
-                    workload, captureJar, replayJar, classpath, extraJvmArgs,
+                    workload, captureJar, replayJar, classpath, extraJvmArgs, fray,
                     workDir, warmup, measure, timeoutSeconds, measureWindowSeconds));
             }
             System.out.println();
-            printSection("Buggy Outcomes", rows, true);
+            printSection("Buggy Outcomes", rows, true,  fray != null);
             System.out.println();
-            printSection("Clean Outcomes", rows, false);
+            printSection("Clean Outcomes", rows, false, fray != null);
         } finally {
             deleteDir(workDir);
         }
@@ -143,7 +158,8 @@ public class BenchmarkRunner {
     static final String TRACE_SEMANTIC = "trace-semantic.tsv";
 
     static RowResult benchmarkWorkload(
-            String cls, Path captureJar, Path replayJar, String classpath, List<String> extraJvmArgs, Path workDir,
+            String cls, Path captureJar, Path replayJar, String classpath, List<String> extraJvmArgs,
+            FrayPaths fray, Path workDir,
             int warmup, int measure, int timeoutSeconds, int measureWindowSeconds)
             throws Exception {
 
@@ -173,7 +189,119 @@ public class BenchmarkRunner {
         buggy = buggy.withBaseline(baseWindow.buggyMs, baseWindow.buggyRuns, baseWindow.attempts);
         clean = clean.withBaseline(baseWindow.cleanMs, baseWindow.cleanRuns, baseWindow.attempts);
 
-        return new RowResult(cls, buggy, clean);
+        // -- Fray (optional) ----------------------------------------------
+        List<Long> frayBuggyBaseMs = new ArrayList<>();
+        List<Long> frayCleanBaseMs = new ArrayList<>();
+        List<Long> frayBuggyMs     = new ArrayList<>();
+        List<Long> frayCleanMs     = new ArrayList<>();
+
+        if (fray != null) {
+            Path configFile = workloadDir.resolve("fray-config.json");
+            writeConfigJson(configFile, cls, classpath);
+
+            List<String> frayBaseCmd = frayJdkCmd(fray, classpath, cls, extraJvmArgs);
+            List<String> frayCmd     = frayFullCmd(fray, classpath, cls, configFile, timeoutSeconds, extraJvmArgs, workloadDir);
+
+            for (int i = 0; i < warmup; i++) run(frayBaseCmd, workloadDir, timeoutSeconds);
+            WindowResult frayBaseWindow = measureRunsForDuration(
+                cls, frayBaseCmd, workloadDir, timeoutSeconds, measureWindowSeconds);
+
+            for (int i = 0; i < warmup; i++) run(frayCmd, workloadDir, timeoutSeconds);
+            WindowResult frayFullWindow = measureRunsForDuration(
+                cls, frayCmd, workloadDir, timeoutSeconds, measureWindowSeconds);
+
+            frayBuggyBaseMs = frayBaseWindow.buggyMs;
+            frayCleanBaseMs = frayBaseWindow.cleanMs;
+            frayBuggyMs     = frayFullWindow.buggyMs;
+            frayCleanMs     = frayFullWindow.cleanMs;
+        }
+
+        return new RowResult(cls, buggy, clean, frayBuggyBaseMs, frayCleanBaseMs, frayBuggyMs, frayCleanMs);
+    }
+
+    // -- Fray support -------------------------------------------------------
+
+    static final class FrayPaths {
+        final String home;
+        final String version;
+
+        FrayPaths(String home, String version) {
+            this.home = home;
+            this.version = version;
+        }
+
+        String javaBin()    { return home + "/result/java-inst-jdk21/bin/java"; }
+        String jvmtiAgent() { return home + "/result/native-libs/libjvmti.so"; }
+        String instrAgent() { return home + "/result/libs/fray-instrumentation-agent-" + version + ".jar"; }
+        String coreJar()    { return home + "/result/libs/fray-core-" + version + ".jar"; }
+    }
+
+    // Fray JDK, no agents — the fair baseline for Fray overhead ratios.
+    static List<String> frayJdkCmd(FrayPaths fray, String classpath, String cls, List<String> extraJvmArgs) {
+        List<String> cmd = new ArrayList<>();
+        cmd.add(fray.javaBin());
+        cmd.add("-ea");
+        cmd.addAll(extraJvmArgs);
+        cmd.add("-cp");
+        cmd.add(classpath);
+        cmd.add(cls);
+        return cmd;
+    }
+
+    // Fray JDK + JVMTI agent + instrumentation agent + Fray core, random scheduler, one iteration.
+    static List<String> frayFullCmd(FrayPaths fray, String classpath, String cls,
+            Path configFile, int timeoutSeconds, List<String> extraJvmArgs, Path workloadDir) {
+        List<String> cmd = new ArrayList<>();
+        cmd.add(fray.javaBin());
+        cmd.add("-ea");
+        cmd.add("-agentpath:" + fray.jvmtiAgent());
+        cmd.add("-javaagent:" + fray.instrAgent());
+        // Opens required by Fray's bytecode instrumentation.
+        cmd.addAll(Arrays.asList(
+            "--add-opens", "java.base/java.lang=ALL-UNNAMED",
+            "--add-opens", "java.base/java.util=ALL-UNNAMED",
+            "--add-opens", "java.base/java.io=ALL-UNNAMED",
+            "--add-opens", "java.base/java.util.concurrent.atomic=ALL-UNNAMED",
+            "--add-opens", "java.base/sun.nio.ch=ALL-UNNAMED",
+            "--add-opens", "java.base/java.lang.reflect=ALL-UNNAMED"
+        ));
+        cmd.addAll(extraJvmArgs);
+        cmd.add("-cp");
+        cmd.add(fray.coreJar());
+        cmd.add("org.pastalab.fray.core.MainKt");
+        cmd.add("--run-config");
+        cmd.add("json");
+        cmd.add("--config-path");
+        cmd.add(configFile.toString());
+        cmd.add("-o");
+        cmd.add(workloadDir.resolve("fray-report").toString());
+        cmd.add("--iter");
+        cmd.add("1");
+        cmd.add("--timeout");
+        cmd.add(String.valueOf(timeoutSeconds));
+        cmd.add("--scheduler=random");
+        return cmd;
+    }
+
+    static void writeConfigJson(Path file, String cls, String classpath) throws IOException {
+        String[] parts = classpath.split(File.pathSeparator);
+        StringBuilder sb = new StringBuilder();
+        sb.append("{\n    \"executor\": {\n");
+        sb.append("        \"clazz\": \"").append(cls).append("\",\n");
+        sb.append("        \"method\": \"main\",\n");
+        sb.append("        \"args\": [],\n");
+        sb.append("        \"classpaths\": [");
+        for (int i = 0; i < parts.length; i++) {
+            if (i > 0) sb.append(", ");
+            sb.append("\"").append(parts[i].replace("\\", "\\\\")).append("\"");
+        }
+        sb.append("],\n");
+        sb.append("        \"properties\": {}\n    },\n");
+        sb.append("    \"ignore_unhandled_exceptions\": false,\n");
+        sb.append("    \"interleave_memory_ops\": false,\n");
+        sb.append("    \"max_scheduled_step\": -1,\n");
+        sb.append("    \"timed_wait_wait_inf\": false\n}\n");
+        Files.writeString(file, sb.toString());
     }
 
     // -- Helpers -------------------------------------------------------------
@@ -300,32 +428,59 @@ public class BenchmarkRunner {
         return new RunResult(exitCode == 0, false, exitCode, elapsedMs, out);
     }
 
-    static void printSection(String title, List<RowResult> rows, boolean bugOutcome) {
+    static void printSection(String title, List<RowResult> rows, boolean bugOutcome, boolean hasFray) {
         System.out.println(title);
-        printHeader(bugOutcome);
+        printHeader(bugOutcome, hasFray);
         for (RowResult row : rows) {
             OutcomeResult outcome = bugOutcome ? row.buggy : row.clean;
-            System.out.printf(
-                "%-28s  %16s  %16s  %16s  %10s  %10s  %8s  %8s%n",
-                row.name,
-                formatStats(outcome.baseMs),
-                formatStats(outcome.capMs),
-                formatReplayStats(outcome),
-                formatCount(outcome.baseRuns, outcome.baseAttempts),
-                formatCount(outcome.capRuns, outcome.capAttempts),
-                formatRatio(outcome.capMs, outcome.baseMs),
-                formatRatio(outcome.repMs, outcome.baseMs));
+            List<Long> frayBaseMs = bugOutcome ? row.frayBuggyBaseMs : row.frayCleanBaseMs;
+            List<Long> frayMs     = bugOutcome ? row.frayBuggyMs     : row.frayCleanMs;
+            if (hasFray) {
+                System.out.printf(
+                    "%-28s  %16s  %16s  %16s  %16s  %16s  %10s  %10s  %8s  %8s  %8s%n",
+                    row.name,
+                    formatStats(outcome.baseMs),
+                    formatStats(outcome.capMs),
+                    formatReplayStats(outcome),
+                    formatStats(frayBaseMs),
+                    formatStats(frayMs),
+                    formatCount(outcome.baseRuns, outcome.baseAttempts),
+                    formatCount(outcome.capRuns, outcome.capAttempts),
+                    formatRatio(outcome.capMs, outcome.baseMs),
+                    formatRatio(outcome.repMs, outcome.baseMs),
+                    formatRatio(frayMs, frayBaseMs));
+            } else {
+                System.out.printf(
+                    "%-28s  %16s  %16s  %16s  %10s  %10s  %8s  %8s%n",
+                    row.name,
+                    formatStats(outcome.baseMs),
+                    formatStats(outcome.capMs),
+                    formatReplayStats(outcome),
+                    formatCount(outcome.baseRuns, outcome.baseAttempts),
+                    formatCount(outcome.capRuns, outcome.capAttempts),
+                    formatRatio(outcome.capMs, outcome.baseMs),
+                    formatRatio(outcome.repMs, outcome.baseMs));
+            }
         }
     }
 
-    static void printHeader(boolean bugOutcome) {
+    static void printHeader(boolean bugOutcome, boolean hasFray) {
         String plainLabel = bugOutcome ? "PlainBug" : "PlainClean";
-        String capLabel = bugOutcome ? "CapBug" : "CapClean";
-        System.out.printf(
-            "%-28s  %16s  %16s  %16s  %10s  %10s  %8s  %8s%n",
-            "Workload", "Baseline (ms)", "Capture (ms)", "Replay (ms)",
-            plainLabel, capLabel, "Cap/Base", "Rep/Base");
-        System.out.println("-".repeat(127));
+        String capLabel   = bugOutcome ? "CapBug"   : "CapClean";
+        if (hasFray) {
+            System.out.printf(
+                "%-28s  %16s  %16s  %16s  %16s  %16s  %10s  %10s  %8s  %8s  %8s%n",
+                "Workload", "Baseline (ms)", "Capture (ms)", "Replay (ms)",
+                "FrayBase (ms)", "Fray (ms)",
+                plainLabel, capLabel, "Cap/Base", "Rep/Base", "Fray/FrayBase");
+            System.out.println("-".repeat(175));
+        } else {
+            System.out.printf(
+                "%-28s  %16s  %16s  %16s  %10s  %10s  %8s  %8s%n",
+                "Workload", "Baseline (ms)", "Capture (ms)", "Replay (ms)",
+                plainLabel, capLabel, "Cap/Base", "Rep/Base");
+            System.out.println("-".repeat(127));
+        }
     }
 
     static boolean hasIncompleteReplaySignal(String out) {
@@ -594,11 +749,22 @@ public class BenchmarkRunner {
         final String name;
         final OutcomeResult buggy;
         final OutcomeResult clean;
+        // Fray data: separate Fray-JDK baseline so the Fray/FrayBase ratio is fair.
+        final List<Long> frayBuggyBaseMs;
+        final List<Long> frayCleanBaseMs;
+        final List<Long> frayBuggyMs;
+        final List<Long> frayCleanMs;
 
-        RowResult(String cls, OutcomeResult buggy, OutcomeResult clean) {
+        RowResult(String cls, OutcomeResult buggy, OutcomeResult clean,
+                List<Long> frayBuggyBaseMs, List<Long> frayCleanBaseMs,
+                List<Long> frayBuggyMs,     List<Long> frayCleanMs) {
             this.name = cls.substring(cls.lastIndexOf('.') + 1);
             this.buggy = buggy;
             this.clean = clean;
+            this.frayBuggyBaseMs = frayBuggyBaseMs;
+            this.frayCleanBaseMs = frayCleanBaseMs;
+            this.frayBuggyMs     = frayBuggyMs;
+            this.frayCleanMs     = frayCleanMs;
         }
     }
 }

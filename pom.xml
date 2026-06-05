@@ -11,11 +11,11 @@
 
     <modules>
         <module>common</module>
-        <module>instr</module>
         <module>capture</module>
         <module>replay</module>
         <module>test-app</module>
         <module>fidelity-benchmark</module>
+        <module>manifestation-benchmark</module>
     </modules>
 
     <properties>

@@ -1,0 +1,316 @@
+=== Manifestation Benchmark: SCTBench (up to 100 capture attempts, target 10 buggy traces, 100 replay runs) ===
+
+--- cmu.pasta.fray.benchmark.sctbench.cb.StringBufferJDK ---
+  Capture attempts     : 100
+  Buggy captures       : 0 / 100 attempts
+  (no buggy traces captured — skipped)
+
+--- cmu.pasta.fray.benchmark.sctbench.chess.WorkStealQueue ---
+  Buggy capture  1 (attempt  66): bug (exit 1)
+  Capture attempts     : 100
+  Buggy captures       : 1 / 100 attempts
+  Natural bug rate     : 0 / 100  (0.0%)
+  Replay runs          : 100
+  Complete runs        : 0 / 100
+  Bug manifested       : 0 / 100  (0.0%)
+  Bug manifested|cmpl  : N/A (no complete runs)
+
+--- cmu.pasta.fray.benchmark.sctbench.cs.hard.Reorder100Bad ---
+  Capture attempts     : 100
+  Buggy captures       : 0 / 100 attempts
+  (no buggy traces captured — skipped)
+
+--- cmu.pasta.fray.benchmark.sctbench.cs.hard.Reorder50Bad ---
+  Capture attempts     : 100
+  Buggy captures       : 0 / 100 attempts
+  (no buggy traces captured — skipped)
+
+--- cmu.pasta.fray.benchmark.sctbench.cs.origin.AccountBad ---
+  Capture attempts     : 100
+  Buggy captures       : 0 / 100 attempts
+  (no buggy traces captured — skipped)
+
+--- cmu.pasta.fray.benchmark.sctbench.cs.origin.ArithmeticProgBad ---
+  Buggy capture  1 (attempt   1): bug (exit 1)
+  Buggy capture  2 (attempt   2): bug (exit 1)
+  Buggy capture  3 (attempt   3): bug (exit 1)
+  Buggy capture  4 (attempt   4): bug (exit 1)
+  Buggy capture  5 (attempt   5): bug (exit 1)
+  Buggy capture  6 (attempt   6): bug (exit 1)
+  Buggy capture  7 (attempt   7): bug (exit 1)
+  Buggy capture  8 (attempt   8): bug (exit 1)
+  Buggy capture  9 (attempt   9): bug (exit 1)
+  Buggy capture 10 (attempt  10): bug (exit 1)
+  Capture attempts     : 10
+  Buggy captures       : 10 / 10 attempts
+  Natural bug rate     : 100 / 100  (100.0%)
+  Replay runs          : 100
+  Complete runs        : 55 / 100
+  Bug manifested       : 100 / 100  (100.0%)
+  Bug manifested|cmpl  : 55 / 55  (100.0%)
+
+--- cmu.pasta.fray.benchmark.sctbench.cs.origin.BluetoothDriverBad ---
+  Capture attempts     : 100
+  Buggy captures       : 0 / 100 attempts
+  (no buggy traces captured — skipped)
+
+--- cmu.pasta.fray.benchmark.sctbench.cs.origin.Carter01Bad ---
+  Buggy capture  1 (attempt   1): bug (exit 0)
+  Buggy capture  2 (attempt   2): bug (exit 0)
+  Buggy capture  3 (attempt   3): bug (exit 0)
+  Buggy capture  4 (attempt   4): bug (exit 0)
+  Buggy capture  5 (attempt   7): bug (exit 0)
+  Buggy capture  6 (attempt  14): bug (exit 0)
+  Buggy capture  7 (attempt  15): bug (exit 0)
+  Buggy capture  8 (attempt  19): bug (exit 0)
+  Buggy capture  9 (attempt  21): bug (exit 0)
+  Buggy capture 10 (attempt  23): bug (exit 0)
+  Capture attempts     : 23
+  Buggy captures       : 10 / 23 attempts
+  Natural bug rate     : 0 / 100  (0.0%)
+  Replay runs          : 100
+  Complete runs        : 93 / 100
+  Bug manifested       : 93 / 100  (93.0%)
+  Bug manifested|cmpl  : 93 / 93  (100.0%)
+
+--- cmu.pasta.fray.benchmark.sctbench.cs.origin.CircularBufferBad ---
+  Buggy capture  1 (attempt   1): bug (exit 0)
+  Buggy capture  2 (attempt   2): bug (exit 0)
+  Buggy capture  3 (attempt   3): bug (exit 0)
+  Buggy capture  4 (attempt   4): bug (exit 0)
+  Buggy capture  5 (attempt   5): bug (exit 0)
+  Buggy capture  6 (attempt   6): bug (exit 0)
+  Buggy capture  7 (attempt   7): bug (exit 0)
+  Buggy capture  8 (attempt   8): bug (exit 0)
+  Buggy capture  9 (attempt   9): bug (exit 0)
+  Buggy capture 10 (attempt  10): bug (exit 0)
+  Capture attempts     : 10
+  Buggy captures       : 10 / 10 attempts
+  Natural bug rate     : 0 / 100  (0.0%)
+  Replay runs          : 100
+  Complete runs        : 100 / 100
+  Bug manifested       : 100 / 100  (100.0%)
+  Bug manifested|cmpl  : 100 / 100  (100.0%)
+
+--- cmu.pasta.fray.benchmark.sctbench.cs.origin.Deadlock01Bad ---
+  Buggy capture  1 (attempt   4): bug (exit 0)
+  Buggy capture  2 (attempt   6): bug (exit 0)
+  Buggy capture  3 (attempt   8): bug (exit 0)
+  Buggy capture  4 (attempt   9): bug (exit 0)
+  Buggy capture  5 (attempt  12): bug (exit 0)
+  Buggy capture  6 (attempt  21): bug (exit 0)
+  Buggy capture  7 (attempt  46): bug (exit 0)
+  Buggy capture  8 (attempt  52): bug (exit 0)
+  Buggy capture  9 (attempt  67): bug (exit 0)
+  Buggy capture 10 (attempt  75): bug (exit 0)
+  Capture attempts     : 75
+  Buggy captures       : 10 / 75 attempts
+  Natural bug rate     : 0 / 100  (0.0%)
+  Replay runs          : 100
+  Complete runs        : 68 / 100
+  Bug manifested       : 75 / 100  (75.0%)
+  Bug manifested|cmpl  : 43 / 68  (63.2%)
+
+--- cmu.pasta.fray.benchmark.sctbench.cs.origin.FsbenchBad ---
+  Buggy capture  1 (attempt   1): bug (exit 0)
+  Buggy capture  2 (attempt   2): bug (exit 0)
+  Buggy capture  3 (attempt   3): bug (exit 0)
+  Buggy capture  4 (attempt   4): bug (exit 0)
+  Buggy capture  5 (attempt   5): bug (exit 0)
+  Buggy capture  6 (attempt   6): bug (exit 0)
+  Buggy capture  7 (attempt   7): bug (exit 0)
+  Buggy capture  8 (attempt   8): bug (exit 0)
+  Buggy capture  9 (attempt   9): bug (exit 0)
+  Buggy capture 10 (attempt  10): bug (exit 0)
+  Capture attempts     : 10
+  Buggy captures       : 10 / 10 attempts
+  Natural bug rate     : 100 / 100  (100.0%)
+  Replay runs          : 100
+  Complete runs        : 90 / 100
+  Bug manifested       : 100 / 100  (100.0%)
+  Bug manifested|cmpl  : 90 / 90  (100.0%)
+
+--- cmu.pasta.fray.benchmark.sctbench.cs.origin.Lazy01Bad ---
+  Buggy capture  1 (attempt   1): bug (exit 0)
+  Buggy capture  2 (attempt   2): bug (exit 0)
+  Buggy capture  3 (attempt   3): bug (exit 0)
+  Buggy capture  4 (attempt   4): bug (exit 0)
+  Buggy capture  5 (attempt   5): bug (exit 0)
+  Buggy capture  6 (attempt   6): bug (exit 0)
+  Buggy capture  7 (attempt   7): bug (exit 0)
+  Buggy capture  8 (attempt   8): bug (exit 0)
+  Buggy capture  9 (attempt   9): bug (exit 0)
+  Buggy capture 10 (attempt  10): bug (exit 0)
+  Capture attempts     : 10
+  Buggy captures       : 10 / 10 attempts
+  Natural bug rate     : 99 / 100  (99.0%)
+  Replay runs          : 100
+  Complete runs        : 100 / 100
+  Bug manifested       : 100 / 100  (100.0%)
+  Bug manifested|cmpl  : 100 / 100  (100.0%)
+
+--- cmu.pasta.fray.benchmark.sctbench.cs.origin.Phase01Bad ---
+  Buggy capture  1 (attempt   1): bug (exit 0)
+  Buggy capture  2 (attempt   3): bug (exit 0)
+  Buggy capture  3 (attempt   4): bug (exit 0)
+  Buggy capture  4 (attempt   5): bug (exit 0)
+  Buggy capture  5 (attempt   6): bug (exit 0)
+  Buggy capture  6 (attempt   8): bug (exit 0)
+  Buggy capture  7 (attempt  10): bug (exit 0)
+  Buggy capture  8 (attempt  11): bug (exit 0)
+  Buggy capture  9 (attempt  24): bug (exit 0)
+  Buggy capture 10 (attempt  26): bug (exit 0)
+  Capture attempts     : 26
+  Buggy captures       : 10 / 26 attempts
+  Natural bug rate     : 100 / 100  (100.0%)
+  Replay runs          : 100
+  Complete runs        : 100 / 100
+  Bug manifested       : 100 / 100  (100.0%)
+  Bug manifested|cmpl  : 100 / 100  (100.0%)
+
+--- cmu.pasta.fray.benchmark.sctbench.cs.origin.QueueBad ---
+  Buggy capture  1 (attempt   1): bug (exit 143)
+  Buggy capture  2 (attempt   2): bug (exit 143)
+  Buggy capture  3 (attempt   3): bug (exit 143)
+  Buggy capture  4 (attempt   4): bug (exit 143)
+  Buggy capture  5 (attempt   5): bug (exit 143)
+  Buggy capture  6 (attempt   6): bug (exit 143)
+  Buggy capture  7 (attempt   7): bug (exit 143)
+  Buggy capture  8 (attempt   8): bug (exit 143)
+  Buggy capture  9 (attempt   9): bug (exit 143)
+  Buggy capture 10 (attempt  10): bug (exit 143)
+  Capture attempts     : 10
+  Buggy captures       : 10 / 10 attempts
+  Natural bug rate     : 0 / 100  (0.0%)
+  Replay runs          : 100
+  Complete runs        : 100 / 100
+  Bug manifested       : 100 / 100  (100.0%)
+  Bug manifested|cmpl  : 100 / 100  (100.0%)
+
+--- cmu.pasta.fray.benchmark.sctbench.cs.origin.Reorder10Bad ---
+  Capture attempts     : 100
+  Buggy captures       : 0 / 100 attempts
+  (no buggy traces captured — skipped)
+
+--- cmu.pasta.fray.benchmark.sctbench.cs.origin.Reorder20Bad ---
+  Capture attempts     : 100
+  Buggy captures       : 0 / 100 attempts
+  (no buggy traces captured — skipped)
+
+--- cmu.pasta.fray.benchmark.sctbench.cs.origin.Reorder3Bad ---
+  Capture attempts     : 100
+  Buggy captures       : 0 / 100 attempts
+  (no buggy traces captured — skipped)
+
+--- cmu.pasta.fray.benchmark.sctbench.cs.origin.Reorder4Bad ---
+  Capture attempts     : 100
+  Buggy captures       : 0 / 100 attempts
+  (no buggy traces captured — skipped)
+
+--- cmu.pasta.fray.benchmark.sctbench.cs.origin.Reorder5Bad ---
+  Capture attempts     : 100
+  Buggy captures       : 0 / 100 attempts
+  (no buggy traces captured — skipped)
+
+--- cmu.pasta.fray.benchmark.sctbench.cs.origin.StackBad ---
+  Buggy capture  1 (attempt   3): bug (exit 0)
+  Buggy capture  2 (attempt   4): bug (exit 0)
+  Buggy capture  3 (attempt   6): bug (exit 0)
+  Buggy capture  4 (attempt   7): bug (exit 0)
+  Buggy capture  5 (attempt   9): bug (exit 0)
+  Buggy capture  6 (attempt  11): bug (exit 0)
+  Buggy capture  7 (attempt  14): bug (exit 0)
+  Buggy capture  8 (attempt  15): bug (exit 0)
+  Buggy capture  9 (attempt  16): bug (exit 0)
+  Buggy capture 10 (attempt  17): bug (exit 0)
+  Capture attempts     : 17
+  Buggy captures       : 10 / 17 attempts
+  Natural bug rate     : 0 / 100  (0.0%)
+  Replay runs          : 100
+  Complete runs        : 90 / 100
+  Bug manifested       : 97 / 100  (97.0%)
+  Bug manifested|cmpl  : 90 / 90  (100.0%)
+
+--- cmu.pasta.fray.benchmark.sctbench.cs.origin.Sync01Bad ---
+  Buggy capture  1 (attempt   1): bug (exit 0)
+  Buggy capture  2 (attempt   2): bug (exit 0)
+  Buggy capture  3 (attempt   3): bug (exit 0)
+  Buggy capture  4 (attempt   4): bug (exit 0)
+  Buggy capture  5 (attempt   5): bug (exit 0)
+  Buggy capture  6 (attempt   6): bug (exit 0)
+  Buggy capture  7 (attempt   7): bug (exit 0)
+  Buggy capture  8 (attempt   8): bug (exit 0)
+  Buggy capture  9 (attempt   9): bug (exit 0)
+  Buggy capture 10 (attempt  10): bug (exit 0)
+  Capture attempts     : 10
+  Buggy captures       : 10 / 10 attempts
+  Natural bug rate     : 100 / 100  (100.0%)
+  Replay runs          : 100
+  Complete runs        : 26 / 100
+  Bug manifested       : 85 / 100  (85.0%)
+  Bug manifested|cmpl  : 26 / 26  (100.0%)
+
+--- cmu.pasta.fray.benchmark.sctbench.cs.origin.Sync02Bad ---
+  Buggy capture  1 (attempt   1): bug (exit 0)
+  Buggy capture  2 (attempt   2): bug (exit 0)
+  Buggy capture  3 (attempt   3): bug (exit 0)
+  Buggy capture  4 (attempt   4): bug (exit 143)
+  Buggy capture  5 (attempt   5): bug (exit 143)
+  Buggy capture  6 (attempt   6): bug (exit 143)
+  Buggy capture  7 (attempt   7): bug (exit 143)
+  Buggy capture  8 (attempt   8): bug (exit 143)
+  Buggy capture  9 (attempt   9): bug (exit 0)
+  Buggy capture 10 (attempt  10): bug (exit 0)
+  Capture attempts     : 10
+  Buggy captures       : 10 / 10 attempts
+  Natural bug rate     : 100 / 100  (100.0%)
+  Replay runs          : 100
+  Complete runs        : 25 / 100
+  Bug manifested       : 100 / 100  (100.0%)
+  Bug manifested|cmpl  : 25 / 25  (100.0%)
+
+--- cmu.pasta.fray.benchmark.sctbench.cs.origin.TokenRingBad ---
+  Capture attempts     : 100
+  Buggy captures       : 0 / 100 attempts
+  (no buggy traces captured — skipped)
+
+--- cmu.pasta.fray.benchmark.sctbench.cs.origin.Twostage100Bad ---
+  Capture attempts     : 100
+  Buggy captures       : 0 / 100 attempts
+  (no buggy traces captured — skipped)
+
+--- cmu.pasta.fray.benchmark.sctbench.cs.origin.TwostageBad ---
+  Capture attempts     : 100
+  Buggy captures       : 0 / 100 attempts
+  (no buggy traces captured — skipped)
+
+--- cmu.pasta.fray.benchmark.sctbench.cs.origin.Wronglock1Bad ---
+  Capture attempts     : 100
+  Buggy captures       : 0 / 100 attempts
+  (no buggy traces captured — skipped)
+
+--- cmu.pasta.fray.benchmark.sctbench.cs.origin.Wronglock3Bad ---
+  Capture attempts     : 100
+  Buggy captures       : 0 / 100 attempts
+  (no buggy traces captured — skipped)
+
+--- cmu.pasta.fray.benchmark.sctbench.cs.origin.WronglockBad ---
+  Buggy capture  1 (attempt  18): bug (exit 0)
+  Capture attempts     : 100
+  Buggy captures       : 1 / 100 attempts
+  Natural bug rate     : 0 / 100  (0.0%)
+  Replay runs          : 100
+  Complete runs        : 100 / 100
+  Bug manifested       : 100 / 100  (100.0%)
+  Bug manifested|cmpl  : 100 / 100  (100.0%)
+
+===== SUMMARY =====
+Classes tested           : 28
+Classes with bug captures: 13 / 28
+Total buggy captures     : 112
+Natural bug rate         : 599 / 1300  (46.1%)
+Total replay runs        : 1300
+Total complete runs      : 947 / 1300
+Bug manifested           : 1150 / 1300  (88.5%)
+Bug manifested | cmpl    : 922 / 947  (97.4%)
+===================

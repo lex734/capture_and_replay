@@ -57,6 +57,9 @@ public class ReplayCoordinator {
     private static final ConcurrentHashMap<Integer, Thread> roleIdToThread = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<Long, Long> lastMatchedSeqByTraceObject = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<Long, Long> lastMatchedSeqByRole = new ConcurrentHashMap<>();
+    // Tracks the identity hash of the app lock a coordinator-waiting thread is preparing to acquire.
+    // Populated on entry to prepareSyncTurn for MONITOR_ENTER; cleared on exit.
+    private static final ConcurrentHashMap<Integer, Integer> pendingMonitorEnterHashByRole = new ConcurrentHashMap<>();
 
     private static volatile boolean hasDiverged = false;
     private static volatile String firstDivergenceInfo = null;
@@ -348,12 +351,22 @@ public class ReplayCoordinator {
 
     public static void prepareSyncTurn(int roleId, int packedType, int objSite, int objCount, Object runtimeObject,
             int data) {
-        long[] event = awaitPreparedSemanticEvent(roleId, packedType, objSite, objCount, runtimeObject, null, data);
-        if (event == null) {
-            return;
+        boolean isMonitorEnter = (packedType & 0xFF) == BinarySchema.Event.MONITOR_ENTER;
+        if (isMonitorEnter && runtimeObject != null) {
+            pendingMonitorEnterHashByRole.put(roleId, System.identityHashCode(runtimeObject));
         }
-        preparedSyncEvent.set(event);
-        lastMatchedSeq.set(event[0]);
+        try {
+            long[] event = awaitPreparedSemanticEvent(roleId, packedType, objSite, objCount, runtimeObject, null, data);
+            if (event == null) {
+                return;
+            }
+            preparedSyncEvent.set(event);
+            lastMatchedSeq.set(event[0]);
+        } finally {
+            if (isMonitorEnter) {
+                pendingMonitorEnterHashByRole.remove(roleId);
+            }
+        }
     }
 
     public static void completePreparedSyncTurn() {
@@ -1624,6 +1637,20 @@ public class ReplayCoordinator {
                     continue;
                 }
                 Integer roleB = lockHolder.get(info.getLockInfo().getIdentityHashCode());
+                if (roleB != null && roleB != roleA) {
+                    waitingFor.computeIfAbsent(roleA, k -> new HashSet<>()).add(roleB);
+                }
+            }
+
+            // Coordinator-waiting threads are WAITING on controlLock and therefore skipped above,
+            // but they may hold app locks that form part of a cycle. If thread A is inside the
+            // coordinator preparing to acquire a lock that thread B currently holds, and B is
+            // similarly preparing to acquire a lock A holds, the cycle won't be visible from
+            // BLOCKED-state inspection alone. Use pendingMonitorEnterHashByRole to add these edges.
+            for (Map.Entry<Integer, Integer> e : pendingMonitorEnterHashByRole.entrySet()) {
+                int roleA = e.getKey();
+                int pendingLockHash = e.getValue();
+                Integer roleB = lockHolder.get(pendingLockHash);
                 if (roleB != null && roleB != roleA) {
                     waitingFor.computeIfAbsent(roleA, k -> new HashSet<>()).add(roleB);
                 }
